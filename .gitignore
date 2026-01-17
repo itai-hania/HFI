@@ -76,3 +76,6 @@ k8s/secrets.yaml
 tmp/
 temp/
 *.tmp
+
+# Local dev tools
+tools/token-counter/
