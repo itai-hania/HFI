@@ -1,0 +1,12 @@
+# Core database dependencies
+sqlalchemy==2.0.25
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Optional: Development and testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# Optional: Database migrations (if needed later)
+# alembic==1.13.1

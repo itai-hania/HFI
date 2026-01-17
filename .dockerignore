@@ -1,0 +1,61 @@
+# Root .dockerignore for multi-service builds
+
+# Python cache and compiled files
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+
+# Virtual environments
+**/venv/
+**/env/
+**/ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+**/*.swp
+**/*.swo
+**/*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Test and coverage
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+**/*.cover
+
+# Data and media (mounted as volumes)
+data/
+*.db
+*.sqlite
+*.mp4
+*.m4a
+*.jpg
+*.png
+*.gif
+
+# Configuration (mounted as volumes or ConfigMaps)
+config/
+.env
+.env.local
+
+# Documentation
+*.md
+*.pdf
+docs/
+
+# K8s manifests (not needed in images)
+k8s/
+
+# Docker files
+docker-compose.yml
+docker-compose.*.yml

@@ -1,0 +1,107 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hfi-scraper
+  namespace: hfi-system
+  labels:
+    app: hfi-scraper
+    component: scraper
+spec:
+  # Schedule: Every 30 minutes
+  # Cron format: minute hour day month weekday
+  # "*/30 * * * *" = At minute 0 and 30 of every hour
+  schedule: "*/30 * * * *"
+
+  # Timezone for schedule (requires K8s 1.25+)
+  # If not supported, schedule runs in UTC
+  # timeZone: "Asia/Jerusalem"
+
+  # Concurrency policy: Forbid overlapping jobs
+  # If previous scraper run hasn't finished, skip this execution
+  concurrencyPolicy: Forbid
+
+  # Keep last 3 successful and 1 failed job for debugging
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+
+  # Deadline: Jobs must complete within 20 minutes
+  # Scraper should finish much faster, but Playwright can be slow
+  startingDeadlineSeconds: 200
+
+  jobTemplate:
+    metadata:
+      labels:
+        app: hfi-scraper
+        component: scraper
+    spec:
+      # Backoff limit: Retry failed jobs up to 2 times
+      backoffLimit: 2
+
+      # Active deadline: Kill job if it runs longer than 25 minutes
+      # Prevents hung Playwright sessions
+      activeDeadlineSeconds: 1500
+
+      template:
+        metadata:
+          labels:
+            app: hfi-scraper
+            component: scraper
+        spec:
+          # Restart policy: OnFailure allows retries within the job
+          restartPolicy: OnFailure
+
+          containers:
+          - name: scraper
+            # Use locally built image (imported to K3s)
+            image: hfi-scraper:latest
+            imagePullPolicy: Never
+
+            # Resource requests and limits
+            # Playwright is memory-intensive: ~800MB RAM
+            # Only runs periodically via CronJob, so no continuous allocation
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+
+            # Environment variables from Secret
+            envFrom:
+            - secretRef:
+                name: hfi-secrets
+
+            # Volume mounts
+            volumeMounts:
+            # Mount shared PVC for database writes and session persistence
+            - name: data
+              mountPath: /app/data
+
+            # Mount ConfigMap for configuration
+            - name: config
+              mountPath: /app/config
+
+            # Security context: Run as non-root user
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false  # Playwright needs write access to /tmp
+
+          # Volumes
+          volumes:
+          # Shared persistent volume claim
+          - name: data
+            persistentVolumeClaim:
+              claimName: hfi-data-pvc
+
+          # Configuration files from ConfigMap
+          - name: config
+            configMap:
+              name: hfi-config
+              items:
+              - key: glossary.json
+                path: glossary.json
+              - key: style.txt
+                path: style.txt

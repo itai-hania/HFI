@@ -1,0 +1,51 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Data and media files (mounted as volumes)
+data/
+media/
+*.db
+*.sqlite
+
+# Logs
+*.log
+
+# Downloaded media
+*.mp4
+*.m4a
+*.jpg
+*.png
+*.gif
+
+# Documentation
+README.md
+*.md

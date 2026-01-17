@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hfi-system
+  labels:
+    name: hfi-system
+    app: hebrew-fintech-informant
+  annotations:
+    description: "Hebrew FinTech Informant - Automated content creation system"

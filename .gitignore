@@ -1,0 +1,78 @@
+# Environment variables
+.env
+*.env
+!.env.example
+
+# Database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/hfi.db
+
+# Media files
+data/media/*
+!data/media/.gitkeep
+
+# Session files
+data/session/*
+!data/session/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright
+.playwright/
+
+# Docker
+*.tar
+
+# Kubernetes
+k8s/secrets.yaml
+
+# Temporary files
+tmp/
+temp/
+*.tmp

@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hfi-config
+  namespace: hfi-system
+  labels:
+    app: hebrew-fintech-informant
+data:
+  # Glossary for financial term translations
+  # This will be mounted as a file at /app/config/glossary.json
+  glossary.json: |
+    {
+      "Short Squeeze": "סקוויז שורט",
+      "Bear Market": "שוק דובי",
+      "Bull Market": "שוק שורי",
+      "IPO": "הנפקה ראשונית",
+      "Startup": "סטארטאפ",
+      "VC": "הון סיכון",
+      "Fintech": "פינטק",
+      "Blockchain": "בלוקצ'יין",
+      "API": "ממשק תכנות",
+      "Revenue": "הכנסות",
+      "Market Cap": "שווי שוק",
+      "Due Diligence": "בדיקת נאותות",
+      "Term Sheet": "מסמך תנאים",
+      "Valuation": "הערכת שווי",
+      "Exit Strategy": "אסטרטגיית יציאה",
+      "Burn Rate": "קצב שריפת כסף",
+      "Runway": "מסלול תפעולי",
+      "Series A/B/C": "סבב גיוס A/B/C",
+      "Angel Investor": "משקיע מלאך",
+      "Seed Round": "סבב זרע"
+    }
+
+  # Style guide - example tweets for tone matching
+  # This will be mounted as a file at /app/config/style.txt
+  style.txt: |
+    [PLACEHOLDER - Add 5-10 examples of your best Hebrew tweets here]
+
+    Example format:
+    🚨 עדכון טק: OpenAI מכריזה על GPT-5
+    הדבר הבא בתעשייה כבר כאן, וזה משנה הכל.
+    קראו למה המודל החדש הוא game changer 👇
+
+    💡 סטארטאפ ישראלי גייס $50M בסבב B
+    הטכנולוגיה שלהם פותרת בעיה של מיליארדי דולרים.
+    פירוט מלא על הפתרון החדשני 🧵
+
+    [Add your actual tweet examples here...]

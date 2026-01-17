@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hfi-processor
+  namespace: hfi-system
+  labels:
+    app: hfi-processor
+    component: processor
+spec:
+  # Single replica: SQLite doesn't support concurrent writes
+  # Only one processor should run at a time
+  replicas: 1
+
+  # Deployment strategy: Recreate to avoid dual database access
+  # This ensures the old pod stops before the new one starts
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app: hfi-processor
+
+  template:
+    metadata:
+      labels:
+        app: hfi-processor
+        component: processor
+    spec:
+      # Restart policy: Always restart on failure
+      restartPolicy: Always
+
+      containers:
+      - name: processor
+        # Use locally built image (imported to K3s)
+        image: hfi-processor:latest
+        imagePullPolicy: Never
+
+        # Resource requests and limits
+        # Target: ~300MB RAM for this service
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        # Environment variables from Secret
+        envFrom:
+        - secretRef:
+            name: hfi-secrets
+
+        # Volume mounts
+        volumeMounts:
+        # Mount shared PVC for SQLite database and media files
+        - name: data
+          mountPath: /app/data
+
+        # Mount ConfigMap for glossary and style guide
+        - name: config
+          mountPath: /app/config
+
+        # Liveness probe: Check if the process is alive
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import sys; sys.exit(0)"
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Readiness probe: Check if the service is ready to process
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import sys; sys.exit(0)"
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+
+      # Volumes
+      volumes:
+      # Shared persistent volume claim
+      - name: data
+        persistentVolumeClaim:
+          claimName: hfi-data-pvc
+
+      # Configuration files from ConfigMap
+      - name: config
+        configMap:
+          name: hfi-config
+          items:
+          - key: glossary.json
+            path: glossary.json
+          - key: style.txt
+            path: style.txt

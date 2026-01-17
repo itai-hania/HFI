@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hfi-dashboard
+  namespace: hfi-system
+  labels:
+    app: hfi-dashboard
+    component: dashboard
+spec:
+  # Single replica: Sufficient for small VPS/local deployment
+  # Can scale to 2+ for high availability if needed
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: hfi-dashboard
+
+  template:
+    metadata:
+      labels:
+        app: hfi-dashboard
+        component: dashboard
+    spec:
+      # Restart policy: Always restart on failure
+      restartPolicy: Always
+
+      containers:
+      - name: dashboard
+        # Use locally built image (imported to K3s)
+        image: hfi-dashboard:latest
+        imagePullPolicy: Never
+
+        # Expose Streamlit port
+        ports:
+        - name: http
+          containerPort: 8501
+          protocol: TCP
+
+        # Resource requests and limits
+        # Target: ~200MB RAM for Streamlit
+        resources:
+          requests:
+            memory: "192Mi"
+            cpu: "200m"
+          limits:
+            memory: "384Mi"
+            cpu: "500m"
+
+        # Environment variables from Secret
+        envFrom:
+        - secretRef:
+            name: hfi-secrets
+
+        # Volume mounts
+        volumeMounts:
+        # Mount shared PVC for read-only database access and media display
+        - name: data
+          mountPath: /app/data
+          readOnly: true  # Dashboard only reads data
+
+        # Liveness probe: Check if Streamlit is responding
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        # Readiness probe: Check if Streamlit is ready to serve
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+
+      # Volumes
+      volumes:
+      # Shared persistent volume claim
+      - name: data
+        persistentVolumeClaim:
+          claimName: hfi-data-pvc
+
+---
+# Service: Expose dashboard internally and via NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: hfi-dashboard
+  namespace: hfi-system
+  labels:
+    app: hfi-dashboard
+    component: dashboard
+spec:
+  # NodePort: Expose on host machine at port 30080
+  # Access via: http://<node-ip>:30080
+  type: NodePort
+
+  ports:
+  - name: http
+    port: 8501          # ClusterIP port (internal)
+    targetPort: 8501    # Container port
+    nodePort: 30080     # External port on node (30000-32767 range)
+    protocol: TCP
+
+  selector:
+    app: hfi-dashboard
+
+  # Session affinity: Ensure user stays on same pod (if multiple replicas)
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600  # 1 hour session timeout

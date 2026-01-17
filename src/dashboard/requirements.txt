@@ -1,0 +1,13 @@
+# Dashboard Service Dependencies
+
+# UI Framework
+streamlit==1.30.0
+
+# Database
+sqlalchemy==2.0.25
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Utilities
+pillow==10.2.0  # For image handling

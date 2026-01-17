@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hfi-data-pvc
+  namespace: hfi-system
+  labels:
+    app: hebrew-fintech-informant
+spec:
+  # ReadWriteOnce: Can be mounted by a single node
+  # This is appropriate for SQLite which doesn't support concurrent writes from multiple nodes
+  # All HFI pods will be scheduled on the same node to share this volume
+  accessModes:
+    - ReadWriteOnce
+
+  # Request 10Gi for SQLite database + media files (videos, images)
+  # Adjust based on expected content volume
+  resources:
+    requests:
+      storage: 10Gi
+
+  # K3s default storage class: local-path
+  # This uses local node storage at /var/lib/rancher/k3s/storage
+  # Data persists across pod restarts but is tied to a specific node
+  storageClassName: local-path
+
+  # Optional: If you need faster storage, you can use a different storage class
+  # storageClassName: local-path-fast

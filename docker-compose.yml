@@ -1,0 +1,133 @@
+version: '3.8'
+
+# Hebrew FinTech Informant (HFI) - Local Development Stack
+# This compose file provides a complete local development environment
+# with all services running on a shared Docker bridge network
+
+services:
+  # Redis: Optional caching layer for rate limiting and job queuing
+  # Can be disabled if not needed (comment out the service and depends_on references)
+  redis:
+    image: redis:7-alpine
+    container_name: hfi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - hfi-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Scraper: Playwright-based X (Twitter) scraper
+  # Runs manually via: docker-compose exec scraper python main.py
+  # Not continuously running to save resources
+  scraper:
+    build:
+      context: ./src/scraper
+      dockerfile: Dockerfile
+    container_name: hfi-scraper
+    env_file: .env
+    environment:
+      # Override DATABASE_URL to use shared volume
+      - DATABASE_URL=sqlite:////app/data/hfi.db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      # Shared data volume for SQLite database and media files
+      - ./data:/app/data
+      # Configuration files (glossary, style guide)
+      - ./config:/app/config
+      # Mount common models for shared database schema
+      - ./src/common:/app/common:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hfi-network
+    # Keep container running but idle - execute scraper manually
+    # This saves CPU/memory since Playwright is resource-intensive
+    command: /bin/bash -c "echo '✅ Scraper ready. Run: docker-compose exec scraper python main.py'; tail -f /dev/null"
+
+  # Processor: Translates content and downloads media
+  # Runs continuously, polling for new tweets every 30 seconds
+  processor:
+    build:
+      context: ./src/processor
+      dockerfile: Dockerfile
+    container_name: hfi-processor
+    env_file: .env
+    environment:
+      - DATABASE_URL=sqlite:////app/data/hfi.db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      # Shared data volume for database access and media downloads
+      - ./data:/app/data
+      # Configuration files for glossary and style guide
+      - ./config:/app/config
+      # Mount common models
+      - ./src/common:/app/common:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hfi-network
+    # Resource limits to prevent runaway processes
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # Dashboard: Streamlit web interface for content review
+  # Accessible at http://localhost:8501
+  dashboard:
+    build:
+      context: ./src/dashboard
+      dockerfile: Dockerfile
+    container_name: hfi-dashboard
+    env_file: .env
+    environment:
+      - DATABASE_URL=sqlite:////app/data/hfi.db
+    ports:
+      # Expose Streamlit on host port 8501
+      - "8501:8501"
+    volumes:
+      # Shared data volume for database and media access
+      - ./data:/app/data
+      # Mount common models
+      - ./src/common:/app/common:ro
+    depends_on:
+      - processor
+    restart: unless-stopped
+    networks:
+      - hfi-network
+    # Resource limits for Streamlit
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+        reservations:
+          cpus: '0.25'
+          memory: 192M
+
+# Named volumes for data persistence
+volumes:
+  # Redis persistence volume
+  redis_data:
+    driver: local
+
+# Custom bridge network for service communication
+# All services can reach each other by service name (e.g., redis:6379)
+networks:
+  hfi-network:
+    driver: bridge

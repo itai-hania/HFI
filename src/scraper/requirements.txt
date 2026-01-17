@@ -1,0 +1,16 @@
+# Scraper Service Dependencies
+
+# Browser automation
+playwright==1.40.0
+
+# Anti-bot detection
+fake-useragent==1.5.1
+
+# Database
+sqlalchemy==2.0.25
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Utilities
+requests==2.31.0
