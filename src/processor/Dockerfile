@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
-COPY requirements.txt .
+COPY src/processor/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Stage 2: Runtime - Final lightweight image
@@ -49,11 +49,11 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Copy application code
-COPY processor.py main.py ./
+COPY src/processor/processor.py src/processor/main.py ./
 
 # Copy common models from parent directory
 # Note: In Docker build context, this assumes build context is project root
-COPY common /app/common
+COPY src/common /app/common
 
 # Create directories for data persistence
 RUN mkdir -p /app/data/media /app/data /app/config

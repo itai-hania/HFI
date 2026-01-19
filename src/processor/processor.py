@@ -57,7 +57,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from openai import OpenAI
 from sqlalchemy.orm import Session
-from common.models import SessionLocal, Tweet, create_tables
+from common.models import SessionLocal, Tweet, TweetStatus, create_tables
 
 # Configure logging
 logging.basicConfig(
@@ -387,7 +387,7 @@ class TweetProcessor:
 
         try:
             # Query all pending tweets
-            pending_tweets = db.query(Tweet).filter(Tweet.status == 'pending').all()
+            pending_tweets = db.query(Tweet).filter(Tweet.status == TweetStatus.PENDING).all()
 
             if not pending_tweets:
                 logger.info("No pending tweets to process")
@@ -407,7 +407,7 @@ class TweetProcessor:
                 except Exception as e:
                     logger.error(f"Error processing tweet {tweet.id}: {e}")
                     # Mark as failed
-                    tweet.status = 'failed'
+                    tweet.status = TweetStatus.FAILED
                     tweet.error_message = str(e)
                     tweet.updated_at = datetime.utcnow()
                     db.commit()
@@ -452,7 +452,7 @@ class TweetProcessor:
                     logger.warning(f"Media download failed, continuing without media")
 
             # Step 3: Update tweet status
-            tweet.status = 'processed'
+            tweet.status = TweetStatus.PROCESSED
             tweet.updated_at = datetime.utcnow()
             tweet.error_message = None  # Clear any previous errors
 
@@ -465,7 +465,7 @@ class TweetProcessor:
         except Exception as e:
             logger.error(f"Failed to process tweet {tweet.id}: {e}")
             # Mark as failed but commit the error state
-            tweet.status = 'failed'
+            tweet.status = TweetStatus.FAILED
             tweet.error_message = str(e)
             tweet.updated_at = datetime.utcnow()
             db.commit()

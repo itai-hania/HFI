@@ -1,0 +1,151 @@
+# Redis Deployment (Optional)
+# ============================
+# Redis is an optional caching layer for rate limiting and job queuing.
+# You can deploy this if you need caching or distributed state management.
+# If not needed, you can skip this manifest entirely.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hfi-redis
+  namespace: hfi-system
+  labels:
+    app: hfi-redis
+    component: cache
+spec:
+  # Single replica: Sufficient for small deployments
+  # For high availability, consider Redis Sentinel or Cluster
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: hfi-redis
+
+  template:
+    metadata:
+      labels:
+        app: hfi-redis
+        component: cache
+    spec:
+      restartPolicy: Always
+
+      containers:
+      - name: redis
+        # Use official Redis Alpine image (lightweight)
+        image: redis:7-alpine
+        imagePullPolicy: IfNotPresent
+
+        # Expose Redis port
+        ports:
+        - name: redis
+          containerPort: 6379
+          protocol: TCP
+
+        # Redis command: Enable AOF persistence
+        # --appendonly yes: Write all commands to disk for durability
+        # --appendfsync everysec: Sync to disk every second (balanced performance/durability)
+        command:
+          - redis-server
+          - --appendonly
+          - "yes"
+          - --appendfsync
+          - everysec
+
+        # Resource requests and limits
+        # Redis is memory-efficient, typically uses 50-100MB for small datasets
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+
+        # Volume mount for Redis persistence
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+
+        # Liveness probe: Check if Redis is responding
+        livenessProbe:
+          exec:
+            command:
+              - redis-cli
+              - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Readiness probe: Check if Redis is ready to accept connections
+        readinessProbe:
+          exec:
+            command:
+              - redis-cli
+              - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+
+        # Security context: Run as non-root user
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 999  # Redis default user ID
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # Redis needs write access to /data
+
+      # Volumes
+      volumes:
+      # Persistent volume for Redis data (AOF file)
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: hfi-redis-pvc
+
+---
+# PersistentVolumeClaim for Redis data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hfi-redis-pvc
+  namespace: hfi-system
+  labels:
+    app: hfi-redis
+    component: cache
+spec:
+  # ReadWriteOnce: Single node access (sufficient for single Redis instance)
+  accessModes:
+    - ReadWriteOnce
+
+  # Request 1Gi for Redis persistence
+  # Redis AOF file is small, typically <100MB for small datasets
+  resources:
+    requests:
+      storage: 1Gi
+
+  # K3s default storage class: local-path
+  storageClassName: local-path
+
+---
+# Service: Expose Redis internally
+apiVersion: v1
+kind: Service
+metadata:
+  name: hfi-redis
+  namespace: hfi-system
+  labels:
+    app: hfi-redis
+    component: cache
+spec:
+  # ClusterIP: Redis is only accessed internally by other pods
+  type: ClusterIP
+
+  ports:
+  - name: redis
+    port: 6379          # ClusterIP port (internal)
+    targetPort: 6379    # Container port
+    protocol: TCP
+
+  selector:
+    app: hfi-redis
+
+  # Session affinity not needed for Redis (stateless from client perspective)

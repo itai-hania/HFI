@@ -29,8 +29,8 @@ services:
   # Not continuously running to save resources
   scraper:
     build:
-      context: ./src/scraper
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/scraper/Dockerfile
     container_name: hfi-scraper
     env_file: .env
     environment:
@@ -57,8 +57,8 @@ services:
   # Runs continuously, polling for new tweets every 30 seconds
   processor:
     build:
-      context: ./src/processor
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/processor/Dockerfile
     container_name: hfi-processor
     env_file: .env
     environment:
@@ -91,8 +91,8 @@ services:
   # Accessible at http://localhost:8501
   dashboard:
     build:
-      context: ./src/dashboard
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/dashboard/Dockerfile
     container_name: hfi-dashboard
     env_file: .env
     environment:

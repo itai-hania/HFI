@@ -28,7 +28,7 @@ from sqlalchemy import (
     event,
     Engine,
 )
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
@@ -106,11 +106,13 @@ class TweetStatus(enum.Enum):
     2. processed: Translation complete, ready for review
     3. approved: Human-approved, ready to publish
     4. published: Posted to X (Twitter)
+    5. failed: Processing failed, requires attention
     """
     PENDING = "pending"
     PROCESSED = "processed"
     APPROVED = "approved"
     PUBLISHED = "published"
+    FAILED = "failed"
 
     def __str__(self):
         return self.value
@@ -186,7 +188,9 @@ class Tweet(Base):
     trend_topic = Column(
         String(256),
         nullable=True,
-        index=True,  # Index for grouping by trend
+        index=True,  # NOTE: This standalone index may be redundant with the composite index 'ix_tweets_trend_status' (line 230).
+                     # The composite index (trend_topic, status) can efficiently serve queries filtering by trend_topic alone (leftmost prefix).
+                     # Consider removing this index if query patterns show the composite index covers all trend_topic lookups.
         comment="Associated trending topic"
     )
 
@@ -197,6 +201,11 @@ class Tweet(Base):
         default=TweetStatus.PENDING,
         index=True,  # Critical index for dashboard filtering
         comment="Processing status in workflow"
+    )
+    error_message = Column(
+        Text,
+        nullable=True,
+        comment="Error message if processing failed"
     )
 
     # Timestamps
@@ -240,6 +249,7 @@ class Tweet(Base):
             'media_path': self.media_path,
             'trend_topic': self.trend_topic,
             'status': self.status.value,
+            'error_message': self.error_message,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

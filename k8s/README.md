@@ -203,9 +203,10 @@ docker-compose down -v
 cd /Users/itayy16/CursorProjects/HFI
 
 # Build images with specific tags
-docker build -t hfi-scraper:latest -f src/scraper/Dockerfile src/scraper
-docker build -t hfi-processor:latest -f src/processor/Dockerfile src/processor
-docker build -t hfi-dashboard:latest -f src/dashboard/Dockerfile src/dashboard
+# Note: All builds use project root as context for access to src/common/
+docker build -t hfi-scraper:latest -f src/scraper/Dockerfile .
+docker build -t hfi-processor:latest -f src/processor/Dockerfile .
+docker build -t hfi-dashboard:latest -f src/dashboard/Dockerfile .
 
 # Verify images
 docker images | grep hfi
@@ -700,5 +701,5 @@ For issues, questions, or contributions:
 
 ---
 
-**Last Updated**: 2026-01-17
-**Version**: 1.0.0
+**Last Updated**: 2026-01-19
+**Version**: 1.0.1

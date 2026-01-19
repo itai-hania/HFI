@@ -18,7 +18,7 @@ Features:
 import streamlit as st
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 # Add parent directory to path for imports
@@ -109,7 +109,7 @@ def update_tweet(db, tweet_id, **kwargs):
     if tweet:
         for key, value in kwargs.items():
             setattr(tweet, key, value)
-        tweet.updated_at = datetime.utcnow()
+        tweet.updated_at = datetime.now(timezone.utc)
         db.commit()
         return True
     return False

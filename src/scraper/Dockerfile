@@ -4,7 +4,8 @@ FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 WORKDIR /app
 
 # Copy requirements first for better layer caching
-COPY requirements.txt .
+# Build context is project root, so path is src/scraper/requirements.txt
+COPY src/scraper/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
@@ -14,11 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium --with-deps
 
 # Copy application code
-COPY . .
+COPY src/scraper/*.py .
 
 # Copy common models from parent directory
+# Note: Build context must be project root for this to work
 # This will be mounted as volume in production, but copied for standalone builds
-COPY ../common /app/common
+COPY src/common /app/common
 
 # Create directories for data persistence
 RUN mkdir -p /app/data/session /app/data/media /app/config
