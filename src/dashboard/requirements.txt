@@ -11,3 +11,10 @@ python-dotenv==1.0.0
 
 # Utilities
 pillow==10.2.0  # For image handling
+
+# Scraper dependencies (for integrated scraping from dashboard)
+playwright==1.40.0
+fake-useragent==1.5.1
+feedparser==6.0.10
+beautifulsoup4==4.12.3
+requests==2.31.0

@@ -122,7 +122,9 @@ class TrendSource(enum.Enum):
     """Supported sources for trend discovery."""
     X_TWITTER = "X"
     REUTERS = "Reuters"
+    WSJ = "WSJ"
     TECHCRUNCH = "TechCrunch"
+    BLOOMBERG = "Bloomberg"
     MANUAL = "Manual"
 
     def __str__(self):

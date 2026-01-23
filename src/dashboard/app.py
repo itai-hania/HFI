@@ -17,6 +17,7 @@ Features:
 
 import streamlit as st
 import sys
+import logging
 from pathlib import Path
 from datetime import datetime, timezone
 import time
@@ -24,8 +25,11 @@ import time
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-from common.models import get_db_session, Tweet, Trend
+from common.models import get_db_session, Tweet, Trend, TrendSource
 from sqlalchemy import func
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 
 # Page configuration
@@ -341,13 +345,13 @@ def handle_action_sidebar(db):
                     try:
                         await scraper.ensure_logged_in()
                         trends = await scraper.get_trending_topics(limit=5)
-                        
+
                         count = 0
                         for trend in trends:
                             db_trend = Trend(
                                 title=trend['title'],
                                 description=trend.get('description', ''),
-                                source='X'
+                                source=TrendSource.X_TWITTER
                             )
                             db.add(db_trend)
                             count += 1
@@ -355,7 +359,7 @@ def handle_action_sidebar(db):
                         return count
                     except Exception as e:
                         logger.error(f"Error scraping trends: {e}")
-                        raise e
+                        raise
                     finally:
                         await scraper.close()
                 
@@ -398,7 +402,7 @@ def handle_action_sidebar(db):
                         return saved_count
                     except Exception as e:
                         logger.error(f"Error scraping thread: {e}")
-                        raise e
+                        raise
                     finally:
                         await scraper.close()
 
@@ -414,24 +418,36 @@ def handle_action_sidebar(db):
             elif mode == "Scrape News Sources":
                 status_container.info("🔄 Scraping news (Reuters, WSJ, etc.)...")
                 from scraper.news_scraper import NewsScraper
-                from common.models import Trend
-                
+
+                # Map string source names to TrendSource enum values
+                source_map = {
+                    "Reuters": TrendSource.REUTERS,
+                    "WSJ": TrendSource.WSJ,
+                    "TechCrunch": TrendSource.TECHCRUNCH,
+                    "Bloomberg": TrendSource.BLOOMBERG,
+                }
+
                 scraper = NewsScraper()
                 articles = scraper.get_latest_news(limit_per_source=5)
-                
+
                 count = 0
                 for article in articles:
+                    source_enum = source_map.get(article['source'])
+                    if not source_enum:
+                        logger.warning(f"Unknown source: {article['source']}, skipping")
+                        continue
+
                     # Check duplicate
                     exists = db.query(Trend).filter_by(
-                        title=article['title'], 
-                        source=article['source']
+                        title=article['title'],
+                        source=source_enum
                     ).first()
-                    
+
                     if not exists:
                         new_trend = Trend(
                             title=article['title'],
                             description=article['description'],
-                            source=article['source'],
+                            source=source_enum,
                             discovered_at=article['discovered_at']
                         )
                         db.add(new_trend)
