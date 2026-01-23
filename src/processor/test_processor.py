@@ -174,10 +174,11 @@ def test_end_to_end():
             db.commit()
 
         # Insert test tweet
+        from common.models import TweetStatus
         test_tweet = Tweet(
             source_url="https://x.com/test/status/999999",
             original_text="Breaking: Stripe raises $500M at $95B valuation. The fintech giant continues to dominate payment processing.",
-            status="pending",
+            status=TweetStatus.PENDING,
             media_url=None  # No media for this test
         )
         db.add(test_tweet)
@@ -206,7 +207,7 @@ def test_end_to_end():
                 print(f"  Status: {processed_tweet.status}")
                 print(f"  Hebrew: {processed_tweet.hebrew_draft}")
 
-                if processed_tweet.status == "processed":
+                if processed_tweet.status == TweetStatus.PROCESSED:
                     print("✓ End-to-end test PASSED")
                     success = True
                 else:
