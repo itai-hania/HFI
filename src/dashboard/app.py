@@ -289,6 +289,7 @@ def render_sidebar(db):
         st.sidebar.success(f"✅ Approved {count} tweets!")
         st.rerun()
 
+
     if st.sidebar.button("Delete All Pending", use_container_width=True):
         pending_tweets = db.query(Tweet).filter(Tweet.status == 'pending').all()
         count = len(pending_tweets)
@@ -298,6 +299,152 @@ def render_sidebar(db):
         st.rerun()
 
     return status_filter, auto_refresh
+
+
+def handle_action_sidebar(db):
+    """Render and handle the Actions sidebar."""
+    st.sidebar.markdown("---")
+    st.sidebar.title("🚀 New Task")
+    
+    # Mode Selection
+    mode = st.sidebar.radio(
+        "Select Operation:",
+        ["Scrape X Trends", "Scrape X Thread", "Scrape News Sources"],
+        index=0
+    )
+    
+    # Inputs based on mode
+    thread_url = ""
+    translate = False
+    
+    if mode == "Scrape X Thread":
+        thread_url = st.sidebar.text_input("Thread URL", placeholder="https://x.com/user/status/...")
+        translate = st.sidebar.checkbox("Translate & Rewrite", value=True)
+        
+    start_btn = st.sidebar.button("▶ Start Scraping", type="primary")
+    
+    # Helper to run async code
+    import asyncio
+    
+    if start_btn:
+        status_container = st.sidebar.empty()
+        
+        try:
+            if mode == "Scrape X Trends":
+                status_container.info("🔄 Scraping X trends...")
+                # Import here to avoid circular dependencies
+                from scraper.scraper import TwitterScraper
+                from common.models import Trend
+                
+                async def run_trends():
+                    scraper = TwitterScraper()
+                    try:
+                        await scraper.ensure_logged_in()
+                        trends = await scraper.get_trending_topics(limit=5)
+                        
+                        count = 0
+                        for trend in trends:
+                            db_trend = Trend(
+                                title=trend['title'],
+                                description=trend.get('description', ''),
+                                source='X'
+                            )
+                            db.add(db_trend)
+                            count += 1
+                        db.commit()
+                        return count
+                    except Exception as e:
+                        logger.error(f"Error scraping trends: {e}")
+                        raise e
+                    finally:
+                        await scraper.close()
+                
+                count = asyncio.run(run_trends())
+                status_container.success(f"✅ Found {count} trends!")
+                time.sleep(2)
+                st.rerun()
+                
+            elif mode == "Scrape X Thread":
+                if not thread_url:
+                    status_container.error("❌ Please enter a URL")
+                    return
+
+                status_container.info(f"🔄 Fetching thread...")
+                
+                from scraper.scraper import TwitterScraper
+                from common.models import Tweet
+                
+                async def run_thread():
+                    scraper = TwitterScraper()
+                    try:
+                        await scraper.ensure_logged_in()
+                        # Use fetch_thread (which handles session etc.)
+                        tweets_data = await scraper.fetch_thread(thread_url)
+                        
+                        saved_count = 0
+                        for t_data in tweets_data:
+                            # Avoid duplicates (basic check)
+                            exists = db.query(Tweet).filter_by(source_url=t_data['url']).first()
+                            if not exists:
+                                new_tweet = Tweet(
+                                    source_url=t_data['url'],
+                                    original_text=t_data['text'],
+                                    status='pending', # Processor will pick this up if running
+                                    media_url=t_data.get('media_url')
+                                )
+                                db.add(new_tweet)
+                                saved_count += 1
+                        db.commit()
+                        return saved_count
+                    except Exception as e:
+                        logger.error(f"Error scraping thread: {e}")
+                        raise e
+                    finally:
+                        await scraper.close()
+
+                saved = asyncio.run(run_thread())
+                status_container.success(f"✅ Saved {saved} tweets!")
+                
+                if translate:
+                    status_container.info("⏳ Waiting for processor...")
+                
+                time.sleep(2)
+                st.rerun()
+                
+            elif mode == "Scrape News Sources":
+                status_container.info("🔄 Scraping news (Reuters, WSJ, etc.)...")
+                from scraper.news_scraper import NewsScraper
+                from common.models import Trend
+                
+                scraper = NewsScraper()
+                articles = scraper.get_latest_news(limit_per_source=5)
+                
+                count = 0
+                for article in articles:
+                    # Check duplicate
+                    exists = db.query(Trend).filter_by(
+                        title=article['title'], 
+                        source=article['source']
+                    ).first()
+                    
+                    if not exists:
+                        new_trend = Trend(
+                            title=article['title'],
+                            description=article['description'],
+                            source=article['source'],
+                            discovered_at=article['discovered_at']
+                        )
+                        db.add(new_trend)
+                        count += 1
+                db.commit()
+                status_container.success(f"✅ Added {count} new articles!")
+                time.sleep(2)
+                st.rerun()
+                
+        except Exception as e:
+            status_container.error(f"❌ Error: {str(e)}")
+            # logger might not be defined in this scope if not imported, but Streamlit validation catches most
+
 
 
 def main():
@@ -312,6 +459,9 @@ def main():
 
     # Render sidebar and get filters
     status_filter, auto_refresh = render_sidebar(db)
+    
+    # Handle New Task Actions
+    handle_action_sidebar(db)
 
     # Main content area
     st.markdown("---")

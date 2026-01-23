@@ -29,7 +29,7 @@ class NewsScraper:
     """
     
     FEEDS = {
-        "Reuters": "http://feeds.reuters.com/reuters/businessNews",
+        "Reuters": "https://cdn.feedcontrol.net/8/1114-wioSIX3uu8/3c1a93d077d8a/org.xml", # Reuters Business (via FeedControl as direct RSS is deprecated)
         "WSJ": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
         "TechCrunch": "https://techcrunch.com/feed/",
         "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss"
