@@ -74,38 +74,37 @@ class TwitterScraper:
         await asyncio.sleep(delay)
 
     async def _init_browser(self, use_session: bool = True):
-        """Initialize Playwright browser with anti-detection measures using persistent context"""
+        """Initialize Playwright browser with Firefox (more stable on macOS)"""
         self.playwright = await async_playwright().start()
 
-        # Use a persistent user data directory to store browser profile
-        user_data_dir = self.session_dir / "chrome_profile"
-        user_data_dir.mkdir(parents=True, exist_ok=True)
+        # Launch Firefox browser
+        self.browser = await self.playwright.firefox.launch(headless=self.headless)
 
-        # Launch persistent context with stealth settings (proven working approach)
-        self.context = await self.playwright.chromium.launch_persistent_context(
-            user_data_dir=str(user_data_dir),
-            headless=self.headless,
-            ignore_default_args=["--enable-automation"],  # Critical for bypassing detection!
-            args=[
-                "--password-store=basic",
-                "--use-mock-keychain",
-                "--disable-blink-features=AutomationControlled",
-                "--start-maximized",
-            ],
-            viewport=None,
-            locale='en-US',
-        )
-        self.browser = None  # Persistent context doesn't use separate browser object
-
-        # Add stealth script to hide automation
-        await self.context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            window.chrome = window.chrome || { runtime: {} };
-        """)
+        # Create context with session if available
+        if use_session and self.session_file.exists():
+            self.context = await self.browser.new_context(
+                storage_state=str(self.session_file),
+                locale='en-US',
+            )
+        else:
+            self.context = await self.browser.new_context(locale='en-US')
 
         self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+
+        # Stealth mode: Patch navigator.webdriver to avoid bot detection
+        await self.page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            // Hide automation indicators
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+        """)
 
         # Set up cleanup for handlers
         self._handlers = []
@@ -434,14 +433,17 @@ class TwitterScraper:
             await self.page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
             
             target_handle = self._extract_handle_from_url(thread_url)
-            
+
             # Scroll and collect
-            tweets = await self._scroll_and_collect(target_handle, max_scroll_attempts)
-            
+            raw_tweets = await self._scroll_and_collect(target_handle, max_scroll_attempts)
+
             # Cleanup listener
             self.page.remove_listener("response", handle_response)
-            
-            logger.info(f"✅ Scraped {len(tweets)} tweets from thread")
+
+            # Filter to only consecutive author tweets (proper thread extraction)
+            tweets = self.filter_author_tweets_only(raw_tweets, target_handle)
+
+            logger.info(f"✅ Scraped {len(tweets)} tweets from thread (filtered from {len(raw_tweets)} raw)")
             return tweets
             
         except Exception as e:
@@ -570,28 +572,84 @@ class TwitterScraper:
 
     def _should_stop_at_other_author(self, seen_tweets: Dict, target_handle: str) -> bool:
         """
-        Check if we should stop scrolling based on recent tweets.
-        Stop if the last few tweets are from other authors (implying we scrolled past the thread).
+        Check if we should stop scrolling.
+        Stop when we encounter a tweet from a different author AFTER the root tweet.
+        This properly captures the thread and stops at replies from others.
         """
         if not target_handle:
             return False
-            
-        # Get last 3 added tweets (approximate)
+
         tweets = list(seen_tweets.values())
-        if len(tweets) < 5:
+        if len(tweets) < 2:
             return False
-            
-        last_few = tweets[-3:]
-        
-        # Count how many are NOT the target handle
-        other_authors = 0
-        for t in last_few:
-            # Simple check: handle should match (case insensitive)
-            if t['author_handle'].lower() != target_handle.lower():
-                other_authors += 1
-                
-        # If last 3 are all other authors, we likely drifted
-        return other_authors == 3
+
+        # Sort tweets by timestamp to get proper sequence
+        sorted_tweets = sorted(tweets, key=lambda t: t.get('timestamp') or '')
+
+        # Normalize target handle
+        target = target_handle.lower().lstrip('@')
+
+        # Find first occurrence of target author (root tweet)
+        root_idx = -1
+        for idx, t in enumerate(sorted_tweets):
+            author = t.get('author_handle', '').lower().lstrip('@')
+            if author == target:
+                root_idx = idx
+                break
+
+        if root_idx == -1:
+            return False  # Haven't found root yet
+
+        # Check if ANY tweet after root is by different author
+        for t in sorted_tweets[root_idx + 1:]:
+            author = t.get('author_handle', '').lower().lstrip('@')
+            if author and author != target:
+                return True  # Stop: found non-author tweet
+
+        return False
+
+    def filter_author_tweets_only(self, tweets: List[Dict], target_handle: str) -> List[Dict]:
+        """
+        Filter collected tweets to only include consecutive author tweets.
+        Sorts by timestamp, starts from root, stops at first non-author tweet.
+
+        Args:
+            tweets: List of tweet dicts
+            target_handle: Target author handle (e.g., "@elonmusk" or "elonmusk")
+
+        Returns:
+            Filtered list of only the target author's consecutive tweets
+        """
+        if not tweets or not target_handle:
+            return tweets
+
+        # Normalize target
+        target = target_handle.lower().lstrip('@')
+
+        # Sort by timestamp
+        sorted_tweets = sorted(tweets, key=lambda t: t.get('timestamp') or '')
+
+        # Find root tweet (first by target author)
+        root_idx = -1
+        for idx, t in enumerate(sorted_tweets):
+            author = t.get('author_handle', '').lower().lstrip('@')
+            if author == target:
+                root_idx = idx
+                break
+
+        if root_idx == -1:
+            return []  # No tweets by target found
+
+        # Collect consecutive author tweets starting from root
+        result = []
+        for t in sorted_tweets[root_idx:]:
+            author = t.get('author_handle', '').lower().lstrip('@')
+            if author == target:
+                result.append(t)
+            else:
+                break  # Stop at first non-author tweet
+
+        return result
 
     async def close(self):
         """Clean up resources"""

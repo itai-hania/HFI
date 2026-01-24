@@ -46,11 +46,19 @@ import json
 import hashlib
 import subprocess
 import requests
+import re
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List
 import logging
 import sys
+
+# Language detection for skipping already-Hebrew content
+try:
+    from langdetect import detect, LangDetectException
+    HAS_LANGDETECT = True
+except ImportError:
+    HAS_LANGDETECT = False
 
 # Add parent directory to path for common modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -130,82 +138,212 @@ class ProcessorConfig:
 class TranslationService:
     """Handles Hebrew translation using OpenAI GPT-4o with transcreation approach."""
 
+    # Tech terms to keep in English (not translate)
+    KEEP_ENGLISH = {
+        'API', 'ML', 'AI', 'GPT', 'LLM', 'NFT', 'DeFi', 'ETF', 'IPO', 'VC',
+        'CEO', 'CTO', 'CFO', 'COO', 'SaaS', 'B2B', 'B2C', 'ROI', 'KPI',
+        'FOMO', 'HODL', 'DCA', 'ATH', 'FUD', 'DAO', 'DEX', 'CEX',
+        'startup', 'fintech', 'blockchain', 'crypto', 'bitcoin', 'ethereum',
+        'tweet', 'thread', 'retweet', 'like', 'follower'
+    }
+
     def __init__(self, config: ProcessorConfig):
         self.config = config
         self.client = config.openai_client
 
-    def translate_and_rewrite(self, text: str) -> str:
+    def is_hebrew(self, text: str) -> bool:
+        """Check if text is already primarily Hebrew."""
+        if not text:
+            return False
+
+        # Method 1: Use langdetect if available
+        if HAS_LANGDETECT:
+            try:
+                detected = detect(text)
+                if detected == 'he':
+                    return True
+            except LangDetectException:
+                pass
+
+        # Method 2: Check Hebrew character ratio
+        hebrew_chars = sum(1 for c in text if '\u0590' <= c <= '\u05FF')
+        alpha_chars = sum(1 for c in text if c.isalpha())
+        if alpha_chars > 0:
+            ratio = hebrew_chars / alpha_chars
+            return ratio > 0.5
+
+        return False
+
+    def validate_hebrew_output(self, text: str) -> Tuple[bool, str]:
+        """
+        Validate that output is primarily Hebrew.
+
+        Args:
+            text: Output text to validate
+
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        if not text:
+            return False, "Empty output"
+
+        hebrew_chars = sum(1 for c in text if '\u0590' <= c <= '\u05FF')
+        alpha_chars = sum(1 for c in text if c.isalpha())
+
+        if alpha_chars == 0:
+            return False, "No alphabetic characters"
+
+        ratio = hebrew_chars / alpha_chars
+
+        if ratio < 0.5:
+            return False, f"Hebrew ratio too low: {ratio:.1%}"
+
+        return True, ""
+
+    def extract_preservables(self, text: str) -> Dict[str, List[str]]:
+        """Extract URLs, @mentions, and hashtags that should be preserved exactly."""
+        return {
+            'urls': re.findall(r'https?://\S+', text),
+            'mentions': re.findall(r'@\w+', text),
+            'hashtags': re.findall(r'#\w+', text)
+        }
+
+    def translate_and_rewrite(self, text: str, max_retries: int = 2) -> str:
         """
         Translate and rewrite English content to Hebrew with transcreation.
 
-        This is NOT literal translation - it adapts the content to Hebrew-speaking
-        financial audience while maintaining the core message and impact.
+        Key improvements:
+        - Skips already-Hebrew content
+        - Validates output is ≥50% Hebrew
+        - Retries on validation failure
+        - Preserves URLs, @mentions, hashtags exactly
+        - Keeps tech terms in English
 
         Args:
             text: English tweet content to translate
+            max_retries: Number of retry attempts if validation fails
 
         Returns:
             Hebrew transcreated content
 
         Raises:
-            Exception: If OpenAI API call fails
+            Exception: If OpenAI API call fails after retries
         """
-        # Build glossary string for prompt
+        # Skip if already Hebrew
+        if self.is_hebrew(text):
+            logger.info("Text already Hebrew, skipping translation")
+            return text
+
+        # Extract items to preserve
+        preservables = self.extract_preservables(text)
+
+        # Build glossary string
         glossary_str = "\n".join([
             f"- {eng}: {heb}"
             for eng, heb in self.config.glossary.items()
         ])
 
-        # Construct system prompt with context
-        system_prompt = f"""You are an expert Hebrew financial content creator and translator specializing in fintech and tech news.
+        # Terms to keep in English
+        keep_english_str = ", ".join(sorted(self.KEEP_ENGLISH))
 
-Your task is to TRANSCREATE (not just translate) English financial content into Hebrew.
+        # System prompt with strict rules
+        system_prompt = f"""You are an expert Hebrew financial content creator specializing in fintech and tech news.
 
-TRANSCREATION means:
-- Adapt the message for Hebrew-speaking financial professionals
-- Maintain the impact, tone, and urgency of the original
-- Use natural Hebrew phrasing, not word-for-word translation
-- Keep English terms when they're commonly used in Israeli tech/finance (e.g., "AI", "IPO", "startup")
+Your task is to TRANSCREATE (not just translate) English content into Hebrew.
 
-GLOSSARY (use these term translations):
+CRITICAL RULES - FOLLOW EXACTLY:
+
+1. KEEP THESE TERMS IN ENGLISH (do NOT translate):
+   {keep_english_str}
+
+2. PRESERVE EXACTLY (copy as-is):
+   - All URLs: {', '.join(preservables['urls']) or 'none'}
+   - All @mentions: {', '.join(preservables['mentions']) or 'none'}
+   - All #hashtags: {', '.join(preservables['hashtags']) or 'none'}
+   - All numbers and company names
+
+3. TWITTER-SPECIFIC TERMS:
+   - tweet = ציוץ
+   - thread = שרשור
+   - retweet = ריטוויט
+
+4. PUNCTUATION:
+   - NO dashes for punctuation
+   - Use commas, periods, parentheses instead
+
+5. GLOSSARY (use these term translations):
 {glossary_str}
 
-STYLE GUIDE (analyze these examples and match this writing style):
+6. STYLE GUIDE:
 {self.config.style_examples}
 
-RULES:
-1. Keep the same message structure (if original has bullets, use bullets)
-2. Preserve numbers, company names, and proper nouns
-3. Use emojis strategically (1-2 per tweet maximum)
-4. Keep content concise and impactful
-5. Mix Hebrew with English tech/finance jargon naturally
-6. Right-to-left text formatting for Hebrew
-7. Output ONLY the Hebrew content, no explanations or metadata
+7. OUTPUT REQUIREMENTS:
+   - Output ONLY Hebrew content
+   - Keep structure (bullets, line breaks)
+   - 1-2 emojis maximum
+   - No explanations or metadata
+   - At least 50% of letters must be Hebrew"""
 
-Remember: You're writing for Israeli tech/finance professionals who understand English jargon but prefer reading in Hebrew."""
+        for attempt in range(max_retries + 1):
+            try:
+                logger.info(f"Translating text (attempt {attempt + 1}): {text[:100]}...")
 
-        try:
-            logger.info(f"Translating text: {text[:100]}...")
+                response = self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Transcreate this to Hebrew:\n\n{text}"}
+                    ],
+                    temperature=0.1 if attempt > 0 else 0.7,  # Lower temp on retry
+                    max_tokens=1000,
+                    top_p=0.9
+                )
 
-            response = self.client.chat.completions.create(
-                model="gpt-4o",  # Using GPT-4o for best quality transcreation
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Transcreate this to Hebrew:\n\n{text}"}
-                ],
-                temperature=0.7,  # Slightly creative for natural Hebrew phrasing
-                max_tokens=500,  # Sufficient for tweet-length content
-                top_p=0.9
-            )
+                hebrew_text = response.choices[0].message.content.strip()
 
-            hebrew_text = response.choices[0].message.content.strip()
-            logger.info(f"Translation successful: {hebrew_text[:100]}...")
+                # Validate output
+                is_valid, reason = self.validate_hebrew_output(hebrew_text)
 
-            return hebrew_text
+                if is_valid:
+                    logger.info(f"Translation successful: {hebrew_text[:100]}...")
+                    return hebrew_text
+                else:
+                    logger.warning(f"Validation failed: {reason}")
+                    if attempt < max_retries:
+                        # Retry with explicit instruction
+                        system_prompt += f"\n\nPREVIOUS ATTEMPT FAILED: {reason}. Please ensure output is primarily in Hebrew."
+                    else:
+                        # Return anyway on last attempt
+                        logger.warning(f"Returning unvalidated result after {max_retries + 1} attempts")
+                        return hebrew_text
 
-        except Exception as e:
-            logger.error(f"Translation failed: {e}")
-            raise Exception(f"OpenAI translation error: {str(e)}")
+            except Exception as e:
+                logger.error(f"Translation failed (attempt {attempt + 1}): {e}")
+                if attempt == max_retries:
+                    raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
+
+        return text  # Fallback to original
+
+    def translate_long_text(self, texts: List[str]) -> str:
+        """
+        Translate multiple tweets as one coherent text (for context).
+
+        This concatenates all tweets into one text for translation,
+        preserving context across the thread.
+
+        Args:
+            texts: List of tweet texts
+
+        Returns:
+            Single translated text (can be split later if needed)
+        """
+        if not texts:
+            return ""
+
+        # Concatenate with separators
+        combined = "\n\n---\n\n".join(texts)
+
+        return self.translate_and_rewrite(combined)
 
 
 class MediaDownloader:

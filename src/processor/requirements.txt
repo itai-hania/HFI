@@ -28,6 +28,11 @@ requests==2.31.0
 # Requires ffmpeg (installed in Dockerfile)
 yt-dlp>=2024.11.0
 
+# langdetect for language detection
+# Version: 1.0.9 - Stable language detection library
+# Why: Skip translation of already-Hebrew content, validate output language
+langdetect==1.0.9
+
 # Additional dependencies (pulled in by above packages)
 # - certifi: SSL certificate verification
 # - charset-normalizer: Universal character encoding detector
