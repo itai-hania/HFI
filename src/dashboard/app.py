@@ -34,33 +34,34 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    /* Dark Mode Design Tokens */
+    /* Dark Mode Design Tokens - Typefully Style */
     :root {
-        --bg-primary: #0d1117;
-        --bg-secondary: #161b22;
-        --bg-tertiary: #21262d;
-        --bg-elevated: #30363d;
+        --bg-primary: #0B0E11;
+        --bg-secondary: #14181D;
+        --bg-tertiary: #1A1F26;
+        --bg-elevated: #1E2329;
 
-        --text-primary: #f0f6fc;
-        --text-secondary: #8b949e;
-        --text-muted: #6e7681;
+        --text-primary: #FFFFFF;
+        --text-secondary: #9BA3AE;
+        --text-muted: #6B7280;
 
-        --accent-primary: #58a6ff;
-        --accent-primary-hover: #79b8ff;
-        --accent-success: #3fb950;
-        --accent-warning: #d29922;
-        --accent-danger: #f85149;
+        --accent-primary: #199AF5;
+        --accent-primary-hover: #47B1FF;
+        --accent-success: #22C55E;
+        --accent-warning: #F59E0B;
+        --accent-danger: #EF4444;
 
-        --border-default: #30363d;
-        --border-muted: #21262d;
+        --border-default: rgba(255,255,255,0.08);
+        --border-muted: rgba(255,255,255,0.04);
 
-        --shadow-sm: 0 1px 0 rgba(0,0,0,0.4);
-        --shadow-md: 0 3px 6px rgba(0,0,0,0.4);
-        --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+        --shadow-sm: 0 2px 8px rgba(0,0,0,0.25);
+        --shadow-md: 0 4px 16px rgba(0,0,0,0.35);
+        --shadow-lg: 0 12px 48px rgba(0,0,0,0.5);
 
-        --radius-sm: 6px;
-        --radius-md: 8px;
-        --radius-lg: 12px;
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 20px;
+        --radius-pill: 9999px;
     }
 
     /* Base Dark Background */
@@ -104,16 +105,16 @@ st.markdown("""
     }
 
     /* ===========================================
-       DARK SIDEBAR
+       GRADIENT SIDEBAR - Typefully Style
        =========================================== */
     [data-testid="stSidebar"],
     [data-testid="stSidebar"] > div,
     [data-testid="stSidebarContent"],
     section[data-testid="stSidebar"] {
-        background: var(--bg-secondary) !important;
+        background: linear-gradient(180deg, #0F1318 0%, var(--bg-primary) 100%) !important;
         border-right: 1px solid var(--border-default) !important;
-        width: 240px !important;
-        min-width: 240px !important;
+        width: 260px !important;
+        min-width: 260px !important;
     }
 
     [data-testid="stSidebar"] .block-container {
@@ -121,48 +122,55 @@ st.markdown("""
         background: transparent !important;
     }
 
-    /* Nav Brand */
+    /* Nav Brand with Gradient */
     .nav-brand {
-        padding: 1rem 1rem 1.5rem 1rem;
+        padding: 1.25rem 1.5rem 1.75rem 1.5rem;
         border-bottom: 1px solid var(--border-default);
         margin-bottom: 1rem;
+        text-align: center;
     }
 
     .nav-brand h1 {
-        color: var(--text-primary) !important;
-        font-size: 1.5rem !important;
+        font-size: 1.75rem !important;
         font-weight: 700 !important;
         margin: 0 !important;
+        background: linear-gradient(135deg, #FFFFFF 0%, var(--accent-primary) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
 
     .nav-brand p {
         color: var(--text-muted) !important;
         font-size: 0.75rem !important;
-        margin: 0.25rem 0 0 0 !important;
+        margin: 0.35rem 0 0 0 !important;
     }
 
-    /* Sidebar buttons */
+    /* Sidebar Nav Buttons - Transparent with Active Indicator */
     [data-testid="stSidebar"] .stButton > button {
-        background: var(--bg-tertiary) !important;
-        color: var(--text-primary) !important;
-        border: 1px solid var(--border-default) !important;
+        background: transparent !important;
+        color: var(--text-secondary) !important;
+        border: none !important;
         font-weight: 500 !important;
-        border-radius: var(--radius-md) !important;
+        border-radius: 0 var(--radius-md) var(--radius-md) 0 !important;
+        transition: all 0.2s ease !important;
+        padding: 0.75rem 1rem !important;
     }
 
     [data-testid="stSidebar"] .stButton > button:hover {
-        background: var(--bg-elevated) !important;
-        border-color: var(--border-default) !important;
+        background: rgba(255,255,255,0.05) !important;
+        color: var(--text-primary) !important;
     }
 
     [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
-        background: var(--accent-primary) !important;
-        border: none !important;
-        color: var(--bg-primary) !important;
+        background: rgba(25, 154, 245, 0.15) !important;
+        color: var(--accent-primary) !important;
+        border-left: 3px solid var(--accent-primary) !important;
+        font-weight: 600 !important;
     }
 
     [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
-        background: var(--accent-primary-hover) !important;
+        background: rgba(25, 154, 245, 0.2) !important;
     }
 
     [data-testid="stSidebar"] .stTextInput input {
@@ -179,7 +187,7 @@ st.markdown("""
 
     [data-testid="stSidebar"] .stTextInput input:focus {
         border-color: var(--accent-primary) !important;
-        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3) !important;
+        box-shadow: 0 0 0 4px rgba(25, 154, 245, 0.15) !important;
     }
 
     [data-testid="stSidebar"] p,
@@ -205,36 +213,62 @@ st.markdown("""
     }
 
     /* ===========================================
-       DARK CONTENT CARDS
+       CONTENT CARDS - Typefully Style
        =========================================== */
     .content-card {
         background: var(--bg-secondary);
         border-radius: var(--radius-lg);
-        padding: 1.25rem;
+        padding: 1.5rem;
         margin-bottom: 1rem;
         border: 1px solid var(--border-default);
         box-shadow: var(--shadow-sm);
+        transition: all 0.2s ease;
     }
 
     .content-card:hover {
-        border-color: var(--border-default);
+        border-color: rgba(25, 154, 245, 0.3);
         box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
     }
 
     /* Stat Cards */
     .stat-card {
         background: var(--bg-secondary);
         border-radius: var(--radius-lg);
-        padding: 1.25rem;
+        padding: 1.5rem 1.25rem;
         border: 1px solid var(--border-default);
         text-align: center;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.2s ease;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--accent-primary);
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .stat-card:hover::before {
+        opacity: 1;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
     }
 
     .stat-value {
-        font-size: 2rem;
+        font-size: 2.5rem;
         font-weight: 700;
         color: var(--text-primary);
-        line-height: 1.2;
+        line-height: 1;
     }
 
     .stat-label {
@@ -242,65 +276,96 @@ st.markdown("""
         font-weight: 500;
         color: var(--text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-top: 0.25rem;
+        letter-spacing: 0.08em;
+        margin-top: 0.5rem;
     }
 
     .stat-inbox .stat-value { color: var(--accent-warning); }
+    .stat-inbox::before { background: var(--accent-warning); }
     .stat-drafts .stat-value { color: var(--accent-primary); }
+    .stat-drafts::before { background: var(--accent-primary); }
     .stat-ready .stat-value { color: var(--accent-success); }
+    .stat-ready::before { background: var(--accent-success); }
     .stat-published .stat-value { color: var(--text-secondary); }
+    .stat-published::before { background: var(--text-secondary); }
 
     /* ===========================================
-       DARK BUTTONS
+       PILL BUTTONS - Typefully Style
        =========================================== */
     .stButton > button {
         font-family: 'Inter', sans-serif !important;
         font-size: 0.875rem !important;
         font-weight: 500 !important;
-        padding: 0.5rem 1rem !important;
-        border-radius: var(--radius-md) !important;
+        padding: 0.625rem 1.25rem !important;
+        border-radius: var(--radius-pill) !important;
         border: 1px solid var(--border-default) !important;
-        background: var(--bg-tertiary) !important;
+        background: var(--bg-secondary) !important;
         color: var(--text-primary) !important;
-        transition: all 0.15s ease !important;
+        box-shadow: var(--shadow-sm) !important;
+        transition: all 0.2s ease !important;
     }
 
     .stButton > button:hover {
         background: var(--bg-elevated) !important;
-        border-color: var(--accent-primary) !important;
+        border-color: rgba(25, 154, 245, 0.3) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: var(--shadow-md) !important;
     }
 
     .stButton > button[data-testid="baseButton-primary"] {
-        background: var(--accent-primary) !important;
-        color: var(--bg-primary) !important;
-        border: none !important;
+        background: rgba(25, 154, 245, 0.15) !important;
+        color: #199AF5 !important;
+        border: 1px solid rgba(25, 154, 245, 0.3) !important;
+        font-weight: 600 !important;
     }
 
     .stButton > button[data-testid="baseButton-primary"]:hover {
-        background: var(--accent-primary-hover) !important;
+        background: rgba(25, 154, 245, 0.25) !important;
+        box-shadow: none !important;
+        transform: none !important;
     }
 
-    /* Status Badges */
+    /* Status Badges - Typefully Style with Borders */
     .status-badge {
         display: inline-flex;
         align-items: center;
-        padding: 0.25rem 0.75rem;
-        border-radius: 9999px;
-        font-size: 0.7rem;
+        gap: 0.25rem;
+        padding: 0.35rem 0.875rem;
+        border-radius: var(--radius-pill);
+        font-size: 0.65rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.03em;
+        letter-spacing: 0.05em;
     }
 
-    .status-pending { background: rgba(210, 153, 34, 0.2); color: #d29922; }
-    .status-processed { background: rgba(88, 166, 255, 0.2); color: #58a6ff; }
-    .status-approved { background: rgba(63, 185, 80, 0.2); color: #3fb950; }
-    .status-published { background: rgba(110, 118, 129, 0.2); color: #8b949e; }
-    .status-failed { background: rgba(248, 81, 73, 0.2); color: #f85149; }
+    .status-pending {
+        background: rgba(245, 158, 11, 0.15);
+        color: #FBBF24;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .status-processed {
+        background: rgba(25, 154, 245, 0.15);
+        color: #47B1FF;
+        border: 1px solid rgba(25, 154, 245, 0.3);
+    }
+    .status-approved {
+        background: rgba(34, 197, 94, 0.15);
+        color: #4ADE80;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .status-published {
+        background: rgba(155, 163, 174, 0.15);
+        color: #9BA3AE;
+        border: 1px solid rgba(155, 163, 174, 0.3);
+    }
+    .status-failed {
+        background: rgba(239, 68, 68, 0.15);
+        color: #F87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
 
     /* ===========================================
-       DARK FORM ELEMENTS
+       FORM ELEMENTS - Typefully Style
        =========================================== */
     .stTextInput input, .stTextArea textarea {
         font-family: 'Inter', sans-serif !important;
@@ -309,11 +374,14 @@ st.markdown("""
         background: var(--bg-tertiary) !important;
         color: var(--text-primary) !important;
         font-size: 0.875rem !important;
+        padding: 0.75rem 1rem !important;
+        transition: all 0.2s ease !important;
     }
 
     .stTextInput input:focus, .stTextArea textarea:focus {
         border-color: var(--accent-primary) !important;
-        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2) !important;
+        box-shadow: 0 0 0 4px rgba(25, 154, 245, 0.15) !important;
+        background: var(--bg-elevated) !important;
     }
 
     .stTextInput input::placeholder, .stTextArea textarea::placeholder {
@@ -325,6 +393,11 @@ st.markdown("""
         border: 1px solid var(--border-default) !important;
         background: var(--bg-tertiary) !important;
         color: var(--text-primary) !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .stSelectbox > div > div:hover {
+        border-color: rgba(25, 154, 245, 0.3) !important;
     }
 
     .stCheckbox > label {
@@ -332,55 +405,80 @@ st.markdown("""
         color: var(--text-secondary) !important;
     }
 
+    /* Checkbox - Green when checked with white checkmark */
+    /* Streamlit uses label[data-baseweb="checkbox"] > span for the visual checkbox */
+    /* The span gets a background-image SVG checkmark when checked */
+    label[data-baseweb="checkbox"] > span {
+        transition: all 0.15s ease !important;
+    }
+
+    /* When checkbox input is checked (has aria-checked=true), style the preceding span */
+    /* Since CSS can't select previous siblings, we use the label's state */
+    label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > span {
+        background-color: #22C55E !important;
+        border-color: #22C55E !important;
+        background-image: url("data:image/svg+xml,%3Csvg width='17' height='13' viewBox='0 0 17 13' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.50002 12.6L0.400024 6.60002L2.60002 4.40002L6.50002 8.40002L13.9 0.900024L16.1 3.10002L6.50002 12.6Z' fill='white'/%3E%3C/svg%3E") !important;
+    }
+
+    /* Unchecked state - dark background with subtle border */
+    label[data-baseweb="checkbox"]:has(input[aria-checked="false"]) > span {
+        background-color: var(--bg-tertiary) !important;
+        border-color: var(--border-default) !important;
+    }
+
     /* ===========================================
-       PAGE HEADER
+       PAGE HEADER - Typefully Style
        =========================================== */
     .page-header {
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.25rem;
         border-bottom: 1px solid var(--border-default);
     }
 
     .page-title {
-        font-size: 1.5rem;
-        font-weight: 600;
+        font-size: 1.75rem;
+        font-weight: 700;
         color: var(--text-primary);
-        margin: 0 0 0.25rem 0;
+        letter-spacing: -0.025em;
+        margin: 0 0 0.5rem 0;
     }
 
     .page-subtitle {
-        font-size: 0.875rem;
+        font-size: 0.9rem;
+        font-weight: 400;
         color: var(--text-muted);
         margin: 0;
     }
 
     /* ===========================================
-       EMPTY STATE
+       EMPTY STATE - Typefully Style
        =========================================== */
     .empty-state {
         text-align: center;
-        padding: 3rem 2rem;
-        background: var(--bg-secondary);
+        padding: 4rem 2rem;
+        background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
         border-radius: var(--radius-lg);
-        border: 2px dashed var(--border-default);
+        border: 1px solid var(--border-default);
     }
 
     .empty-state-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-        opacity: 0.5;
+        font-size: 4rem;
+        margin-bottom: 1.5rem;
+        opacity: 0.3;
     }
 
     .empty-state-title {
-        font-size: 1.1rem;
+        font-size: 1.25rem;
         font-weight: 600;
         color: var(--text-primary);
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
     }
 
     .empty-state-text {
         color: var(--text-muted);
-        font-size: 0.875rem;
+        font-size: 0.9rem;
+        max-width: 400px;
+        margin: 0 auto;
     }
 
     /* ===========================================
@@ -413,31 +511,34 @@ st.markdown("""
         color: var(--text-secondary);
     }
 
-    /* Queue Item */
+    /* Queue Item - Typefully Style with Slide Animation */
     .queue-item {
         background: var(--bg-secondary);
         border-radius: var(--radius-md);
-        padding: 0.875rem;
-        margin-bottom: 0.5rem;
+        padding: 1rem 1.25rem;
+        margin-bottom: 0.75rem;
         border: 1px solid var(--border-default);
-        transition: all 0.15s ease;
+        transition: all 0.2s ease;
+        cursor: pointer;
     }
 
     .queue-item:hover {
-        border-color: var(--accent-primary);
+        border-color: rgba(25, 154, 245, 0.4);
+        background: var(--bg-tertiary);
         box-shadow: var(--shadow-sm);
+        transform: translateX(4px);
     }
 
     .queue-item-author {
-        font-size: 0.75rem;
+        font-size: 0.8rem;
         font-weight: 600;
         color: var(--text-primary);
+        margin-bottom: 0.35rem;
     }
 
     .queue-item-text {
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         color: var(--text-secondary);
-        margin-top: 0.35rem;
         line-height: 1.5;
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -448,8 +549,8 @@ st.markdown("""
     .queue-item-meta {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        margin-top: 0.5rem;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
         font-size: 0.7rem;
         color: var(--text-muted);
     }
@@ -590,6 +691,47 @@ st.markdown("""
     .stDownloadButton > button:hover {
         background: var(--bg-elevated) !important;
         border-color: var(--accent-primary) !important;
+    }
+
+    /* ===========================================
+       MICRO-ANIMATIONS - Typefully Style
+       =========================================== */
+    * {
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    :focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(25, 154, 245, 0.5) !important;
+    }
+
+    @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+
+    .loading-shimmer {
+        background: linear-gradient(90deg, var(--bg-secondary) 0%, var(--bg-tertiary) 50%, var(--bg-secondary) 100%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-in {
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .pulse {
+        animation: pulse 2s ease-in-out infinite;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -1150,9 +1292,9 @@ def render_scrape(db):
 
     # Main scrape section
     st.markdown("""
-        <div style="background: linear-gradient(135deg, var(--accent-primary) 0%, #7c3aed 100%); padding: 1.5rem; border-radius: 12px; margin-bottom: 1.5rem;">
-            <h3 style="color: #ffffff; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Thread Scraper</h3>
-            <p style="color: rgba(255,255,255,0.8); margin: 0; font-size: 0.85rem;">Paste a thread URL to import. Only the author's tweets will be captured.</p>
+        <div style="background: #14181D; padding: 1.5rem; border-radius: 16px; margin-bottom: 1.5rem;">
+            <h3 style="color: #FFFFFF; margin: 0 0 0.5rem 0; font-size: 1.1rem; font-weight: 600;">Thread Scraper</h3>
+            <p style="color: #9BA3AE; margin: 0; font-size: 0.85rem;">Paste a thread URL to import. Only the author's tweets will be captured.</p>
         </div>
     """, unsafe_allow_html=True)
 
