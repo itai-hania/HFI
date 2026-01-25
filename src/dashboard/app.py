@@ -1,6 +1,6 @@
 """
 HFI Dashboard - Hebrew FinTech Informant
-Modern content management interface inspired by Monday.com
+Dark Mode UI with Simplified Navigation
 """
 
 import streamlit as st
@@ -13,7 +13,8 @@ import time
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from common.models import get_db_session, Tweet, Trend, TrendSource, TweetStatus
+from common.models import get_db_session, Tweet, Trend, Thread, TrendSource, TweetStatus
+import json
 from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
@@ -26,684 +27,342 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Monday.com inspired CSS - Modern, clean, colorful
+# =============================================================================
+# DARK MODE CSS - Full Dark Theme
+# =============================================================================
 st.markdown("""
 <style>
-    /* ============================================
-       MONDAY.COM INSPIRED THEME - LIGHT & COLORFUL
-       ============================================ */
-
-    /* Import Google Fonts */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    /* Base styles */
-    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    /* Dark Mode Design Tokens */
+    :root {
+        --bg-primary: #0d1117;
+        --bg-secondary: #161b22;
+        --bg-tertiary: #21262d;
+        --bg-elevated: #30363d;
+
+        --text-primary: #f0f6fc;
+        --text-secondary: #8b949e;
+        --text-muted: #6e7681;
+
+        --accent-primary: #58a6ff;
+        --accent-primary-hover: #79b8ff;
+        --accent-success: #3fb950;
+        --accent-warning: #d29922;
+        --accent-danger: #f85149;
+
+        --border-default: #30363d;
+        --border-muted: #21262d;
+
+        --shadow-sm: 0 1px 0 rgba(0,0,0,0.4);
+        --shadow-md: 0 3px 6px rgba(0,0,0,0.4);
+        --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+
+        --radius-sm: 6px;
+        --radius-md: 8px;
+        --radius-lg: 12px;
     }
 
-    .main, .main .block-container, [data-testid="stMainBlockContainer"] {
-        background: transparent !important;
-        padding: 1.5rem 2.5rem !important;
-        max-width: 1600px !important;
+    /* Base Dark Background */
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"],
+    .main,
+    .main .block-container,
+    [data-testid="stMainBlockContainer"] {
+        background: var(--bg-primary) !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        color: var(--text-primary) !important;
+    }
+
+    .main .block-container, [data-testid="stMainBlockContainer"] {
+        padding: 1.5rem 2rem !important;
+        max-width: 1400px !important;
     }
 
     /* Hide Streamlit elements */
     #MainMenu, footer, header {visibility: hidden;}
     .stDeployButton {display: none;}
 
-    /* ============================================
-       TYPOGRAPHY
-       ============================================ */
-
+    /* Typography - Light text on dark */
     h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
         font-family: 'Inter', sans-serif !important;
-        font-weight: 700 !important;
-        color: #1e293b !important;
-        letter-spacing: -0.02em !important;
+        font-weight: 600 !important;
+        color: var(--text-primary) !important;
+        letter-spacing: -0.025em !important;
     }
 
-    h1, .stMarkdown h1 {
-        font-size: 1.75rem !important;
-        margin-bottom: 0.5rem !important;
-    }
-
-    h2, .stMarkdown h2 {
-        font-size: 1.25rem !important;
-    }
-
-    h3, .stMarkdown h3 {
-        font-size: 1.1rem !important;
-        color: #334155 !important;
-    }
+    h1, .stMarkdown h1 { font-size: 1.75rem !important; margin-bottom: 0.5rem !important; }
+    h2, .stMarkdown h2 { font-size: 1.25rem !important; }
+    h3, .stMarkdown h3 { font-size: 1rem !important; color: var(--text-secondary) !important; }
 
     p, span, label, .stMarkdown, .stMarkdown p {
         font-family: 'Inter', sans-serif !important;
-        color: #475569 !important;
-        font-size: 0.9rem !important;
+        color: var(--text-secondary) !important;
+        font-size: 0.875rem !important;
         line-height: 1.6 !important;
     }
 
-    /* ============================================
-       SIDEBAR - Clean & Professional
-       ============================================ */
-
+    /* ===========================================
+       DARK SIDEBAR
+       =========================================== */
     [data-testid="stSidebar"],
     [data-testid="stSidebar"] > div,
     [data-testid="stSidebarContent"],
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
-        border-right: 1px solid #e2e8f0 !important;
-        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.03) !important;
+        background: var(--bg-secondary) !important;
+        border-right: 1px solid var(--border-default) !important;
+        width: 240px !important;
+        min-width: 240px !important;
     }
 
     [data-testid="stSidebar"] .block-container {
-        padding: 1.5rem 1rem !important;
+        padding: 1rem 0.75rem !important;
         background: transparent !important;
     }
 
-    [data-testid="stSidebar"] h1,
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 {
-        color: #1e293b !important;
+    /* Nav Brand */
+    .nav-brand {
+        padding: 1rem 1rem 1.5rem 1rem;
+        border-bottom: 1px solid var(--border-default);
+        margin-bottom: 1rem;
+    }
+
+    .nav-brand h1 {
+        color: var(--text-primary) !important;
+        font-size: 1.5rem !important;
+        font-weight: 700 !important;
+        margin: 0 !important;
+    }
+
+    .nav-brand p {
+        color: var(--text-muted) !important;
+        font-size: 0.75rem !important;
+        margin: 0.25rem 0 0 0 !important;
+    }
+
+    /* Sidebar buttons */
+    [data-testid="stSidebar"] .stButton > button {
+        background: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid var(--border-default) !important;
+        font-weight: 500 !important;
+        border-radius: var(--radius-md) !important;
+    }
+
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: var(--bg-elevated) !important;
+        border-color: var(--border-default) !important;
+    }
+
+    [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
+        background: var(--accent-primary) !important;
+        border: none !important;
+        color: var(--bg-primary) !important;
+    }
+
+    [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
+        background: var(--accent-primary-hover) !important;
+    }
+
+    [data-testid="stSidebar"] .stTextInput input {
+        background: var(--bg-tertiary) !important;
+        border: 1px solid var(--border-default) !important;
+        color: var(--text-primary) !important;
+        border-radius: var(--radius-md) !important;
+        font-size: 0.875rem !important;
+    }
+
+    [data-testid="stSidebar"] .stTextInput input::placeholder {
+        color: var(--text-muted) !important;
+    }
+
+    [data-testid="stSidebar"] .stTextInput input:focus {
+        border-color: var(--accent-primary) !important;
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3) !important;
     }
 
     [data-testid="stSidebar"] p,
     [data-testid="stSidebar"] span,
     [data-testid="stSidebar"] label {
-        color: #64748b !important;
+        color: var(--text-secondary) !important;
     }
 
-    /* Sidebar brand header */
-    .sidebar-brand {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-        padding: 1.25rem 1rem;
-        border-radius: 12px;
-        margin-bottom: 1.5rem;
-        text-align: center;
+    [data-testid="stSidebar"] hr {
+        border-color: var(--border-default) !important;
+        margin: 1rem 0 !important;
     }
 
-    .sidebar-brand h2 {
-        color: white !important;
-        margin: 0 !important;
-        font-size: 1.5rem !important;
-        font-weight: 700 !important;
-    }
-
-    .sidebar-brand p {
-        color: rgba(255,255,255,0.85) !important;
-        margin: 0.25rem 0 0 0 !important;
-        font-size: 0.8rem !important;
-    }
-
-    /* Sidebar section headers */
-    .sidebar-section {
-        font-size: 0.7rem !important;
-        font-weight: 600 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.1em !important;
-        color: #94a3b8 !important;
-        margin: 1.25rem 0 0.75rem 0 !important;
-        padding-left: 0.25rem !important;
-    }
-
-    /* ============================================
-       STAT CARDS - Colorful & Modern
-       ============================================ */
-
-    .stat-card {
-        background: white;
-        border-radius: 12px;
-        padding: 1rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
-        border: 1px solid #e2e8f0;
-        transition: all 0.2s ease;
-        margin-bottom: 0.75rem;
-    }
-
-    .stat-card:hover {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-        transform: translateY(-1px);
-    }
-
-    .stat-card-value {
-        font-size: 1.75rem !important;
-        font-weight: 700 !important;
-        color: #1e293b !important;
-        line-height: 1.2 !important;
-    }
-
-    .stat-card-label {
-        font-size: 0.75rem !important;
-        font-weight: 500 !important;
-        color: #64748b !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.05em !important;
-        margin-top: 0.25rem !important;
-    }
-
-    .stat-card-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .stat-pending { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); }
-    .stat-processed { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); }
-    .stat-approved { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); }
-    .stat-published { background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); }
-
-    /* Streamlit metric overrides */
-    [data-testid="stMetricValue"] {
-        font-size: 1.5rem !important;
-        font-weight: 700 !important;
-        color: #1e293b !important;
-    }
-
-    [data-testid="stMetricLabel"] {
-        font-size: 0.7rem !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.05em !important;
-        color: #64748b !important;
-        font-weight: 500 !important;
-    }
-
-    [data-testid="stMetric"], [data-testid="metric-container"] {
-        background: white !important;
-        padding: 0.75rem !important;
-        border-radius: 10px !important;
-        border: 1px solid #e2e8f0 !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
-    }
-
-    /* ============================================
-       BUTTONS - Colorful & Interactive
-       ============================================ */
-
-    .stButton > button {
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.85rem !important;
-        font-weight: 500 !important;
-        padding: 0.5rem 1rem !important;
-        border-radius: 8px !important;
-        border: 1px solid #e2e8f0 !important;
-        background: white !important;
-        color: #475569 !important;
-        transition: all 0.15s ease !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-    }
-
-    .stButton > button:hover {
-        background: #f8fafc !important;
-        border-color: #cbd5e1 !important;
-        color: #1e293b !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
-        transform: translateY(-1px) !important;
-    }
-
-    .stButton > button:active {
-        transform: translateY(0) !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-    }
-
-    .stButton > button:focus {
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
-        border-color: #6366f1 !important;
-    }
-
-    /* Primary button - Purple gradient */
-    .stButton > button[kind="primary"],
-    .stButton > button[data-testid="baseButton-primary"] {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
-        color: white !important;
-        border: none !important;
-        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3) !important;
-    }
-
-    .stButton > button[kind="primary"]:hover,
-    .stButton > button[data-testid="baseButton-primary"]:hover {
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
-        box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4) !important;
-        color: white !important;
-    }
-
-    /* Action button styles */
-    .btn-approve {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-        color: white !important;
-        border: none !important;
-    }
-
-    .btn-danger {
-        background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%) !important;
-        color: white !important;
-        border: none !important;
-    }
-
-    /* ============================================
-       STATUS BADGES - Colorful Pills
-       ============================================ */
-
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.35rem 0.85rem;
-        border-radius: 50px;
-        font-size: 0.75rem;
+    /* Nav Section Label */
+    .nav-section {
+        font-size: 0.65rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.03em;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        letter-spacing: 0.1em;
+        color: var(--text-muted);
+        padding: 1rem 1rem 0.5rem 1rem;
+        margin-top: 0.5rem;
     }
 
-    .status-pending {
-        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-        color: #92400e;
-        border: 1px solid #f59e0b;
-    }
-
-    .status-processed {
-        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-        color: #1e40af;
-        border: 1px solid #3b82f6;
-    }
-
-    .status-approved {
-        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-        color: #065f46;
-        border: 1px solid #10b981;
-    }
-
-    .status-published {
-        background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
-        color: #5b21b6;
-        border: 1px solid #8b5cf6;
-    }
-
-    .status-failed {
-        background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-        color: #991b1b;
-        border: 1px solid #ef4444;
-    }
-
-    /* ============================================
-       CONTENT CARDS - Clean & Modern
-       ============================================ */
-
+    /* ===========================================
+       DARK CONTENT CARDS
+       =========================================== */
     .content-card {
-        background: white;
-        border-radius: 16px;
+        background: var(--bg-secondary);
+        border-radius: var(--radius-lg);
         padding: 1.25rem;
         margin-bottom: 1rem;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 6px 24px rgba(0, 0, 0, 0.03);
-        transition: all 0.2s ease;
+        border: 1px solid var(--border-default);
+        box-shadow: var(--shadow-sm);
     }
 
     .content-card:hover {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.06);
-        border-color: #cbd5e1;
+        border-color: var(--border-default);
+        box-shadow: var(--shadow-md);
     }
 
-    .card-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid #f1f5f9;
+    /* Stat Cards */
+    .stat-card {
+        background: var(--bg-secondary);
+        border-radius: var(--radius-lg);
+        padding: 1.25rem;
+        border: 1px solid var(--border-default);
+        text-align: center;
     }
 
-    .card-author {
-        font-weight: 600;
-        color: #1e293b;
-        font-size: 0.95rem;
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        line-height: 1.2;
     }
 
-    .card-meta {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        color: #94a3b8;
-        font-size: 0.8rem;
-    }
-
-    .card-link {
-        color: #6366f1 !important;
-        text-decoration: none !important;
+    .stat-label {
+        font-size: 0.75rem;
         font-weight: 500;
-        font-size: 0.8rem;
-        transition: color 0.15s ease;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 0.25rem;
     }
 
-    .card-link:hover {
-        color: #4f46e5 !important;
-        text-decoration: underline !important;
-    }
+    .stat-inbox .stat-value { color: var(--accent-warning); }
+    .stat-drafts .stat-value { color: var(--accent-primary); }
+    .stat-ready .stat-value { color: var(--accent-success); }
+    .stat-published .stat-value { color: var(--text-secondary); }
 
-    /* ============================================
-       TEXT AREAS - Refined
-       ============================================ */
-
-    .stTextArea, .stTextArea > div {
-        background-color: transparent !important;
-    }
-
-    .stTextArea textarea {
+    /* ===========================================
+       DARK BUTTONS
+       =========================================== */
+    .stButton > button {
         font-family: 'Inter', sans-serif !important;
-        font-size: 0.9rem !important;
-        line-height: 1.6 !important;
-        border-radius: 10px !important;
-        background: #f8fafc !important;
-        border: 1px solid #e2e8f0 !important;
-        color: #334155 !important;
-        padding: 0.75rem !important;
+        font-size: 0.875rem !important;
+        font-weight: 500 !important;
+        padding: 0.5rem 1rem !important;
+        border-radius: var(--radius-md) !important;
+        border: 1px solid var(--border-default) !important;
+        background: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
         transition: all 0.15s ease !important;
     }
 
-    .stTextArea textarea:focus {
-        border-color: #6366f1 !important;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
-        background: white !important;
+    .stButton > button:hover {
+        background: var(--bg-elevated) !important;
+        border-color: var(--accent-primary) !important;
     }
 
-    .stTextArea textarea::placeholder {
-        color: #94a3b8 !important;
+    .stButton > button[data-testid="baseButton-primary"] {
+        background: var(--accent-primary) !important;
+        color: var(--bg-primary) !important;
+        border: none !important;
     }
 
-    .stTextArea textarea:disabled {
-        background: #f1f5f9 !important;
-        color: #64748b !important;
-        border-color: #e2e8f0 !important;
+    .stButton > button[data-testid="baseButton-primary"]:hover {
+        background: var(--accent-primary-hover) !important;
     }
 
-    /* Text area labels */
-    .text-label {
+    /* Status Badges */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
         font-size: 0.7rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #94a3b8;
-        margin-bottom: 0.35rem;
-        display: flex;
-        align-items: center;
-        gap: 0.35rem;
+        letter-spacing: 0.03em;
     }
 
-    .text-label-en { color: #6366f1; }
-    .text-label-he { color: #10b981; }
+    .status-pending { background: rgba(210, 153, 34, 0.2); color: #d29922; }
+    .status-processed { background: rgba(88, 166, 255, 0.2); color: #58a6ff; }
+    .status-approved { background: rgba(63, 185, 80, 0.2); color: #3fb950; }
+    .status-published { background: rgba(110, 118, 129, 0.2); color: #8b949e; }
+    .status-failed { background: rgba(248, 81, 73, 0.2); color: #f85149; }
 
-    /* ============================================
-       TABS - Modern Style
-       ============================================ */
-
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0.5rem !important;
-        background: transparent !important;
-        border-bottom: 2px solid #e2e8f0 !important;
-        padding: 0 !important;
-    }
-
-    .stTabs [data-baseweb="tab"] {
-        padding: 0.75rem 1.25rem !important;
+    /* ===========================================
+       DARK FORM ELEMENTS
+       =========================================== */
+    .stTextInput input, .stTextArea textarea {
         font-family: 'Inter', sans-serif !important;
-        font-weight: 500 !important;
-        font-size: 0.9rem !important;
-        color: #64748b !important;
-        border-radius: 8px 8px 0 0 !important;
-        border-bottom: 3px solid transparent !important;
-        background: transparent !important;
-        transition: all 0.15s ease !important;
+        border-radius: var(--radius-md) !important;
+        border: 1px solid var(--border-default) !important;
+        background: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
+        font-size: 0.875rem !important;
     }
 
-    .stTabs [data-baseweb="tab"]:hover {
-        color: #475569 !important;
-        background: #f8fafc !important;
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: var(--accent-primary) !important;
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2) !important;
     }
 
-    .stTabs [aria-selected="true"] {
-        color: #6366f1 !important;
-        border-bottom-color: #6366f1 !important;
-        background: white !important;
-        font-weight: 600 !important;
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {
+        color: var(--text-muted) !important;
     }
 
-    .stTabs [data-baseweb="tab-highlight"] {
-        background-color: #6366f1 !important;
+    .stSelectbox > div > div {
+        border-radius: var(--radius-md) !important;
+        border: 1px solid var(--border-default) !important;
+        background: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
     }
-
-    .stTabs [data-baseweb="tab-border"] {
-        display: none !important;
-    }
-
-    /* ============================================
-       SELECT BOXES - Clean Design
-       ============================================ */
-
-    .stSelectbox > div,
-    .stSelectbox > div > div,
-    [data-baseweb="select"] > div {
-        background: white !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-        transition: all 0.15s ease !important;
-    }
-
-    .stSelectbox [data-baseweb="select"]:hover > div {
-        border-color: #cbd5e1 !important;
-    }
-
-    .stSelectbox [data-baseweb="select"] span {
-        color: #475569 !important;
-        font-family: 'Inter', sans-serif !important;
-    }
-
-    .stSelectbox svg {
-        fill: #94a3b8 !important;
-    }
-
-    [data-baseweb="popover"], [data-baseweb="popover"] > div {
-        background: white !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 10px !important;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1) !important;
-    }
-
-    [data-baseweb="menu"] {
-        background: white !important;
-    }
-
-    [role="option"], [data-baseweb="menu"] li {
-        background: white !important;
-        color: #475569 !important;
-        font-family: 'Inter', sans-serif !important;
-        padding: 0.6rem 1rem !important;
-    }
-
-    [role="option"]:hover, [data-baseweb="menu"] li:hover {
-        background: #f8fafc !important;
-    }
-
-    [aria-selected="true"][role="option"] {
-        background: #f1f5f9 !important;
-        color: #6366f1 !important;
-        font-weight: 500 !important;
-    }
-
-    /* ============================================
-       INPUT FIELDS - Modern
-       ============================================ */
-
-    .stTextInput > div {
-        background: transparent !important;
-    }
-
-    .stTextInput input {
-        font-family: 'Inter', sans-serif !important;
-        border-radius: 8px !important;
-        background: white !important;
-        border: 1px solid #e2e8f0 !important;
-        color: #334155 !important;
-        font-size: 0.9rem !important;
-        padding: 0.6rem 0.75rem !important;
-        transition: all 0.15s ease !important;
-    }
-
-    .stTextInput input:focus {
-        border-color: #6366f1 !important;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
-    }
-
-    .stTextInput input::placeholder {
-        color: #94a3b8 !important;
-    }
-
-    /* ============================================
-       CHECKBOX - Clean
-       ============================================ */
 
     .stCheckbox > label {
-        color: #475569 !important;
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.85rem !important;
+        font-size: 0.875rem !important;
+        color: var(--text-secondary) !important;
     }
 
-    .stCheckbox [data-testid="stCheckbox"] > div:first-child {
-        background: white !important;
-        border: 2px solid #e2e8f0 !important;
-        border-radius: 4px !important;
+    /* ===========================================
+       PAGE HEADER
+       =========================================== */
+    .page-header {
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border-default);
     }
 
-    .stCheckbox [data-testid="stCheckbox"][aria-checked="true"] > div:first-child {
-        background: #6366f1 !important;
-        border-color: #6366f1 !important;
+    .page-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 0.25rem 0;
     }
 
-    /* ============================================
-       ALERTS & MESSAGES
-       ============================================ */
-
-    .stAlert, [data-testid="stAlert"] {
-        border-radius: 10px !important;
-        border: none !important;
-        font-family: 'Inter', sans-serif !important;
+    .page-subtitle {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin: 0;
     }
 
-    [data-testid="stAlert"][data-baseweb="notification"] {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-    }
-
-    /* Success message */
-    .element-container:has([data-testid="stAlert"]) [kind="success"] {
-        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
-        color: #065f46 !important;
-    }
-
-    /* Info message */
-    .element-container:has([data-testid="stAlert"]) [kind="info"] {
-        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
-        color: #1e40af !important;
-    }
-
-    /* Warning message */
-    .element-container:has([data-testid="stAlert"]) [kind="warning"] {
-        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
-        color: #92400e !important;
-    }
-
-    /* Error message */
-    .element-container:has([data-testid="stAlert"]) [kind="error"] {
-        background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
-        color: #991b1b !important;
-    }
-
-    /* ============================================
-       DIVIDERS & SPACING
-       ============================================ */
-
-    hr {
-        border: none !important;
-        border-top: 1px solid #e2e8f0 !important;
-        margin: 1.25rem 0 !important;
-    }
-
-    .divider-subtle {
-        border-top: 1px solid #f1f5f9 !important;
-        margin: 0.75rem 0 !important;
-    }
-
-    /* ============================================
-       LINKS
-       ============================================ */
-
-    a {
-        color: #6366f1 !important;
-        text-decoration: none !important;
-        transition: color 0.15s ease !important;
-    }
-
-    a:hover {
-        color: #4f46e5 !important;
-        text-decoration: underline !important;
-    }
-
-    /* ============================================
-       CAPTIONS & SMALL TEXT
-       ============================================ */
-
-    .stCaption, small, [data-testid="stCaptionContainer"] {
-        color: #94a3b8 !important;
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.75rem !important;
-    }
-
-    /* ============================================
-       SPINNER
-       ============================================ */
-
-    .stSpinner > div {
-        border-color: #6366f1 !important;
-        border-top-color: transparent !important;
-    }
-
-    /* ============================================
-       SCROLLBAR - Subtle
-       ============================================ */
-
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-    }
-
-    /* ============================================
+    /* ===========================================
        EMPTY STATE
-       ============================================ */
-
+       =========================================== */
     .empty-state {
         text-align: center;
         padding: 3rem 2rem;
-        background: white;
-        border-radius: 16px;
-        border: 2px dashed #e2e8f0;
+        background: var(--bg-secondary);
+        border-radius: var(--radius-lg);
+        border: 2px dashed var(--border-default);
     }
 
     .empty-state-icon {
@@ -715,183 +374,230 @@ st.markdown("""
     .empty-state-title {
         font-size: 1.1rem;
         font-weight: 600;
-        color: #475569;
+        color: var(--text-primary);
         margin-bottom: 0.5rem;
     }
 
     .empty-state-text {
-        color: #94a3b8;
-        font-size: 0.9rem;
+        color: var(--text-muted);
+        font-size: 0.875rem;
     }
 
-    /* ============================================
-       ACTION BUTTONS ROW
-       ============================================ */
-
-    .action-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        background: white;
-        color: #64748b;
-        cursor: pointer;
-        transition: all 0.15s ease;
-        font-size: 1rem;
-    }
-
-    .action-btn:hover {
-        background: #f8fafc;
-        border-color: #cbd5e1;
-        color: #475569;
-    }
-
-    .action-btn-save:hover { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
-    .action-btn-approve:hover { background: #d1fae5; border-color: #10b981; color: #065f46; }
-    .action-btn-reset:hover { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
-    .action-btn-delete:hover { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
-
-    /* ============================================
-       PAGE HEADER
-       ============================================ */
-
-    .page-header {
+    /* ===========================================
+       PIPELINE COLUMNS
+       =========================================== */
+    .pipeline-header {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid #e2e8f0;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-md);
+        margin-bottom: 0.75rem;
     }
 
-    .page-title {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #1e293b;
-        margin: 0;
+    .pipeline-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
     }
 
-    .page-subtitle {
-        color: #64748b;
-        font-size: 0.9rem;
-        margin-top: 0.25rem;
-    }
-
-    /* ============================================
-       FILTER BAR
-       ============================================ */
-
-    .filter-bar {
-        background: white;
-        border-radius: 12px;
-        padding: 1rem 1.25rem;
-        margin-bottom: 1.25rem;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    /* ============================================
-       TRENDS LIST
-       ============================================ */
-
-    .trend-item {
-        background: white;
-        border-radius: 10px;
-        padding: 1rem 1.25rem;
-        margin-bottom: 0.5rem;
-        border: 1px solid #e2e8f0;
-        transition: all 0.15s ease;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .trend-item:hover {
-        border-color: #cbd5e1;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    }
-
-    .trend-source {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.25rem 0.6rem;
-        border-radius: 6px;
+    .pipeline-count {
+        background: var(--bg-elevated);
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
         font-size: 0.7rem;
         font-weight: 600;
-        text-transform: uppercase;
-        background: #f1f5f9;
-        color: #64748b;
+        color: var(--text-secondary);
     }
 
-    /* Source colors */
-    .source-x { background: #1e293b; color: white; }
-    .source-reuters { background: #ff6600; color: white; }
-    .source-wsj { background: #0080c6; color: white; }
-    .source-techcrunch { background: #0a9e01; color: white; }
-    .source-bloomberg { background: #472f92; color: white; }
-
-    /* ============================================
-       WIDGET LABELS
-       ============================================ */
-
-    .stWidgetLabel, [data-testid="stWidgetLabel"] {
-        color: #64748b !important;
-        font-family: 'Inter', sans-serif !important;
-        font-weight: 500 !important;
-        font-size: 0.8rem !important;
+    /* Queue Item */
+    .queue-item {
+        background: var(--bg-secondary);
+        border-radius: var(--radius-md);
+        padding: 0.875rem;
+        margin-bottom: 0.5rem;
+        border: 1px solid var(--border-default);
+        transition: all 0.15s ease;
     }
 
-    /* ============================================
-       EXPANDER - Clean
-       ============================================ */
+    .queue-item:hover {
+        border-color: var(--accent-primary);
+        box-shadow: var(--shadow-sm);
+    }
 
+    .queue-item-author {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .queue-item-text {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        margin-top: 0.35rem;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .queue-item-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+
+    /* ===========================================
+       EXPANDER (Dark)
+       =========================================== */
     .streamlit-expanderHeader {
-        background: white !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 10px !important;
-        font-family: 'Inter', sans-serif !important;
+        background: var(--bg-secondary) !important;
+        border: 1px solid var(--border-default) !important;
+        border-radius: var(--radius-md) !important;
         font-weight: 500 !important;
-        color: #475569 !important;
-    }
-
-    .streamlit-expanderHeader:hover {
-        background: #f8fafc !important;
-        border-color: #cbd5e1 !important;
+        color: var(--text-primary) !important;
     }
 
     .streamlit-expanderContent {
-        border: 1px solid #e2e8f0 !important;
+        border: 1px solid var(--border-default) !important;
         border-top: none !important;
-        border-radius: 0 0 10px 10px !important;
-        background: white !important;
+        border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
+        background: var(--bg-secondary) !important;
     }
 
-    /* ============================================
-       COLUMN GAPS
-       ============================================ */
-
-    [data-testid="column"] {
-        background: transparent !important;
+    details summary {
+        color: var(--text-primary) !important;
     }
 
-    /* Fix focus rings */
-    *:focus {
-        outline: none !important;
+    /* ===========================================
+       SCROLLBAR (Dark)
+       =========================================== */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
     }
 
-    *:focus-visible {
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
-        border-color: #6366f1 !important;
+    ::-webkit-scrollbar-track {
+        background: var(--bg-primary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: var(--bg-elevated);
+        border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--text-muted);
+    }
+
+    /* ===========================================
+       ALERTS (Dark)
+       =========================================== */
+    [data-testid="stAlert"] {
+        border-radius: var(--radius-md) !important;
+        border: none !important;
+        background: var(--bg-tertiary) !important;
+    }
+
+    /* ===========================================
+       METRICS (Dark)
+       =========================================== */
+    [data-testid="stMetric"] {
+        background: var(--bg-secondary) !important;
+        padding: 1rem !important;
+        border-radius: var(--radius-lg) !important;
+        border: 1px solid var(--border-default) !important;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+        color: var(--text-primary) !important;
+    }
+
+    [data-testid="stMetricLabel"] {
+        font-size: 0.75rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        color: var(--text-muted) !important;
+    }
+
+    /* ===========================================
+       TABS (Dark)
+       =========================================== */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0;
+        background: var(--bg-secondary);
+        border-radius: var(--radius-md);
+        padding: 4px;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: var(--radius-sm);
+        padding: 0.5rem 1rem;
+    }
+
+    .stTabs [data-baseweb="tab"]:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+
+    .stTabs [aria-selected="true"] {
+        background: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
+    }
+
+    /* ===========================================
+       SLIDER (Dark)
+       =========================================== */
+    .stSlider > div > div > div {
+        background: var(--bg-elevated) !important;
+    }
+
+    .stSlider > div > div > div > div {
+        background: var(--accent-primary) !important;
+    }
+
+    /* ===========================================
+       PROGRESS BAR (Dark)
+       =========================================== */
+    .stProgress > div > div > div {
+        background: var(--bg-elevated) !important;
+    }
+
+    .stProgress > div > div > div > div {
+        background: var(--accent-primary) !important;
+    }
+
+    /* ===========================================
+       DOWNLOAD BUTTON (Dark)
+       =========================================== */
+    .stDownloadButton > button {
+        background: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid var(--border-default) !important;
+    }
+
+    .stDownloadButton > button:hover {
+        background: var(--bg-elevated) !important;
+        border-color: var(--accent-primary) !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
+
+# =============================================================================
+# DATABASE HELPERS
+# =============================================================================
 
 def get_db():
     if 'db' not in st.session_state:
@@ -906,6 +612,7 @@ def get_stats(db):
         'processed': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PROCESSED).scalar() or 0,
         'approved': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.APPROVED).scalar() or 0,
         'published': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PUBLISHED).scalar() or 0,
+        'failed': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.FAILED).scalar() or 0,
     }
 
 
@@ -940,596 +647,724 @@ def delete_tweet(db, tweet_id):
     return False
 
 
-def render_status_badge(status_str):
-    """Render a colorful status badge"""
-    status_lower = status_str.lower()
-    return f'<span class="status-badge status-{status_lower}">{status_str}</span>'
+# =============================================================================
+# SIMPLIFIED NAVIGATION - Only 4 items
+# =============================================================================
+
+def init_navigation():
+    """Initialize navigation state"""
+    if 'current_view' not in st.session_state:
+        st.session_state.current_view = 'home'
 
 
 def render_sidebar(db):
-    """Modern sidebar with stats and quick actions"""
-    with st.sidebar:
-        # Brand header
-        st.markdown("""
-            <div class="sidebar-brand">
-                <h2>HFI</h2>
-                <p>Hebrew FinTech Informant</p>
-            </div>
-        """, unsafe_allow_html=True)
+    """Simplified sidebar with only 4 navigation items"""
 
-        # Stats section
-        st.markdown('<p class="sidebar-section">Dashboard Stats</p>', unsafe_allow_html=True)
-
-        stats = get_stats(db)
-
-        # Stats in a grid
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"""
-                <div class="stat-card">
-                    <div class="stat-card-icon stat-pending">&#9203;</div>
-                    <div class="stat-card-value">{stats['pending']}</div>
-                    <div class="stat-card-label">Pending</div>
-                </div>
-            """, unsafe_allow_html=True)
-            st.markdown(f"""
-                <div class="stat-card">
-                    <div class="stat-card-icon stat-approved">&#10003;</div>
-                    <div class="stat-card-value">{stats['approved']}</div>
-                    <div class="stat-card-label">Approved</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with col2:
-            st.markdown(f"""
-                <div class="stat-card">
-                    <div class="stat-card-icon stat-processed">&#9881;</div>
-                    <div class="stat-card-value">{stats['processed']}</div>
-                    <div class="stat-card-label">Processed</div>
-                </div>
-            """, unsafe_allow_html=True)
-            st.markdown(f"""
-                <div class="stat-card">
-                    <div class="stat-card-icon stat-published">&#10004;</div>
-                    <div class="stat-card-value">{stats['published']}</div>
-                    <div class="stat-card-label">Published</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        # Total items
-        st.markdown(f"""
-            <div style="text-align: center; padding: 0.5rem; background: #f1f5f9; border-radius: 8px; margin-top: 0.5rem;">
-                <span style="color: #64748b; font-size: 0.8rem;">Total Items:</span>
-                <span style="color: #1e293b; font-weight: 700; font-size: 1.1rem; margin-left: 0.5rem;">{stats['total']}</span>
-            </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # Quick Actions
-        st.markdown('<p class="sidebar-section">Quick Actions</p>', unsafe_allow_html=True)
-
-        # Thread Scraper
-        st.markdown("**Scrape Thread**")
-        thread_url = st.text_input(
-            "Thread URL",
-            placeholder="https://x.com/user/status/...",
-            key="thread_url",
-            label_visibility="collapsed"
-        )
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            auto_translate = st.checkbox("Auto-translate", value=True, key="auto_trans")
-        with col2:
-            scrape_btn = st.button("Scrape", key="scrape_btn", use_container_width=True, type="primary")
-
-        if scrape_btn and thread_url:
-            with st.spinner("Scraping thread..."):
-                try:
-                    from scraper.scraper import TwitterScraper
-
-                    async def run():
-                        scraper = TwitterScraper()
-                        try:
-                            await scraper.ensure_logged_in()
-                            tweets_data = await scraper.fetch_thread(thread_url)
-                            return tweets_data
-                        finally:
-                            await scraper.close()
-
-                    tweets_data = asyncio.run(run())
-
-                    # Translate entire thread as one text if requested
-                    translated_texts = {}
-                    if auto_translate and tweets_data:
-                        try:
-                            from processor.processor import ProcessorConfig, TranslationService
-                            config = ProcessorConfig()
-                            translator = TranslationService(config)
-
-                            # Concatenate all tweets for context-aware translation
-                            all_texts = [t['text'] for t in tweets_data]
-                            combined_translation = translator.translate_long_text(all_texts)
-
-                            # Split back by separator
-                            if combined_translation:
-                                parts = combined_translation.split("\n\n---\n\n")
-                                for i, t in enumerate(tweets_data):
-                                    if i < len(parts):
-                                        translated_texts[t['tweet_id']] = parts[i].strip()
-
-                            st.info(f"Translated {len(translated_texts)} tweets")
-                        except Exception as te:
-                            logger.warning(f"Translation failed: {te}")
-                            st.warning(f"Translation failed: {str(te)[:50]}")
-
-                    # Save to database
-                    saved = 0
-                    for t in tweets_data:
-                        if not db.query(Tweet).filter_by(source_url=t['permalink']).first():
-                            media_url = t['media'][0]['src'] if t.get('media') else None
-                            hebrew_draft = translated_texts.get(t['tweet_id'])
-                            status = TweetStatus.PROCESSED if hebrew_draft else TweetStatus.PENDING
-
-                            db.add(Tweet(
-                                source_url=t['permalink'],
-                                original_text=t['text'],
-                                hebrew_draft=hebrew_draft,
-                                status=status,
-                                media_url=media_url,
-                                trend_topic=t.get('author_handle', '')
-                            ))
-                            saved += 1
-                    db.commit()
-
-                    st.success(f"Saved {saved}/{len(tweets_data)} items")
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {str(e)[:100]}")
-
-        st.markdown("---")
-
-        # Fetch buttons
-        st.markdown('<p class="sidebar-section">Fetch Content</p>', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Trends", use_container_width=True):
-                with st.spinner("Fetching trends..."):
-                    try:
-                        from scraper.scraper import TwitterScraper
-                        async def run():
-                            scraper = TwitterScraper()
-                            try:
-                                await scraper.ensure_logged_in()
-                                trends = await scraper.get_trending_topics(limit=5)
-                                for trend in trends:
-                                    db.add(Trend(title=trend['title'], description=trend.get('description', ''), source=TrendSource.X_TWITTER))
-                                db.commit()
-                                return len(trends)
-                            finally:
-                                await scraper.close()
-                        count = asyncio.run(run())
-                        st.success(f"Added {count} trends")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e)[:50])
-
-        with col2:
-            if st.button("News", use_container_width=True):
-                with st.spinner("Fetching news..."):
-                    try:
-                        from scraper.news_scraper import NewsScraper
-                        source_map = {"Reuters": TrendSource.REUTERS, "WSJ": TrendSource.WSJ, "TechCrunch": TrendSource.TECHCRUNCH, "Bloomberg": TrendSource.BLOOMBERG}
-                        scraper = NewsScraper()
-                        articles = scraper.get_latest_news(limit_per_source=5)
-                        count = 0
-                        for article in articles:
-                            source_enum = source_map.get(article['source'])
-                            if source_enum and not db.query(Trend).filter_by(title=article['title']).first():
-                                db.add(Trend(title=article['title'], description=article['description'], source=source_enum, discovered_at=article['discovered_at']))
-                                count += 1
-                        db.commit()
-                        st.success(f"Added {count} articles")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e)[:50])
-
-        st.markdown("---")
-
-        # Bulk Actions
-        st.markdown('<p class="sidebar-section">Bulk Actions</p>', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Approve All", use_container_width=True, help="Approve all processed items"):
-                tweets = db.query(Tweet).filter(Tweet.status == TweetStatus.PROCESSED).all()
-                count = 0
-                for t in tweets:
-                    if t.hebrew_draft:
-                        t.status = TweetStatus.APPROVED
-                        count += 1
-                db.commit()
-                if count > 0:
-                    st.success(f"Approved {count} items")
-                st.rerun()
-        with col2:
-            if st.button("Clear Pending", use_container_width=True, help="Delete all pending items"):
-                count = db.query(Tweet).filter(Tweet.status == TweetStatus.PENDING).delete()
-                db.commit()
-                if count > 0:
-                    st.info(f"Cleared {count} items")
-                st.rerun()
-
-        st.markdown("---")
-
-        # Footer
-        st.markdown(f"""
-            <div style="text-align: center; padding: 0.5rem;">
-                <span style="color: #94a3b8; font-size: 0.75rem;">
-                    Last refresh: {datetime.now().strftime('%H:%M:%S')}
-                </span>
-            </div>
-        """, unsafe_allow_html=True)
-
-        if st.button("Refresh Dashboard", use_container_width=True):
-            st.rerun()
-
-
-def render_content_card(tweet, db, idx):
-    """Render a modern content card"""
-    status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
-    status_lower = status_str.lower()
-
-    # Card container with custom HTML
-    st.markdown(f"""
-        <div class="content-card">
-            <div class="card-header">
-                <div>
-                    <span class="card-author">{tweet.trend_topic or 'Unknown Source'}</span>
-                    <span style="margin-left: 12px;">{render_status_badge(status_str)}</span>
-                </div>
-                <div class="card-meta">
-                    <span>{tweet.created_at.strftime('%b %d, %Y at %H:%M')}</span>
-                    <a href="{tweet.source_url}" target="_blank" class="card-link">View Original</a>
-                </div>
-            </div>
+    # Brand header
+    st.markdown("""
+        <div class="nav-brand">
+            <h1>HFI</h1>
+            <p>Hebrew FinTech Informant</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Content columns for English and Hebrew
+    # SIMPLIFIED NAVIGATION - Only 4 items
+    nav_items = [
+        ('home', 'Home'),
+        ('content', 'Content'),
+        ('scrape', 'Scrape'),
+        ('settings', 'Settings'),
+    ]
+
+    for key, label in nav_items:
+        is_active = st.session_state.current_view == key
+        if st.button(
+            label,
+            key=f"nav_{key}",
+            use_container_width=True,
+            type="primary" if is_active else "secondary"
+        ):
+            st.session_state.current_view = key
+            st.rerun()
+
+    st.markdown("---")
+
+    # Quick stats
+    stats = get_stats(db)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Inbox", stats['pending'])
+    with col2:
+        st.metric("Ready", stats['approved'])
+
+
+# =============================================================================
+# HOME VIEW (Dashboard)
+# =============================================================================
+
+def render_home(db):
+    """Home dashboard with stats overview"""
+
+    st.markdown("""
+        <div class="page-header">
+            <h1 class="page-title">Dashboard</h1>
+            <p class="page-subtitle">Overview of your content pipeline</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    stats = get_stats(db)
+
+    # Pipeline stats
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.markdown(f"""
+            <div class="stat-card stat-inbox">
+                <div class="stat-value">{stats['pending']}</div>
+                <div class="stat-label">Inbox</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+            <div class="stat-card stat-drafts">
+                <div class="stat-value">{stats['processed']}</div>
+                <div class="stat-label">Drafts</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+            <div class="stat-card stat-ready">
+                <div class="stat-value">{stats['approved']}</div>
+                <div class="stat-label">Ready</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col4:
+        st.markdown(f"""
+            <div class="stat-card stat-published">
+                <div class="stat-value">{stats['published']}</div>
+                <div class="stat-label">Published</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Quick actions
+    st.markdown("### Quick Actions")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if st.button("Translate All Pending", use_container_width=True, disabled=stats['pending'] == 0):
+            st.session_state.current_view = 'content'
+            st.session_state.auto_translate = True
+            st.rerun()
+
+    with col2:
+        if st.button("Approve All Reviewed", use_container_width=True, disabled=stats['processed'] == 0):
+            count = db.query(Tweet).filter(
+                Tweet.status == TweetStatus.PROCESSED,
+                Tweet.hebrew_draft.isnot(None)
+            ).update({Tweet.status: TweetStatus.APPROVED})
+            db.commit()
+            st.success(f"Approved {count} items")
+            time.sleep(1)
+            st.rerun()
+
+    with col3:
+        if st.button("Scrape New Content", use_container_width=True):
+            st.session_state.current_view = 'scrape'
+            st.rerun()
+
+    st.markdown("---")
+
+    # Recent activity
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown('<p class="text-label text-label-en">English (Original)</p>', unsafe_allow_html=True)
-        st.text_area(
-            "English",
-            value=tweet.original_text,
-            height=100,
-            disabled=True,
-            key=f"en_{tweet.id}",
-            label_visibility="collapsed"
-        )
+        st.markdown("### Recent Items")
+        recent = db.query(Tweet).order_by(Tweet.created_at.desc()).limit(5).all()
+
+        if recent:
+            for tweet in recent:
+                status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
+                st.markdown(f"""
+                    <div class="queue-item">
+                        <div class="queue-item-author">{tweet.trend_topic or 'Unknown'}</div>
+                        <div class="queue-item-text">{tweet.original_text[:100]}...</div>
+                        <div class="queue-item-meta">
+                            <span class="status-badge status-{status_str.lower()}">{status_str}</span>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No items yet. Scrape some content to get started.")
 
     with col2:
-        st.markdown('<p class="text-label text-label-he">Hebrew (Translation)</p>', unsafe_allow_html=True)
-        hebrew_text = st.text_area(
-            "Hebrew",
-            value=tweet.hebrew_draft or "",
-            height=100,
-            key=f"he_{tweet.id}",
-            label_visibility="collapsed",
-            placeholder="Enter Hebrew translation..."
-        )
+        st.markdown("### Pipeline Status")
 
-    # Action buttons
-    cols = st.columns([1, 1, 1, 1, 1, 4])
+        total = stats['total'] or 1
 
-    with cols[0]:
-        if st.button("Save", key=f"s_{tweet.id}", help="Save changes", use_container_width=True):
-            update_tweet(db, tweet.id, hebrew_draft=hebrew_text)
-            st.success("Saved!")
-            time.sleep(0.5)
-            st.rerun()
+        stages = [
+            ('Inbox', stats['pending'], 'var(--accent-warning)'),
+            ('Drafts', stats['processed'], 'var(--accent-primary)'),
+            ('Ready', stats['approved'], 'var(--accent-success)'),
+            ('Published', stats['published'], 'var(--text-muted)'),
+        ]
 
-    with cols[1]:
-        if st.button("Approve", key=f"a_{tweet.id}", help="Approve for publishing", type="primary", use_container_width=True):
-            update_tweet(db, tweet.id, status=TweetStatus.APPROVED, hebrew_draft=hebrew_text)
-            st.success("Approved!")
-            time.sleep(0.5)
-            st.rerun()
+        for label, count, color in stages:
+            pct = (count / total) * 100 if total > 0 else 0
+            st.markdown(f"""
+                <div style="margin-bottom: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                        <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-primary);">{label}</span>
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">{count}</span>
+                    </div>
+                    <div style="background: var(--bg-elevated); border-radius: 4px; height: 8px; overflow: hidden;">
+                        <div style="background: {color}; width: {pct}%; height: 100%; border-radius: 4px;"></div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
-    with cols[2]:
-        if st.button("Reset", key=f"r_{tweet.id}", help="Reset to pending", use_container_width=True):
-            update_tweet(db, tweet.id, status=TweetStatus.PENDING)
-            st.rerun()
-
-    with cols[3]:
-        if st.button("Reprocess", key=f"rp_{tweet.id}", help="Clear translation and reprocess", use_container_width=True):
-            update_tweet(db, tweet.id, status=TweetStatus.PENDING, hebrew_draft=None)
-            st.rerun()
-
-    with cols[4]:
-        if st.button("Delete", key=f"d_{tweet.id}", help="Delete this item", use_container_width=True):
-            delete_tweet(db, tweet.id)
-            st.rerun()
-
-    st.markdown("<hr class='divider-subtle'>", unsafe_allow_html=True)
+        if stats['failed'] > 0:
+            st.warning(f"{stats['failed']} items failed processing")
 
 
-def render_content_view(db):
-    """Main content view with filter bar and cards"""
+# =============================================================================
+# CONTENT VIEW (Queue + Editor)
+# =============================================================================
 
-    # Page header
+def render_content(db):
+    """Content view with list and editor"""
+
     st.markdown("""
         <div class="page-header">
-            <div>
-                <h1 class="page-title">Content Queue</h1>
-                <p class="page-subtitle">Review, edit, and approve translations</p>
-            </div>
+            <h1 class="page-title">Content</h1>
+            <p class="page-subtitle">View, edit, and manage your tweets</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Filter bar
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    # Auto-translate if triggered
+    if st.session_state.get('auto_translate'):
+        st.session_state.auto_translate = False
+        run_batch_translate(db)
+
+    # Initialize selected item state
+    if 'selected_item' not in st.session_state:
+        st.session_state.selected_item = None
+
+    stats = get_stats(db)
+
+    # Quick actions bar
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
     with col1:
-        status_filter = st.selectbox(
-            "Filter by Status",
-            ['all', 'pending', 'processed', 'approved', 'published'],
-            format_func=lambda x: x.capitalize() if x != 'all' else 'All Statuses',
-            label_visibility="collapsed"
-        )
+        if st.button("Translate All", use_container_width=True, disabled=stats['pending'] == 0):
+            run_batch_translate(db)
 
     with col2:
-        limit = st.selectbox(
-            "Items per page",
-            [25, 50, 100],
-            index=0,
-            format_func=lambda x: f"Show {x}",
-            label_visibility="collapsed"
-        )
+        if st.button("Approve All", use_container_width=True, disabled=stats['processed'] == 0):
+            count = db.query(Tweet).filter(
+                Tweet.status == TweetStatus.PROCESSED,
+                Tweet.hebrew_draft.isnot(None)
+            ).update({Tweet.status: TweetStatus.APPROVED})
+            db.commit()
+            if count > 0:
+                st.success(f"Approved {count}")
+                time.sleep(0.5)
+                st.rerun()
 
     with col3:
-        sort_order = st.selectbox(
-            "Sort",
-            ['newest', 'oldest'],
-            format_func=lambda x: "Newest First" if x == 'newest' else "Oldest First",
+        status_filter = st.selectbox(
+            "Filter",
+            ['all', 'pending', 'processed', 'approved', 'published', 'failed'],
             label_visibility="collapsed"
         )
 
     with col4:
-        if st.button("Refresh", use_container_width=True):
-            st.rerun()
+        st.caption(f"Total: {stats['total']} items")
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown("---")
 
-    # Get tweets
-    tweets = get_tweets(db, status_filter=status_filter, limit=limit)
+    # Check if we have a selected item to edit
+    if st.session_state.selected_item:
+        render_editor(db, st.session_state.selected_item)
+        return
+
+    # List view
+    tweets = get_tweets(db, status_filter=status_filter, limit=50)
 
     if not tweets:
         st.markdown("""
             <div class="empty-state">
                 <div class="empty-state-icon">📭</div>
                 <div class="empty-state-title">No content found</div>
-                <div class="empty-state-text">Use the sidebar to scrape threads or fetch news articles</div>
+                <div class="empty-state-text">Scrape some threads to get started</div>
             </div>
         """, unsafe_allow_html=True)
-    else:
-        # Stats bar
+        return
+
+    for tweet in tweets:
+        render_content_item(tweet, db)
+
+
+def render_content_item(tweet, db):
+    """Render a content list item"""
+    status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
+
+    with st.container():
+        col1, col2, col3 = st.columns([4, 1, 1])
+
+        with col1:
+            st.markdown(f"""
+                <div style="padding: 0.5rem 0;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="font-weight: 500; color: var(--text-primary);">{tweet.trend_topic or 'Unknown'}</span>
+                        <span class="status-badge status-{status_str.lower()}">{status_str}</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                        {tweet.original_text[:120]}...
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col2:
+            if tweet.hebrew_draft:
+                st.markdown(f"""
+                    <div style="font-size: 0.75rem; color: var(--accent-success); direction: rtl; text-align: right;">
+                        Translated
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.caption("Not translated")
+
+        with col3:
+            if st.button("Edit", key=f"edit_{tweet.id}", use_container_width=True):
+                st.session_state.selected_item = tweet.id
+                st.rerun()
+
+        st.markdown("<hr style='margin: 0.5rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
+
+
+def render_editor(db, tweet_id):
+    """Full editor for a single tweet"""
+    tweet = db.query(Tweet).filter(Tweet.id == tweet_id).first()
+
+    if not tweet:
+        st.error("Item not found")
+        st.session_state.selected_item = None
+        return
+
+    status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
+
+    # Top navigation
+    col1, col2, col3 = st.columns([1, 3, 1])
+
+    with col1:
+        if st.button("< Back", use_container_width=True):
+            st.session_state.selected_item = None
+            st.rerun()
+
+    with col2:
         st.markdown(f"""
-            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 0.75rem 1rem; background: #f8fafc; border-radius: 8px;">
-                <span style="color: #64748b; font-size: 0.85rem;">Showing <strong style="color: #1e293b;">{len(tweets)}</strong> items</span>
-                <span style="color: #e2e8f0;">|</span>
-                <span style="color: #64748b; font-size: 0.85rem;">Filter: <strong style="color: #1e293b;">{status_filter.capitalize()}</strong></span>
+            <div style="text-align: center; padding: 0.5rem;">
+                <span style="font-weight: 600; font-size: 1rem; color: var(--text-primary);">{tweet.trend_topic or 'Unknown'}</span>
+                <span class="status-badge status-{status_str.lower()}" style="margin-left: 0.75rem;">{status_str}</span>
             </div>
         """, unsafe_allow_html=True)
 
-        # Render content cards
-        for idx, tweet in enumerate(tweets):
-            render_content_card(tweet, db, idx)
+    with col3:
+        if tweet.source_url and tweet.source_url.startswith('http'):
+            st.markdown(f"[View on X]({tweet.source_url})")
 
+    st.markdown("---")
 
-def render_trends_view(db):
-    """Trends and news view"""
+    # Side-by-side content
+    col1, col2 = st.columns(2)
 
-    # Page header
-    col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown("""
-            <div class="page-header">
-                <div>
-                    <h1 class="page-title">Trends & News</h1>
-                    <p class="page-subtitle">Discovered topics from various sources</p>
+            <div style="background: var(--bg-tertiary); padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Original (English)</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.text_area(
+            "Original",
+            value=tweet.original_text,
+            height=250,
+            disabled=True,
+            key="edit_original",
+            label_visibility="collapsed"
+        )
+
+    with col2:
+        st.markdown("""
+            <div style="background: rgba(63, 185, 80, 0.1); padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.75rem; font-weight: 600; color: var(--accent-success); text-transform: uppercase;">Hebrew Translation</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        hebrew = st.text_area(
+            "Hebrew",
+            value=tweet.hebrew_draft or "",
+            height=250,
+            key="edit_hebrew",
+            label_visibility="collapsed",
+            placeholder="Enter Hebrew translation..."
+        )
+
+        # Character count
+        char_count = len(hebrew) if hebrew else 0
+        pct = min((char_count / 280) * 100, 100)
+        bar_color = "var(--accent-success)" if char_count <= 280 else "var(--accent-danger)"
+
+        st.markdown(f"""
+            <div style="margin-top: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">Characters</span>
+                    <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-primary);">{char_count}/280</span>
+                </div>
+                <div style="background: var(--bg-elevated); border-radius: 4px; height: 4px; overflow: hidden;">
+                    <div style="background: {bar_color}; width: {pct}%; height: 100%;"></div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
-    with col2:
-        if st.button("Clear All", use_container_width=True):
-            db.query(Trend).delete()
-            db.commit()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Action buttons
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
+        if st.button("Save", key="ed_save", use_container_width=True, type="primary"):
+            update_tweet(db, tweet.id, hebrew_draft=hebrew)
+            st.success("Saved!")
+            time.sleep(0.5)
             st.rerun()
 
-    trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(50).all()
+    with col2:
+        if st.button("Translate", key="ed_trans", use_container_width=True):
+            with st.spinner("Translating..."):
+                try:
+                    from processor.processor import ProcessorConfig, TranslationService
+                    config = ProcessorConfig()
+                    translator = TranslationService(config)
+                    translation = translator.translate_text(tweet.original_text)
+                    if translation:
+                        update_tweet(db, tweet.id, hebrew_draft=translation, status=TweetStatus.PROCESSED)
+                        st.success("Done!")
+                    else:
+                        st.error("Empty translation")
+                except Exception as e:
+                    st.error(str(e)[:50])
+            time.sleep(0.5)
+            st.rerun()
 
-    if not trends:
-        st.markdown("""
-            <div class="empty-state">
-                <div class="empty-state-icon">📰</div>
-                <div class="empty-state-title">No trends discovered yet</div>
-                <div class="empty-state-text">Click "Trends" or "News" in the sidebar to fetch content</div>
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 0.75rem 1rem; background: #f8fafc; border-radius: 8px;">
-                <span style="color: #64748b; font-size: 0.85rem;">Found <strong style="color: #1e293b;">{len(trends)}</strong> trends</span>
-            </div>
-        """, unsafe_allow_html=True)
+    with col3:
+        if tweet.status != TweetStatus.APPROVED:
+            if st.button("Approve", key="ed_approve", use_container_width=True):
+                update_tweet(db, tweet.id, status=TweetStatus.APPROVED, hebrew_draft=hebrew)
+                st.success("Approved!")
+                time.sleep(0.5)
+                st.session_state.selected_item = None
+                st.rerun()
 
-        for trend in trends:
-            source_str = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
-            source_lower = source_str.lower().replace(' ', '-').replace('_', '-')
+    with col4:
+        if st.button("Reset", key="ed_reset", use_container_width=True):
+            update_tweet(db, tweet.id, status=TweetStatus.PENDING)
+            st.rerun()
 
-            # Map sources to colors
-            source_class = 'source-x'
-            if 'reuters' in source_lower:
-                source_class = 'source-reuters'
-            elif 'wsj' in source_lower:
-                source_class = 'source-wsj'
-            elif 'techcrunch' in source_lower:
-                source_class = 'source-techcrunch'
-            elif 'bloomberg' in source_lower:
-                source_class = 'source-bloomberg'
+    with col5:
+        if st.button("Delete", key="ed_delete", use_container_width=True):
+            delete_tweet(db, tweet.id)
+            st.session_state.selected_item = None
+            st.rerun()
 
-            col1, col2, col3 = st.columns([5, 1, 1])
-            with col1:
-                st.markdown(f"""
-                    <div style="padding: 0.75rem 0;">
-                        <div style="font-weight: 600; color: #1e293b; font-size: 0.95rem; margin-bottom: 0.35rem;">
-                            {trend.title[:100]}{'...' if len(trend.title) > 100 else ''}
-                        </div>
-                        <div style="color: #94a3b8; font-size: 0.8rem;">
-                            {trend.description[:150] if trend.description else 'No description'}{'...' if trend.description and len(trend.description) > 150 else ''}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-            with col2:
-                st.markdown(f'<span class="trend-source {source_class}">{source_str}</span>', unsafe_allow_html=True)
-            with col3:
-                st.markdown(f"""
-                    <span style="color: #94a3b8; font-size: 0.75rem;">
-                        {trend.discovered_at.strftime('%b %d') if trend.discovered_at else '-'}
-                    </span>
-                """, unsafe_allow_html=True)
-
-            st.markdown("<hr class='divider-subtle'>", unsafe_allow_html=True)
+    # Error display
+    if tweet.status == TweetStatus.FAILED and tweet.error_message:
+        st.error(f"Error: {tweet.error_message}")
 
 
-def render_settings_view(db):
-    """Settings and configuration view"""
+def run_batch_translate(db):
+    """Run batch translation"""
+    pending = db.query(Tweet).filter(Tweet.status == TweetStatus.PENDING).all()
+
+    if not pending:
+        st.info("No pending items to translate")
+        return
+
+    progress = st.progress(0)
+    status_text = st.empty()
+
+    try:
+        from processor.processor import ProcessorConfig, TranslationService
+        config = ProcessorConfig()
+        translator = TranslationService(config)
+
+        success = 0
+        for idx, tweet in enumerate(pending):
+            status_text.text(f"Translating {idx + 1}/{len(pending)}...")
+            progress.progress((idx + 1) / len(pending))
+
+            try:
+                translation = translator.translate_text(tweet.original_text)
+                if translation:
+                    tweet.hebrew_draft = translation
+                    tweet.status = TweetStatus.PROCESSED
+                    success += 1
+                else:
+                    tweet.status = TweetStatus.FAILED
+                    tweet.error_message = "Empty translation"
+            except Exception as e:
+                tweet.status = TweetStatus.FAILED
+                tweet.error_message = str(e)[:500]
+
+            db.commit()
+
+        progress.empty()
+        status_text.empty()
+        st.success(f"Translated {success}/{len(pending)} items")
+        time.sleep(1)
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"Error: {str(e)[:100]}")
+
+
+# =============================================================================
+# SCRAPE VIEW
+# =============================================================================
+
+def render_scrape(db):
+    """Scrape content from X"""
 
     st.markdown("""
         <div class="page-header">
-            <div>
-                <h1 class="page-title">Settings</h1>
-                <p class="page-subtitle">Database management and configuration</p>
-            </div>
+            <h1 class="page-title">Scrape</h1>
+            <p class="page-subtitle">Import threads from X/Twitter</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Main scrape section
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, var(--accent-primary) 0%, #7c3aed 100%); padding: 1.5rem; border-radius: 12px; margin-bottom: 1.5rem;">
+            <h3 style="color: #ffffff; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Thread Scraper</h3>
+            <p style="color: rgba(255,255,255,0.8); margin: 0; font-size: 0.85rem;">Paste a thread URL to import. Only the author's tweets will be captured.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    url = st.text_input(
+        "Thread URL",
+        placeholder="https://x.com/user/status/1234567890",
+        key="scrape_url",
+        label_visibility="collapsed"
+    )
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        add_to_queue = st.checkbox("Add directly to Content queue", value=True)
+
+    with col2:
+        if st.button("Scrape Thread", type="primary", use_container_width=True):
+            if not url:
+                st.warning("Enter a URL first")
+            else:
+                with st.spinner("Scraping..."):
+                    try:
+                        from scraper.scraper import TwitterScraper
+
+                        progress = st.progress(0, "Connecting...")
+
+                        async def run():
+                            scraper = TwitterScraper()
+                            try:
+                                progress.progress(20, "Logging in...")
+                                await scraper.ensure_logged_in()
+                                progress.progress(40, "Fetching thread...")
+                                # Use author_only=True to get only the thread author's tweets
+                                return await scraper.fetch_raw_thread(url, author_only=True)
+                            finally:
+                                await scraper.close()
+
+                        result = asyncio.run(run())
+                        tweets_data = result.get('tweets', [])
+                        progress.progress(80, "Saving...")
+
+                        if add_to_queue:
+                            # Add directly to Content queue
+                            saved = 0
+                            for t in tweets_data:
+                                permalink = t.get('permalink', '')
+                                if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
+                                    media_url = t['media'][0]['src'] if t.get('media') else None
+                                    db.add(Tweet(
+                                        source_url=permalink,
+                                        original_text=t.get('text', ''),
+                                        status=TweetStatus.PENDING,
+                                        media_url=media_url,
+                                        trend_topic=t.get('author_handle', '')
+                                    ))
+                                    saved += 1
+                            db.commit()
+                            progress.progress(100, "Done!")
+                            st.success(f"Added {saved} tweets to Content queue")
+                        else:
+                            # Store as thread
+                            existing = db.query(Thread).filter_by(source_url=url).first()
+                            if existing:
+                                existing.raw_json = json.dumps(tweets_data)
+                                existing.tweet_count = len(tweets_data)
+                                existing.updated_at = datetime.now(timezone.utc)
+                            else:
+                                thread = Thread(
+                                    source_url=url,
+                                    author_handle=result.get('author_handle', ''),
+                                    author_name=result.get('author_name', ''),
+                                    raw_json=json.dumps(tweets_data),
+                                    tweet_count=len(tweets_data),
+                                    status=TweetStatus.PENDING
+                                )
+                                db.add(thread)
+                            db.commit()
+                            progress.progress(100, "Done!")
+                            st.success(f"Saved thread with {len(tweets_data)} tweets")
+
+                        time.sleep(1)
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Scrape failed: {str(e)[:100]}")
+
+    st.markdown("---")
+
+    # Recent scrapes
+    st.markdown("### Recent Scrapes")
+
+    recent_tweets = db.query(Tweet).order_by(Tweet.created_at.desc()).limit(10).all()
+
+    if recent_tweets:
+        for tweet in recent_tweets:
+            status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
+            st.markdown(f"""
+                <div style="background: var(--bg-secondary); padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; border: 1px solid var(--border-default);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 500; color: var(--text-primary);">@{tweet.trend_topic or 'Unknown'}</span>
+                        <span class="status-badge status-{status_str.lower()}">{status_str}</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                        {tweet.original_text[:100]}...
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("No content scraped yet. Enter a thread URL above to get started.")
+
+
+# =============================================================================
+# SETTINGS VIEW
+# =============================================================================
+
+def render_settings(db):
+    """Settings and configuration"""
+
+    st.markdown("""
+        <div class="page-header">
+            <h1 class="page-title">Settings</h1>
+            <p class="page-subtitle">Configuration and database management</p>
         </div>
     """, unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
 
     with col1:
-        # Database stats card
-        st.markdown("""
-            <div class="content-card">
-                <h3 style="margin-top: 0; margin-bottom: 1rem;">Database Overview</h3>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown("### Database Stats")
 
         tweet_count = db.query(Tweet).count()
+        thread_count = db.query(Thread).count()
         trend_count = db.query(Trend).count()
 
-        st.markdown(f"""
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
-                <div class="stat-card">
-                    <div class="stat-card-value">{tweet_count}</div>
-                    <div class="stat-card-label">Total Tweets</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-card-value">{trend_count}</div>
-                    <div class="stat-card-label">Total Trends</div>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+        st.metric("Total Tweets", tweet_count)
+        st.metric("Total Threads", thread_count)
+        st.metric("Total Trends", trend_count)
 
-        # Danger zone
-        st.markdown("""
-            <div class="content-card" style="border-color: #fecaca;">
-                <h3 style="margin-top: 0; margin-bottom: 1rem; color: #dc2626;">Danger Zone</h3>
-                <p style="color: #64748b; font-size: 0.85rem; margin-bottom: 1rem;">These actions cannot be undone. Please proceed with caution.</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown("---")
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("Delete All Tweets", use_container_width=True):
-                db.query(Tweet).delete()
-                db.commit()
-                st.success("All tweets deleted successfully")
-                time.sleep(1)
-                st.rerun()
+        st.markdown("### Danger Zone")
+        st.warning("These actions cannot be undone")
 
-        with col_b:
-            if st.button("Delete All Trends", use_container_width=True):
-                db.query(Trend).delete()
-                db.commit()
-                st.success("All trends deleted successfully")
-                time.sleep(1)
-                st.rerun()
+        if st.button("Delete All Tweets", use_container_width=True):
+            db.query(Tweet).delete()
+            db.commit()
+            st.success("Deleted all tweets")
+            time.sleep(1)
+            st.rerun()
+
+        if st.button("Delete All Threads", use_container_width=True):
+            db.query(Thread).delete()
+            db.commit()
+            st.success("Deleted all threads")
+            time.sleep(1)
+            st.rerun()
 
     with col2:
-        # Status guide
+        st.markdown("### Status Guide")
+
+        statuses = [
+            ('PENDING', 'Inbox - awaiting translation'),
+            ('PROCESSED', 'Drafted - needs review'),
+            ('APPROVED', 'Ready - approved for publishing'),
+            ('PUBLISHED', 'Published - posted to X'),
+            ('FAILED', 'Failed - error occurred'),
+        ]
+
+        for status, desc in statuses:
+            st.markdown(f"""
+                <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0;">
+                    <span class="status-badge status-{status.lower()}">{status}</span>
+                    <span style="color: var(--text-secondary); font-size: 0.85rem;">{desc}</span>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        st.markdown("### Workflow")
         st.markdown("""
-            <div class="content-card">
-                <h3 style="margin-top: 0; margin-bottom: 1rem;">Status Guide</h3>
-            </div>
-        """, unsafe_allow_html=True)
+        1. **Scrape** - Fetch threads from X
+        2. **Translate** - Auto or manual translation
+        3. **Review** - Edit and approve drafts
+        4. **Publish** - Post to X (coming soon)
+        """)
 
-        st.markdown(f"""
-            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    {render_status_badge('PENDING')}
-                    <span style="color: #64748b;">Awaiting translation processing</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    {render_status_badge('PROCESSED')}
-                    <span style="color: #64748b;">Translated, needs human review</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    {render_status_badge('APPROVED')}
-                    <span style="color: #64748b;">Reviewed and ready to publish</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    {render_status_badge('PUBLISHED')}
-                    <span style="color: #64748b;">Successfully posted to X</span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
 
-        st.markdown("<hr>", unsafe_allow_html=True)
-
-        # Workflow info
-        st.markdown("""
-            <div class="content-card">
-                <h3 style="margin-top: 0; margin-bottom: 1rem;">Workflow</h3>
-                <div style="color: #64748b; font-size: 0.9rem; line-height: 1.8;">
-                    <p><strong>1. Scrape</strong> - Fetch threads from X or news articles</p>
-                    <p><strong>2. Process</strong> - Auto-translate to Hebrew</p>
-                    <p><strong>3. Review</strong> - Edit and approve translations</p>
-                    <p><strong>4. Publish</strong> - Post approved content to X</p>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
+# =============================================================================
+# MAIN
+# =============================================================================
 
 def main():
     db = get_db()
+    init_navigation()
 
-    # Render sidebar
-    render_sidebar(db)
+    # Sidebar with simplified navigation
+    with st.sidebar:
+        render_sidebar(db)
 
-    # Main content with tabs
-    tab1, tab2, tab3 = st.tabs(["Content", "Trends", "Settings"])
+    # Main content based on current view
+    view = st.session_state.current_view
 
-    with tab1:
-        render_content_view(db)
-
-    with tab2:
-        render_trends_view(db)
-
-    with tab3:
-        render_settings_view(db)
+    if view == 'home':
+        render_home(db)
+    elif view == 'content':
+        render_content(db)
+    elif view == 'scrape':
+        render_scrape(db)
+    elif view == 'settings':
+        render_settings(db)
+    else:
+        render_home(db)
 
 
 if __name__ == "__main__":

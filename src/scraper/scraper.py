@@ -393,18 +393,149 @@ class TwitterScraper:
             logger.error(f"❌ Failed to search tweets: {e}")
             return []
 
+    async def fetch_raw_thread(self, thread_url: str, max_scroll_attempts: int = 20, author_only: bool = True) -> Dict:
+        """
+        Fetches a thread from X. By default, filters to only the author's consecutive tweets.
+
+        A THREAD is defined as consecutive tweets by the SAME author.
+        When author_only=True (default):
+        - Starts from the root tweet
+        - Collects consecutive tweets by the same author
+        - Stops when encountering a tweet from a different author
+
+        Args:
+            thread_url: URL of the main tweet
+            max_scroll_attempts: Max number of scroll actions (default: 20)
+            author_only: If True (default), only return author's consecutive tweets.
+                        If False, return all tweets including replies.
+
+        Returns:
+            Dict with thread metadata and tweets:
+            {
+                'source_url': str,
+                'author_handle': str,
+                'author_name': str,
+                'tweet_count': int,
+                'tweets': List[Dict],
+                'scraped_at': str
+            }
+        """
+        mode = "AUTHOR ONLY" if author_only else "ALL (raw)"
+        logger.info(f"🧵 Fetching thread ({mode}): {thread_url}")
+
+        if not self.page:
+            await self.ensure_logged_in()
+
+        try:
+            # Capture video streams
+            self.video_streams = {}
+
+            async def handle_response(response: Response):
+                url = response.url
+                if "video.twimg.com" in url and (".mp4" in url or ".m3u8" in url):
+                    self.video_streams[url] = url
+
+            self.page.on("response", handle_response)
+
+            await self.page.goto(thread_url, timeout=60000)
+
+            if "login" in self.page.url or "signin" in self.page.url:
+                raise Exception("Not authenticated - redirected to login.")
+
+            await self.page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
+
+            target_handle = self._extract_handle_from_url(thread_url)
+
+            # Scroll and collect tweets
+            all_tweets = await self._scroll_and_collect_all(max_scroll_attempts)
+
+            # Cleanup listener
+            self.page.remove_listener("response", handle_response)
+
+            # Filter to author's consecutive tweets if author_only=True
+            if author_only and target_handle:
+                filtered_tweets = self.filter_author_tweets_only(all_tweets, target_handle)
+                logger.info(f"   Filtered: {len(all_tweets)} raw -> {len(filtered_tweets)} author tweets")
+                tweets_to_return = filtered_tweets
+            else:
+                tweets_to_return = all_tweets
+
+            # Find author info from first matching tweet
+            author_name = ""
+            for t in tweets_to_return:
+                if t.get('author_handle', '').lower().lstrip('@') == target_handle.lower().lstrip('@'):
+                    author_name = t.get('author_name', '')
+                    break
+
+            result = {
+                'source_url': thread_url,
+                'author_handle': target_handle,
+                'author_name': author_name,
+                'tweet_count': len(tweets_to_return),
+                'tweets': tweets_to_return,
+                'scraped_at': datetime.utcnow().isoformat()
+            }
+
+            logger.info(f"✅ Scraped {len(tweets_to_return)} tweets from thread ({mode})")
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch thread: {e}")
+            raise
+
+    async def _scroll_and_collect_all(self, max_scroll_attempts: int = 50) -> List[Dict]:
+        """Scroll page and collect ALL tweets without filtering."""
+        seen = {}
+        idle_scrolls = 0
+        max_idle = 5
+
+        for attempt in range(max_scroll_attempts):
+            # Expand "Show more replies" buttons
+            await self._expand_replies()
+
+            # Scroll down
+            scroll_distance = random.randint(600, 1000)
+            await self.page.evaluate(f"window.scrollBy(0, {scroll_distance});")
+
+            # Random delay
+            await self._random_delay(1.2, 2.5)
+
+            # Collect tweets
+            new_tweets = await self._collect_tweets_from_page()
+
+            changed = False
+            for tweet in new_tweets:
+                if tweet["tweet_id"] not in seen:
+                    seen[tweet["tweet_id"]] = tweet
+                    changed = True
+
+            # Stop conditions - only when no new content
+            if not changed:
+                idle_scrolls += 1
+                if idle_scrolls >= max_idle:
+                    break
+            else:
+                idle_scrolls = 0
+
+        # Return ALL tweets sorted by timestamp
+        tweets = list(seen.values())
+        tweets.sort(key=lambda t: t.get('timestamp') or '')
+        return tweets
+
     async def fetch_thread(self, thread_url: str, max_scroll_attempts: int = 50) -> List[Dict]:
         """
         Fetches a thread from X using authenticated browser session.
-        
+        NOTE: This method FILTERS to only author's consecutive tweets.
+        For raw unfiltered data, use fetch_raw_thread() instead.
+
         Args:
             thread_url: URL of the main tweet
             max_scroll_attempts: Max number of scroll actions
-            
+
         Returns:
-            List of tweet dictionaries
+            List of tweet dictionaries (filtered to author only)
         """
-        logger.info(f"🧵 Fetching thread: {thread_url}")
+        logger.info(f"🧵 Fetching thread (FILTERED): {thread_url}")
         
         if not self.page:
             await self.ensure_logged_in()

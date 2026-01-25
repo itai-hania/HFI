@@ -257,6 +257,108 @@ class Tweet(Base):
         }
 
 
+class Thread(Base):
+    """
+    Stores complete thread data as raw JSON for later processing.
+
+    This model stores the ENTIRE thread without filtering, allowing
+    users to view the complete context before deciding what to translate.
+
+    Workflow:
+    1. Scraper fetches thread and stores raw JSON
+    2. User views thread in dashboard
+    3. User selects which tweets to translate/publish
+    """
+    __tablename__ = 'threads'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    source_url = Column(
+        String(512),
+        nullable=False,
+        unique=True,
+        comment="Original thread URL"
+    )
+
+    author_handle = Column(
+        String(256),
+        nullable=True,
+        index=True,
+        comment="Thread author's handle"
+    )
+
+    author_name = Column(
+        String(256),
+        nullable=True,
+        comment="Thread author's display name"
+    )
+
+    raw_json = Column(
+        Text,
+        nullable=False,
+        comment="Complete thread data as JSON (all tweets, replies, media)"
+    )
+
+    tweet_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Number of tweets in thread"
+    )
+
+    status = Column(
+        SQLEnum(TweetStatus),
+        nullable=False,
+        default=TweetStatus.PENDING,
+        index=True,
+        comment="Processing status"
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+        comment="When thread was scraped"
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        comment="Last modification timestamp"
+    )
+
+    def __repr__(self):
+        return (
+            f"<Thread(id={self.id}, author='{self.author_handle}', "
+            f"tweets={self.tweet_count}, status={self.status.value})>"
+        )
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            'id': self.id,
+            'source_url': self.source_url,
+            'author_handle': self.author_handle,
+            'author_name': self.author_name,
+            'raw_json': self.raw_json,
+            'tweet_count': self.tweet_count,
+            'status': self.status.value,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def get_tweets(self) -> list:
+        """Parse and return the tweets from raw_json."""
+        import json
+        try:
+            return json.loads(self.raw_json) if self.raw_json else []
+        except json.JSONDecodeError:
+            return []
+
+
 class Trend(Base):
     """
     Stores discovered trending topics from various sources.
