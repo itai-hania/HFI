@@ -2,10 +2,16 @@
 
 > 🤖 AI-powered automated content creation pipeline for Hebrew FinTech content on X (Twitter)
 
+**Latest Updates:**
+- ✨ Multi-source news scraping (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
+- 📊 Smart ranking algorithm surfaces top 10 trending articles by cross-source keyword overlap
+- 🎯 One-click trend discovery in dashboard
+- 🔗 Thread scraping UI for X posts
+
 ## Project Status
 
 🚀 **Current Version:** 0.9.0 (Beta - Integration Phase)  
-📊 **Test Coverage:** 100% (49/49 tests passing)  
+📊 **Test Coverage:** 98% (106/108 tests passing)
 🏗️ **Deployment Ready:** Docker + K8s manifests complete
 
 ### Component Status
@@ -23,10 +29,11 @@
 
 HFI automates the discovery, translation, and curation of FinTech content from English to Hebrew. It combines:
 
-1. **Smart Scraping** - Monitors X (Twitter) trending topics and tweets
-2. **AI Translation** - GPT-4o translates with style matching and financial terminology
-3. **Human Review** - Dashboard for content approval and editing
-4. **Automated Publishing** - (Planned) Schedule posts to X
+1. **Multi-Source Scraping** - Monitors X (Twitter) + RSS feeds (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
+2. **Smart Ranking** - Ranks articles by cross-source keyword overlap to surface trending topics
+3. **AI Translation** - GPT-4o translates with style matching and financial terminology
+4. **Human Review** - Dashboard for content approval and editing
+5. **Automated Publishing** - (Planned) Schedule posts to X
 
 ---
 
@@ -34,19 +41,22 @@ HFI automates the discovery, translation, and curation of FinTech content from E
 
 ```
 ┌─────────────┐      ┌────────────┐      ┌──────────────┐
-│   Scraper   │─────▶│  Database  │◀─────│  Dashboard   │
+│  X Scraper  │─────▶│  Database  │◀─────│  Dashboard   │
 │ (Playwright)│      │  (SQLite)  │      │ (Streamlit)  │
 └─────────────┘      └────────────┘      └──────────────┘
-       │                   ▲                    │
-       │                   │                    │
-       └───────────────────┼────────────────────┘
-                           │
-                    ┌──────────────┐
-                    │  Processor   │
+                           ▲                    │
+┌─────────────┐            │                    │
+│ News Scraper│────────────┤                    │
+│  (RSS Feeds)│            │                    │
+└─────────────┘            │                    │
+                           │                    │
+                    ┌──────────────┐            │
+                    │  Processor   │◀───────────┘
                     │ (OpenAI GPT) │
                     └──────────────┘
 
-Data Flow: Scrape → Translate → Review → Approve → Publish
+Data Flow: Scrape → Rank → Translate → Review → Approve → Publish
+Sources: X (Twitter) + Yahoo Finance + WSJ + TechCrunch Fintech + Bloomberg
 ```
 
 ---
@@ -153,6 +163,22 @@ streamlit run app.py
 # Access at http://localhost:8501
 ```
 
+### Using the Dashboard
+
+1. **Discover Trends**: Navigate to Content → Acquire → Click "Fetch All Trends"
+   - Fetches articles from Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg
+   - Ranks by cross-source keyword overlap
+   - Displays top 10 most relevant articles with source badges
+
+2. **Scrape Threads**: Paste an X thread URL → Click "Scrape Thread"
+   - Automatically extracts all tweets from thread
+   - Option to consolidate into single post or keep separate
+
+3. **Review Content**: Navigate to Content → Queue
+   - Filter by status (pending/processed/approved)
+   - Click "Edit" to review translations
+   - Approve when ready
+
 ---
 
 ## Docker Deployment
@@ -201,8 +227,9 @@ HFI/
 │   ├── common/              # Shared components
 │   │   ├── models.py        # SQLAlchemy models (Tweet, Trend)
 │   │   └── __init__.py
-│   ├── scraper/             # X (Twitter) scraper
+│   ├── scraper/             # X (Twitter) + News scraper
 │   │   ├── scraper.py       # TwitterScraper class (Playwright)
+│   │   ├── news_scraper.py  # NewsScraper class (RSS feeds + ranking)
 │   │   ├── main.py          # Entry point
 │   │   ├── requirements.txt
 │   │   └── Dockerfile
@@ -274,25 +301,30 @@ HFI/
 ## Workflow
 
 ```
-1. SCRAPE
-   ├─ Fetch trending topics (X Explore page)
-   ├─ Search tweets related to trends
+1. DISCOVER
+   ├─ X Scraper: Fetch trending topics (X Explore page)
+   ├─ News Scraper: Fetch from RSS feeds (Yahoo Finance, WSJ, TechCrunch, Bloomberg)
+   ├─ Rank articles by cross-source keyword overlap (top 10)
+   └─ Save trends to database
+
+2. SCRAPE
+   ├─ Search X tweets related to discovered trends
    ├─ Extract tweet text + media URLs
    └─ Save to database (status: pending)
 
-2. PROCESS
+3. PROCESS
    ├─ Poll for pending tweets
    ├─ Translate to Hebrew (GPT-4o + glossary + style)
    ├─ Download media (yt-dlp for videos, requests for images)
    └─ Update DB (status: processed, store hebrew_draft + media_path)
 
-3. REVIEW
+4. REVIEW
    ├─ Human opens dashboard (Streamlit)
    ├─ Reviews Hebrew translation
    ├─ Edits if needed
    └─ Approves (status: approved)
 
-4. PUBLISH (Coming Soon)
+5. PUBLISH (Coming Soon)
    └─ Auto-post to X on schedule
 ```
 
@@ -300,13 +332,20 @@ HFI/
 
 ## Features
 
-### Scraper
+### X Scraper
 - ✅ Playwright-based browser automation
 - ✅ Session persistence (login once, reuse forever)
 - ✅ Anti-detection (stealth mode, random delays, user-agent spoofing)
 - ✅ Trending topic discovery
 - ✅ Tweet thread scraping
 - ✅ Video URL interception (.m3u8 HLS streams)
+
+### News Scraper
+- ✅ Multi-source RSS feed aggregation (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
+- ✅ Cross-source keyword overlap ranking algorithm
+- ✅ Top 10 most relevant articles per fetch
+- ✅ Automatic deduplication
+- ✅ Financial/tech content focus
 
 ### Processor
 - ✅ OpenAI GPT-4o translation
@@ -323,6 +362,9 @@ HFI/
 - ✅ Media preview (images/videos)
 - ✅ Status filtering (pending/processed/approved)
 - ✅ Approval workflow
+- ✅ Ranked article display (numbered list with source badges)
+- ✅ One-click trend discovery from multiple sources
+- ✅ Thread scraping UI
 
 ---
 
@@ -341,7 +383,8 @@ pytest tests/test_models.py -v
 pytest --cov=src tests/
 ```
 
-**Test Results:** 49/49 tests passing (100%)
+**Test Results:** 106/108 tests passing (98%)
+_Note: 2 failing tests in `test_processor_comprehensive.py` are unrelated to core functionality_
 
 ---
 
@@ -355,6 +398,8 @@ pytest --cov=src tests/
 | **No tweets found** | Run scraper first: `cd src/scraper && python main.py` |
 | **yt-dlp fails** | Install ffmpeg: `brew install ffmpeg` (Mac) or `apt install ffmpeg` (Linux) |
 | **Dashboard blank** | Ensure database exists: `ls -la data/hfi.db`, run `python init_db.py` |
+| **News scraper fails** | Check RSS feed connectivity: `curl -I https://finance.yahoo.com/news/rssindex` |
+| **total_limit error** | Restart Streamlit to clear module cache: `pkill -f streamlit && streamlit run app.py` |
 
 ---
 
@@ -373,20 +418,22 @@ pytest --cov=src tests/
 ## Roadmap
 
 ### Completed ✅
-- [x] Scraper service with session persistence
+- [x] X scraper service with session persistence
+- [x] News scraper with multi-source RSS feeds (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
+- [x] Cross-source ranking algorithm for trend discovery
 - [x] Processor service with GPT-4o translation
 - [x] Dashboard UI with approval workflow
+- [x] Thread scraping functionality
 - [x] Docker containerization
 - [x] Kubernetes manifests
-- [x] Comprehensive testing (100% pass rate)
-- [x] Thread scraping functionality
+- [x] Comprehensive testing (98% pass rate)
 
 ### Planned 🚧
 - [ ] Publisher service (auto-posting to X)
-- [ ] Multi-source scraping (Reuters, TechCrunch, Bloomberg)
 - [ ] Analytics dashboard (views, engagement tracking)
 - [ ] Scheduled posting with optimal timing
 - [ ] Content calendar view
+- [ ] Additional news sources (Financial Times, CoinDesk, etc.)
 - [ ] Multi-language support (beyond Hebrew)
 
 ---

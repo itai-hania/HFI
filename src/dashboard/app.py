@@ -15,8 +15,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from common.models import get_db_session, create_tables, Tweet, Trend, Thread, TrendSource, TweetStatus
 import json
-import re as regex_module
-from collections import Counter
 from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
@@ -367,7 +365,7 @@ st.markdown("""
     }
 
     /* Source Badges */
-    .source-reuters { background: rgba(255, 140, 0, 0.15); color: #FF8C00; border: 1px solid rgba(255, 140, 0, 0.3); }
+    .source-yahoo-finance { background: rgba(155, 89, 182, 0.15); color: #BB86FC; border: 1px solid rgba(155, 89, 182, 0.3); }
     .source-wsj { background: rgba(25, 154, 245, 0.15); color: #47B1FF; border: 1px solid rgba(25, 154, 245, 0.3); }
     .source-techcrunch { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3); }
     .source-bloomberg { background: rgba(155, 89, 182, 0.15); color: #BB86FC; border: 1px solid rgba(155, 89, 182, 0.3); }
@@ -803,80 +801,10 @@ def delete_tweet(db, tweet_id):
 # TREND RANKING
 # =============================================================================
 
-STOPWORDS = {
-    'the', 'a', 'an', 'in', 'on', 'at', 'for', 'of', 'to', 'is', 'are', 'was',
-    'were', 'be', 'been', 'has', 'have', 'had', 'do', 'does', 'did', 'will',
-    'would', 'could', 'should', 'may', 'might', 'can', 'shall', 'and', 'but',
-    'or', 'nor', 'not', 'no', 'so', 'yet', 'both', 'either', 'neither',
-    'each', 'every', 'all', 'any', 'few', 'more', 'most', 'other', 'some',
-    'such', 'than', 'too', 'very', 'just', 'also', 'now', 'new', 'says',
-    'said', 'its', 'it', 'this', 'that', 'these', 'those', 'what', 'which',
-    'who', 'whom', 'how', 'why', 'when', 'where', 'with', 'from', 'by',
-    'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
-    'up', 'down', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
-    'once', 'here', 'there', 'as', 'if', 'while', 'report', 'reports',
-    'according', 'amid', 'among', 'like', 'between', 'against', 'despite',
-}
-
-
-def _extract_keywords(title: str) -> list:
-    """Extract significant words from an article title."""
-    words = regex_module.findall(r"[A-Za-z0-9']+", title.lower())
-    keywords = [w for w in words if w not in STOPWORDS and len(w) > 2]
-    return keywords
-
-
-def rank_trends_cross_source(articles: list) -> list:
-    """
-    Rank trending topics by cross-source frequency.
-    Topics mentioned across 2+ sources rank highest.
-    """
-    # Map: keyword -> list of articles mentioning it
-    keyword_articles = {}
-    for article in articles:
-        keywords = _extract_keywords(article.get('title', ''))
-        seen_kw = set()
-        for kw in keywords:
-            if kw not in seen_kw:
-                seen_kw.add(kw)
-                if kw not in keyword_articles:
-                    keyword_articles[kw] = []
-                keyword_articles[kw].append(article)
-
-    # Score each keyword
-    scored = []
-    for kw, arts in keyword_articles.items():
-        sources = set(a['source'] for a in arts)
-        score = len(sources) * 10 + len(arts)
-        if score > 10:  # Only show topics from 2+ sources or 2+ mentions
-            scored.append({
-                'keyword': kw,
-                'score': score,
-                'source_count': len(sources),
-                'sources': sorted(sources),
-                'articles': arts,
-            })
-
-    # Sort by score descending
-    scored.sort(key=lambda x: x['score'], reverse=True)
-
-    # Deduplicate: if two keywords share >50% of articles, keep higher-scored one
-    final = []
-    used_articles = set()
-    for group in scored:
-        article_ids = frozenset(a.get('url', a['title']) for a in group['articles'])
-        overlap = len(article_ids & used_articles) / max(len(article_ids), 1)
-        if overlap < 0.5:
-            final.append(group)
-            used_articles.update(article_ids)
-
-    return final[:10]  # Top 10 trends
-
-
 def get_source_badge_class(source_name: str) -> str:
     """Return CSS class for a source badge."""
     mapping = {
-        'Reuters': 'source-reuters',
+        'Yahoo Finance': 'source-yahoo-finance',
         'WSJ': 'source-wsj',
         'TechCrunch': 'source-techcrunch',
         'Bloomberg': 'source-bloomberg',
@@ -1164,7 +1092,7 @@ def _render_acquire_section(db):
 
     fcol1, fcol2 = st.columns([3, 1])
     with fcol1:
-        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles from Reuters, WSJ, TechCrunch & Bloomberg and rank by cross-source frequency.</p>', unsafe_allow_html=True)
+        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles from Yahoo Finance, WSJ, TechCrunch Fintech & Bloomberg and rank by cross-source keyword overlap.</p>', unsafe_allow_html=True)
     with fcol2:
         fetch_all = st.button("Fetch All Trends", type="primary", use_container_width=True, key="fetch_all_trends")
 
@@ -1173,17 +1101,17 @@ def _render_acquire_section(db):
             try:
                 from scraper.news_scraper import NewsScraper
                 scraper = NewsScraper()
-                all_news = scraper.get_latest_news(limit_per_source=5)
+                ranked_news = scraper.get_latest_news(limit_per_source=5, total_limit=10)
 
                 # Save to DB with article_url
                 source_map = {
-                    'Reuters': TrendSource.REUTERS,
+                    'Yahoo Finance': TrendSource.YAHOO_FINANCE,
                     'WSJ': TrendSource.WSJ,
                     'TechCrunch': TrendSource.TECHCRUNCH,
                     'Bloomberg': TrendSource.BLOOMBERG,
                 }
                 saved = 0
-                for article in all_news:
+                for article in ranked_news:
                     if not db.query(Trend).filter_by(title=article['title']).first():
                         db.add(Trend(
                             title=article['title'],
@@ -1194,44 +1122,36 @@ def _render_acquire_section(db):
                         saved += 1
                 db.commit()
 
-                # Rank trends
-                ranked = rank_trends_cross_source(all_news)
-                st.session_state.ranked_trends = ranked
-                st.success(f"Fetched {len(all_news)} articles, saved {saved} new trends")
+                st.session_state.ranked_articles = ranked_news
+                st.success(f"Fetched & ranked top {len(ranked_news)} articles, saved {saved} new trends")
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
                 st.error(f"Failed: {str(e)[:150]}")
 
-    # ---- Show Ranked Trends ----
-    ranked = st.session_state.get('ranked_trends', None)
+    # ---- Show Ranked Articles ----
+    ranked = st.session_state.get('ranked_articles', None)
     if ranked:
-        st.markdown("### Trending Topics (Cross-Source)")
-        for group in ranked:
-            source_badges = ' '.join(
-                f'<span class="status-badge {get_source_badge_class(s)}">{s}</span>'
-                for s in group['sources']
-            )
-            articles_html = ''
-            for art in group['articles'][:3]:
-                art_url = art.get('url', '')
-                art_title = art.get('title', '')
-                art_desc = (art.get('description', '') or '')[:100]
-                if art_url:
-                    articles_html += f'<div style="padding: 0.35rem 0; border-bottom: 1px solid var(--border-muted);"><a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.8rem;">{art_title}</a>'
-                else:
-                    articles_html += f'<div style="padding: 0.35rem 0; border-bottom: 1px solid var(--border-muted);"><span style="color: var(--text-primary); font-size: 0.8rem;">{art_title}</span>'
-                if art_desc:
-                    articles_html += f'<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;">{art_desc}</div>'
-                articles_html += '</div>'
+        st.markdown("### Top Articles (Ranked)")
+        for idx, art in enumerate(ranked, 1):
+            art_url = art.get('url', '')
+            art_title = art.get('title', '')
+            art_desc = (art.get('description', '') or '')[:120]
+            art_source = art.get('source', '')
+            badge_cls = get_source_badge_class(art_source)
+            title_html = f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>' if art_url else f'<span style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">{art_title}</span>'
+            desc_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{art_desc}</div>' if art_desc else ''
 
             st.markdown(f"""
-                <div class="content-card">
+                <div class="queue-item">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600; font-size: 1rem; color: var(--text-primary); text-transform: capitalize;">{group['keyword']}</span>
-                        <div>{source_badges}</div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 1.5rem;">#{idx}</span>
+                            {title_html}
+                        </div>
+                        <span class="status-badge {badge_cls}">{art_source}</span>
                     </div>
-                    <div style="margin-top: 0.5rem;">{articles_html}</div>
+                    {desc_html}
                 </div>
             """, unsafe_allow_html=True)
     else:

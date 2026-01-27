@@ -164,7 +164,7 @@ class TestTrendModel:
         trend = Trend(
             title="AI Regulation",
             description="New EU AI Act",
-            source=TrendSource.REUTERS
+            source=TrendSource.YAHOO_FINANCE
         )
         db.add(trend)
         db.commit()
@@ -173,7 +173,7 @@ class TestTrendModel:
 
         assert trend_dict['id'] == trend.id
         assert trend_dict['title'] == "AI Regulation"
-        assert trend_dict['source'] == "Reuters"
+        assert trend_dict['source'] == "Yahoo Finance"
 
 
 class TestHelperFunctions:
@@ -224,7 +224,7 @@ class TestHelperFunctions:
         # Create trends from different sources
         trends_data = [
             ("Trend 1", TrendSource.X_TWITTER),
-            ("Trend 2", TrendSource.REUTERS),
+            ("Trend 2", TrendSource.YAHOO_FINANCE),
             ("Trend 3", TrendSource.X_TWITTER),
             ("Trend 4", TrendSource.TECHCRUNCH),
         ]
@@ -271,7 +271,7 @@ class TestEnums:
     def test_trend_source_enum(self):
         """Test TrendSource enum values."""
         assert TrendSource.X_TWITTER.value == "X"
-        assert TrendSource.REUTERS.value == "Reuters"
+        assert TrendSource.YAHOO_FINANCE.value == "Yahoo Finance"
         assert TrendSource.TECHCRUNCH.value == "TechCrunch"
         assert TrendSource.MANUAL.value == "Manual"
 

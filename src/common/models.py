@@ -121,7 +121,7 @@ class TweetStatus(enum.Enum):
 class TrendSource(enum.Enum):
     """Supported sources for trend discovery."""
     X_TWITTER = "X"
-    REUTERS = "Reuters"
+    YAHOO_FINANCE = "Yahoo Finance"
     WSJ = "WSJ"
     TECHCRUNCH = "TechCrunch"
     BLOOMBERG = "Bloomberg"

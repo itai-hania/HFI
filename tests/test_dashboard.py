@@ -130,7 +130,7 @@ def sample_trends(test_db):
         Trend(
             title="Bitcoin Rally",
             description="Bitcoin reaches new high",
-            source=TrendSource.REUTERS
+            source=TrendSource.YAHOO_FINANCE
         ),
         Trend(
             title="Startup Funding",
