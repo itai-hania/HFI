@@ -324,6 +324,10 @@ CRITICAL RULES - FOLLOW EXACTLY:
 
         return text  # Fallback to original
 
+    def translate_text(self, text: str) -> str:
+        """Alias for backward compatibility with dashboard."""
+        return self.translate_and_rewrite(text)
+
     def translate_long_text(self, texts: List[str]) -> str:
         """
         Translate multiple tweets as one coherent text (for context).

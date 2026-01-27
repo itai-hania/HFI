@@ -390,6 +390,11 @@ class Trend(Base):
         nullable=True,
         comment="Description of what's trending (if available)"
     )
+    article_url = Column(
+        String(1024),
+        nullable=True,
+        comment="Original article URL from source"
+    )
 
     # Source tracking
     source = Column(
@@ -429,6 +434,7 @@ class Trend(Base):
             'id': self.id,
             'title': self.title,
             'description': self.description,
+            'article_url': self.article_url,
             'source': self.source.value,
             'discovered_at': self.discovered_at.isoformat() if self.discovered_at else None,
         }
@@ -458,6 +464,20 @@ def create_tables(drop_existing: bool = False):
 
         logger.info("Creating database tables...")
         Base.metadata.create_all(bind=engine)
+
+        # Safe migration: add article_url column to trends if missing
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE trends ADD COLUMN article_url VARCHAR(1024)"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added article_url column to trends")
+            except Exception:
+                pass  # Column already exists
+
         logger.info(f"Database tables created successfully at: {DATABASE_URL}")
 
     except Exception as e:

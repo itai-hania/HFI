@@ -13,8 +13,10 @@ import time
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from common.models import get_db_session, Tweet, Trend, Thread, TrendSource, TweetStatus
+from common.models import get_db_session, create_tables, Tweet, Trend, Thread, TrendSource, TweetStatus
 import json
+import re as regex_module
+from collections import Counter
 from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
@@ -363,6 +365,14 @@ st.markdown("""
         color: #F87171;
         border: 1px solid rgba(239, 68, 68, 0.3);
     }
+
+    /* Source Badges */
+    .source-reuters { background: rgba(255, 140, 0, 0.15); color: #FF8C00; border: 1px solid rgba(255, 140, 0, 0.3); }
+    .source-wsj { background: rgba(25, 154, 245, 0.15); color: #47B1FF; border: 1px solid rgba(25, 154, 245, 0.3); }
+    .source-techcrunch { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3); }
+    .source-bloomberg { background: rgba(155, 89, 182, 0.15); color: #BB86FC; border: 1px solid rgba(155, 89, 182, 0.3); }
+    .source-manual { background: rgba(155, 163, 174, 0.15); color: #9BA3AE; border: 1px solid rgba(155, 163, 174, 0.3); }
+    .source-x { background: rgba(255, 255, 255, 0.1); color: #E4E6EA; border: 1px solid rgba(255, 255, 255, 0.2); }
 
     /* ===========================================
        FORM ELEMENTS - Typefully Style
@@ -790,7 +800,94 @@ def delete_tweet(db, tweet_id):
 
 
 # =============================================================================
-# SIMPLIFIED NAVIGATION - Only 4 items
+# TREND RANKING
+# =============================================================================
+
+STOPWORDS = {
+    'the', 'a', 'an', 'in', 'on', 'at', 'for', 'of', 'to', 'is', 'are', 'was',
+    'were', 'be', 'been', 'has', 'have', 'had', 'do', 'does', 'did', 'will',
+    'would', 'could', 'should', 'may', 'might', 'can', 'shall', 'and', 'but',
+    'or', 'nor', 'not', 'no', 'so', 'yet', 'both', 'either', 'neither',
+    'each', 'every', 'all', 'any', 'few', 'more', 'most', 'other', 'some',
+    'such', 'than', 'too', 'very', 'just', 'also', 'now', 'new', 'says',
+    'said', 'its', 'it', 'this', 'that', 'these', 'those', 'what', 'which',
+    'who', 'whom', 'how', 'why', 'when', 'where', 'with', 'from', 'by',
+    'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+    'up', 'down', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
+    'once', 'here', 'there', 'as', 'if', 'while', 'report', 'reports',
+    'according', 'amid', 'among', 'like', 'between', 'against', 'despite',
+}
+
+
+def _extract_keywords(title: str) -> list:
+    """Extract significant words from an article title."""
+    words = regex_module.findall(r"[A-Za-z0-9']+", title.lower())
+    keywords = [w for w in words if w not in STOPWORDS and len(w) > 2]
+    return keywords
+
+
+def rank_trends_cross_source(articles: list) -> list:
+    """
+    Rank trending topics by cross-source frequency.
+    Topics mentioned across 2+ sources rank highest.
+    """
+    # Map: keyword -> list of articles mentioning it
+    keyword_articles = {}
+    for article in articles:
+        keywords = _extract_keywords(article.get('title', ''))
+        seen_kw = set()
+        for kw in keywords:
+            if kw not in seen_kw:
+                seen_kw.add(kw)
+                if kw not in keyword_articles:
+                    keyword_articles[kw] = []
+                keyword_articles[kw].append(article)
+
+    # Score each keyword
+    scored = []
+    for kw, arts in keyword_articles.items():
+        sources = set(a['source'] for a in arts)
+        score = len(sources) * 10 + len(arts)
+        if score > 10:  # Only show topics from 2+ sources or 2+ mentions
+            scored.append({
+                'keyword': kw,
+                'score': score,
+                'source_count': len(sources),
+                'sources': sorted(sources),
+                'articles': arts,
+            })
+
+    # Sort by score descending
+    scored.sort(key=lambda x: x['score'], reverse=True)
+
+    # Deduplicate: if two keywords share >50% of articles, keep higher-scored one
+    final = []
+    used_articles = set()
+    for group in scored:
+        article_ids = frozenset(a.get('url', a['title']) for a in group['articles'])
+        overlap = len(article_ids & used_articles) / max(len(article_ids), 1)
+        if overlap < 0.5:
+            final.append(group)
+            used_articles.update(article_ids)
+
+    return final[:10]  # Top 10 trends
+
+
+def get_source_badge_class(source_name: str) -> str:
+    """Return CSS class for a source badge."""
+    mapping = {
+        'Reuters': 'source-reuters',
+        'WSJ': 'source-wsj',
+        'TechCrunch': 'source-techcrunch',
+        'Bloomberg': 'source-bloomberg',
+        'Manual': 'source-manual',
+        'X': 'source-x',
+    }
+    return mapping.get(source_name, 'source-manual')
+
+
+# =============================================================================
+# NAVIGATION - 3 tabs
 # =============================================================================
 
 def init_navigation():
@@ -800,7 +897,7 @@ def init_navigation():
 
 
 def render_sidebar(db):
-    """Simplified sidebar with only 4 navigation items"""
+    """Sidebar with 3 navigation items"""
 
     # Brand header
     st.markdown("""
@@ -810,11 +907,9 @@ def render_sidebar(db):
         </div>
     """, unsafe_allow_html=True)
 
-    # SIMPLIFIED NAVIGATION - Only 4 items
     nav_items = [
         ('home', 'Home'),
         ('content', 'Content'),
-        ('scrape', 'Scrape'),
         ('settings', 'Settings'),
     ]
 
@@ -845,133 +940,78 @@ def render_sidebar(db):
 # =============================================================================
 
 def render_home(db):
-    """Home dashboard with stats overview"""
+    """Home - overview of processed content and discovered trends"""
 
     st.markdown("""
         <div class="page-header">
-            <h1 class="page-title">Dashboard</h1>
-            <p class="page-subtitle">Overview of your content pipeline</p>
+            <h1 class="page-title">Home</h1>
+            <p class="page-subtitle">Your processed content and discovered trends</p>
         </div>
     """, unsafe_allow_html=True)
 
     stats = get_stats(db)
 
-    # Pipeline stats
+    # Pipeline stats row
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
-        st.markdown(f"""
-            <div class="stat-card stat-inbox">
-                <div class="stat-value">{stats['pending']}</div>
-                <div class="stat-label">Inbox</div>
-            </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown(f'<div class="stat-card stat-inbox"><div class="stat-value">{stats["pending"]}</div><div class="stat-label">Inbox</div></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown(f"""
-            <div class="stat-card stat-drafts">
-                <div class="stat-value">{stats['processed']}</div>
-                <div class="stat-label">Drafts</div>
-            </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown(f'<div class="stat-card stat-drafts"><div class="stat-value">{stats["processed"]}</div><div class="stat-label">Drafts</div></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown(f"""
-            <div class="stat-card stat-ready">
-                <div class="stat-value">{stats['approved']}</div>
-                <div class="stat-label">Ready</div>
-            </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown(f'<div class="stat-card stat-ready"><div class="stat-value">{stats["approved"]}</div><div class="stat-label">Ready</div></div>', unsafe_allow_html=True)
     with col4:
-        st.markdown(f"""
-            <div class="stat-card stat-published">
-                <div class="stat-value">{stats['published']}</div>
-                <div class="stat-label">Published</div>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-card stat-published"><div class="stat-value">{stats["published"]}</div><div class="stat-label">Published</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Quick actions
-    st.markdown("### Quick Actions")
+    # Two-column layout: processed content + trends
+    col_left, col_right = st.columns(2)
 
-    col1, col2, col3 = st.columns(3)
+    with col_left:
+        st.markdown("### Processed Content")
+        processed = db.query(Tweet).filter(
+            Tweet.status.in_([TweetStatus.PROCESSED, TweetStatus.APPROVED, TweetStatus.PUBLISHED])
+        ).order_by(Tweet.updated_at.desc()).limit(10).all()
 
-    with col1:
-        if st.button("Translate All Pending", use_container_width=True, disabled=stats['pending'] == 0):
-            st.session_state.current_view = 'content'
-            st.session_state.auto_translate = True
-            st.rerun()
-
-    with col2:
-        if st.button("Approve All Reviewed", use_container_width=True, disabled=stats['processed'] == 0):
-            count = db.query(Tweet).filter(
-                Tweet.status == TweetStatus.PROCESSED,
-                Tweet.hebrew_draft.isnot(None)
-            ).update({Tweet.status: TweetStatus.APPROVED})
-            db.commit()
-            st.success(f"Approved {count} items")
-            time.sleep(1)
-            st.rerun()
-
-    with col3:
-        if st.button("Scrape New Content", use_container_width=True):
-            st.session_state.current_view = 'scrape'
-            st.rerun()
-
-    st.markdown("---")
-
-    # Recent activity
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("### Recent Items")
-        recent = db.query(Tweet).order_by(Tweet.created_at.desc()).limit(5).all()
-
-        if recent:
-            for tweet in recent:
+        if processed:
+            for tweet in processed:
                 status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
+                hebrew_preview = (tweet.hebrew_draft[:80] + '...') if tweet.hebrew_draft and len(tweet.hebrew_draft) > 80 else (tweet.hebrew_draft or '')
+                link_html = f'<a href="{tweet.source_url}" target="_blank" style="color: var(--accent-primary); font-size: 0.7rem; text-decoration: none;">source</a>' if tweet.source_url and tweet.source_url.startswith('http') else ''
                 st.markdown(f"""
                     <div class="queue-item">
-                        <div class="queue-item-author">{tweet.trend_topic or 'Unknown'}</div>
-                        <div class="queue-item-text">{tweet.original_text[:100]}...</div>
-                        <div class="queue-item-meta">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="queue-item-author">{tweet.trend_topic or 'Unknown'}</span>
                             <span class="status-badge status-{status_str.lower()}">{status_str}</span>
                         </div>
+                        <div class="queue-item-text" style="direction: rtl; text-align: right; margin-top: 0.35rem;">{hebrew_preview}</div>
+                        <div class="queue-item-meta">{link_html}</div>
                     </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("No items yet. Scrape some content to get started.")
+            st.info("No processed content yet. Go to Content to scrape and translate.")
 
-    with col2:
-        st.markdown("### Pipeline Status")
+    with col_right:
+        st.markdown("### Discovered Trends")
+        trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(15).all()
 
-        total = stats['total'] or 1
-
-        stages = [
-            ('Inbox', stats['pending'], 'var(--accent-warning)'),
-            ('Drafts', stats['processed'], 'var(--accent-primary)'),
-            ('Ready', stats['approved'], 'var(--accent-success)'),
-            ('Published', stats['published'], 'var(--text-muted)'),
-        ]
-
-        for label, count, color in stages:
-            pct = (count / total) * 100 if total > 0 else 0
-            st.markdown(f"""
-                <div style="margin-bottom: 0.75rem;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                        <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-primary);">{label}</span>
-                        <span style="font-size: 0.8rem; color: var(--text-muted);">{count}</span>
+        if trends:
+            for trend in trends:
+                source_val = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
+                badge_cls = get_source_badge_class(source_val)
+                desc_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{trend.description[:120]}...</div>' if trend.description and len(trend.description) > 10 else ''
+                link_html = f'<a href="{trend.article_url}" target="_blank" style="color: var(--accent-primary); font-size: 0.8rem; text-decoration: none;">{trend.title}</a>' if trend.article_url else f'<span style="color: var(--text-primary); font-size: 0.85rem;">{trend.title}</span>'
+                st.markdown(f"""
+                    <div class="queue-item">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            {link_html}
+                            <span class="status-badge {badge_cls}">{source_val}</span>
+                        </div>
+                        {desc_html}
                     </div>
-                    <div style="background: var(--bg-elevated); border-radius: 4px; height: 8px; overflow: hidden;">
-                        <div style="background: {color}; width: {pct}%; height: 100%; border-radius: 4px;"></div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        if stats['failed'] > 0:
-            st.warning(f"{stats['failed']} items failed processing")
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No trends discovered yet. Go to Content to fetch trends.")
 
 
 # =============================================================================
@@ -979,12 +1019,12 @@ def render_home(db):
 # =============================================================================
 
 def render_content(db):
-    """Content view with list and editor"""
+    """Content view - acquire content and manage queue"""
 
     st.markdown("""
         <div class="page-header">
             <h1 class="page-title">Content</h1>
-            <p class="page-subtitle">View, edit, and manage your tweets</p>
+            <p class="page-subtitle">Acquire and manage content</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -997,17 +1037,247 @@ def render_content(db):
     if 'selected_item' not in st.session_state:
         st.session_state.selected_item = None
 
+    # If editing a specific item, show editor
+    if st.session_state.selected_item:
+        render_editor(db, st.session_state.selected_item)
+        return
+
+    # Use tabs to organize: Acquire | Queue
+    tab_acquire, tab_queue = st.tabs(["Acquire", "Queue"])
+
+    with tab_acquire:
+        _render_acquire_section(db)
+
+    with tab_queue:
+        _render_queue_section(db)
+
+
+def _render_acquire_section(db):
+    """Acquire section: thread scraper + trend fetching"""
+
+    # ---- Thread Scraper ----
+    st.markdown("### Scrape Thread from X")
+
+    url = st.text_input(
+        "Thread URL",
+        placeholder="https://x.com/user/status/1234567890",
+        key="scrape_url",
+        label_visibility="collapsed"
+    )
+
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        add_to_queue = st.checkbox("Add to queue", value=True)
+    with col2:
+        consolidate = st.checkbox("Consolidate thread", value=True)
+    with col3:
+        if st.button("Scrape Thread", type="primary", use_container_width=True):
+            if not url:
+                st.warning("Enter a URL first")
+            else:
+                with st.spinner("Scraping..."):
+                    try:
+                        from scraper.scraper import TwitterScraper
+
+                        progress = st.progress(0, "Connecting...")
+
+                        async def run():
+                            scraper = TwitterScraper()
+                            try:
+                                progress.progress(20, "Logging in...")
+                                await scraper.ensure_logged_in()
+                                progress.progress(40, "Fetching thread...")
+                                return await scraper.fetch_raw_thread(url, author_only=True)
+                            finally:
+                                await scraper.close()
+
+                        result = asyncio.run(run())
+                        tweets_data = result.get('tweets', [])
+                        progress.progress(80, "Saving...")
+
+                        if add_to_queue:
+                            if consolidate and len(tweets_data) > 1:
+                                combined_text = "\n\n---\n\n".join([t.get('text', '') for t in tweets_data])
+                                first_url = tweets_data[0].get('permalink', url) if tweets_data else url
+                                media_urls = [t['media'][0]['src'] for t in tweets_data if t.get('media')]
+                                if not db.query(Tweet).filter_by(source_url=first_url).first():
+                                    db.add(Tweet(
+                                        source_url=first_url,
+                                        original_text=combined_text,
+                                        status=TweetStatus.PENDING,
+                                        media_url=media_urls[0] if media_urls else None,
+                                        trend_topic=result.get('author_handle', '')
+                                    ))
+                                    db.commit()
+                                    progress.progress(100, "Done!")
+                                    st.success(f"Added consolidated thread ({len(tweets_data)} tweets combined)")
+                                else:
+                                    progress.progress(100, "Done!")
+                                    st.info("Thread already exists in queue")
+                            else:
+                                saved = 0
+                                for t in tweets_data:
+                                    permalink = t.get('permalink', '')
+                                    if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
+                                        media_url = t['media'][0]['src'] if t.get('media') else None
+                                        db.add(Tweet(
+                                            source_url=permalink,
+                                            original_text=t.get('text', ''),
+                                            status=TweetStatus.PENDING,
+                                            media_url=media_url,
+                                            trend_topic=t.get('author_handle', '')
+                                        ))
+                                        saved += 1
+                                db.commit()
+                                progress.progress(100, "Done!")
+                                st.success(f"Added {saved} tweets to queue")
+                        else:
+                            existing = db.query(Thread).filter_by(source_url=url).first()
+                            if existing:
+                                existing.raw_json = json.dumps(tweets_data)
+                                existing.tweet_count = len(tweets_data)
+                                existing.updated_at = datetime.now(timezone.utc)
+                            else:
+                                thread = Thread(
+                                    source_url=url,
+                                    author_handle=result.get('author_handle', ''),
+                                    author_name=result.get('author_name', ''),
+                                    raw_json=json.dumps(tweets_data),
+                                    tweet_count=len(tweets_data),
+                                    status=TweetStatus.PENDING
+                                )
+                                db.add(thread)
+                            db.commit()
+                            progress.progress(100, "Done!")
+                            st.success(f"Saved thread with {len(tweets_data)} tweets")
+
+                        time.sleep(1)
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Scrape failed: {str(e)[:100]}")
+
+    st.markdown("---")
+
+    # ---- Fetch All Trends ----
+    st.markdown("### Discover Trends")
+
+    fcol1, fcol2 = st.columns([3, 1])
+    with fcol1:
+        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles from Reuters, WSJ, TechCrunch & Bloomberg and rank by cross-source frequency.</p>', unsafe_allow_html=True)
+    with fcol2:
+        fetch_all = st.button("Fetch All Trends", type="primary", use_container_width=True, key="fetch_all_trends")
+
+    if fetch_all:
+        with st.spinner("Fetching from all sources..."):
+            try:
+                from scraper.news_scraper import NewsScraper
+                scraper = NewsScraper()
+                all_news = scraper.get_latest_news(limit_per_source=5)
+
+                # Save to DB with article_url
+                source_map = {
+                    'Reuters': TrendSource.REUTERS,
+                    'WSJ': TrendSource.WSJ,
+                    'TechCrunch': TrendSource.TECHCRUNCH,
+                    'Bloomberg': TrendSource.BLOOMBERG,
+                }
+                saved = 0
+                for article in all_news:
+                    if not db.query(Trend).filter_by(title=article['title']).first():
+                        db.add(Trend(
+                            title=article['title'],
+                            description=article.get('description', '')[:500],
+                            source=source_map.get(article['source'], TrendSource.MANUAL),
+                            article_url=article.get('url', ''),
+                        ))
+                        saved += 1
+                db.commit()
+
+                # Rank trends
+                ranked = rank_trends_cross_source(all_news)
+                st.session_state.ranked_trends = ranked
+                st.success(f"Fetched {len(all_news)} articles, saved {saved} new trends")
+                time.sleep(0.5)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed: {str(e)[:150]}")
+
+    # ---- Show Ranked Trends ----
+    ranked = st.session_state.get('ranked_trends', None)
+    if ranked:
+        st.markdown("### Trending Topics (Cross-Source)")
+        for group in ranked:
+            source_badges = ' '.join(
+                f'<span class="status-badge {get_source_badge_class(s)}">{s}</span>'
+                for s in group['sources']
+            )
+            articles_html = ''
+            for art in group['articles'][:3]:
+                art_url = art.get('url', '')
+                art_title = art.get('title', '')
+                art_desc = (art.get('description', '') or '')[:100]
+                if art_url:
+                    articles_html += f'<div style="padding: 0.35rem 0; border-bottom: 1px solid var(--border-muted);"><a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.8rem;">{art_title}</a>'
+                else:
+                    articles_html += f'<div style="padding: 0.35rem 0; border-bottom: 1px solid var(--border-muted);"><span style="color: var(--text-primary); font-size: 0.8rem;">{art_title}</span>'
+                if art_desc:
+                    articles_html += f'<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;">{art_desc}</div>'
+                articles_html += '</div>'
+
+            st.markdown(f"""
+                <div class="content-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; font-size: 1rem; color: var(--text-primary); text-transform: capitalize;">{group['keyword']}</span>
+                        <div>{source_badges}</div>
+                    </div>
+                    <div style="margin-top: 0.5rem;">{articles_html}</div>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        # Show recent trends from DB if no ranked results
+        trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(10).all()
+        if trends:
+            st.markdown("### Recent Trends")
+            for trend in trends:
+                source_val = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
+                badge_cls = get_source_badge_class(source_val)
+                link_html = f'<a href="{trend.article_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">{trend.title}</a>' if trend.article_url else f'<span style="color: var(--text-primary);">{trend.title}</span>'
+                st.markdown(f"""
+                    <div class="queue-item">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            {link_html}
+                            <span class="status-badge {badge_cls}">{source_val}</span>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ---- Manual Trend Entry ----
+    st.markdown("### Add Manual Trend")
+    mcol1, mcol2 = st.columns([3, 1])
+    with mcol1:
+        manual = st.text_input("Trend Title", key="manual_trend", label_visibility="collapsed", placeholder="Enter trend topic...")
+    with mcol2:
+        if st.button("Add Trend", key="add_manual_trend", disabled=not manual, use_container_width=True):
+            db.add(Trend(title=manual, source=TrendSource.MANUAL))
+            db.commit()
+            st.success(f"Added: {manual}")
+            time.sleep(0.5)
+            st.rerun()
+
+
+def _render_queue_section(db):
+    """Queue section: content list with actions"""
     stats = get_stats(db)
 
-    # Quick actions bar
     col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-
     with col1:
-        if st.button("Translate All", use_container_width=True, disabled=stats['pending'] == 0):
+        if st.button("Translate All", use_container_width=True, disabled=stats['pending'] == 0, key="q_translate"):
             run_batch_translate(db)
-
     with col2:
-        if st.button("Approve All", use_container_width=True, disabled=stats['processed'] == 0):
+        if st.button("Approve All", use_container_width=True, disabled=stats['processed'] == 0, key="q_approve"):
             count = db.query(Tweet).filter(
                 Tweet.status == TweetStatus.PROCESSED,
                 Tweet.hebrew_draft.isnot(None)
@@ -1017,25 +1287,18 @@ def render_content(db):
                 st.success(f"Approved {count}")
                 time.sleep(0.5)
                 st.rerun()
-
     with col3:
         status_filter = st.selectbox(
             "Filter",
             ['all', 'pending', 'processed', 'approved', 'published', 'failed'],
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="q_filter"
         )
-
     with col4:
         st.caption(f"Total: {stats['total']} items")
 
     st.markdown("---")
 
-    # Check if we have a selected item to edit
-    if st.session_state.selected_item:
-        render_editor(db, st.session_state.selected_item)
-        return
-
-    # List view
     tweets = get_tweets(db, status_filter=status_filter, limit=50)
 
     if not tweets:
@@ -1277,135 +1540,6 @@ def run_batch_translate(db):
 
 
 # =============================================================================
-# SCRAPE VIEW
-# =============================================================================
-
-def render_scrape(db):
-    """Scrape content from X"""
-
-    st.markdown("""
-        <div class="page-header">
-            <h1 class="page-title">Scrape</h1>
-            <p class="page-subtitle">Import threads from X/Twitter</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Main scrape section
-    st.markdown("""
-        <div style="background: #14181D; padding: 1.5rem; border-radius: 16px; margin-bottom: 1.5rem;">
-            <h3 style="color: #FFFFFF; margin: 0 0 0.5rem 0; font-size: 1.1rem; font-weight: 600;">Thread Scraper</h3>
-            <p style="color: #9BA3AE; margin: 0; font-size: 0.85rem;">Paste a thread URL to import. Only the author's tweets will be captured.</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    url = st.text_input(
-        "Thread URL",
-        placeholder="https://x.com/user/status/1234567890",
-        key="scrape_url",
-        label_visibility="collapsed"
-    )
-
-    col1, col2 = st.columns([1, 2])
-
-    with col1:
-        add_to_queue = st.checkbox("Add directly to Content queue", value=True)
-
-    with col2:
-        if st.button("Scrape Thread", type="primary", use_container_width=True):
-            if not url:
-                st.warning("Enter a URL first")
-            else:
-                with st.spinner("Scraping..."):
-                    try:
-                        from scraper.scraper import TwitterScraper
-
-                        progress = st.progress(0, "Connecting...")
-
-                        async def run():
-                            scraper = TwitterScraper()
-                            try:
-                                progress.progress(20, "Logging in...")
-                                await scraper.ensure_logged_in()
-                                progress.progress(40, "Fetching thread...")
-                                # Use author_only=True to get only the thread author's tweets
-                                return await scraper.fetch_raw_thread(url, author_only=True)
-                            finally:
-                                await scraper.close()
-
-                        result = asyncio.run(run())
-                        tweets_data = result.get('tweets', [])
-                        progress.progress(80, "Saving...")
-
-                        if add_to_queue:
-                            # Add directly to Content queue
-                            saved = 0
-                            for t in tweets_data:
-                                permalink = t.get('permalink', '')
-                                if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
-                                    media_url = t['media'][0]['src'] if t.get('media') else None
-                                    db.add(Tweet(
-                                        source_url=permalink,
-                                        original_text=t.get('text', ''),
-                                        status=TweetStatus.PENDING,
-                                        media_url=media_url,
-                                        trend_topic=t.get('author_handle', '')
-                                    ))
-                                    saved += 1
-                            db.commit()
-                            progress.progress(100, "Done!")
-                            st.success(f"Added {saved} tweets to Content queue")
-                        else:
-                            # Store as thread
-                            existing = db.query(Thread).filter_by(source_url=url).first()
-                            if existing:
-                                existing.raw_json = json.dumps(tweets_data)
-                                existing.tweet_count = len(tweets_data)
-                                existing.updated_at = datetime.now(timezone.utc)
-                            else:
-                                thread = Thread(
-                                    source_url=url,
-                                    author_handle=result.get('author_handle', ''),
-                                    author_name=result.get('author_name', ''),
-                                    raw_json=json.dumps(tweets_data),
-                                    tweet_count=len(tweets_data),
-                                    status=TweetStatus.PENDING
-                                )
-                                db.add(thread)
-                            db.commit()
-                            progress.progress(100, "Done!")
-                            st.success(f"Saved thread with {len(tweets_data)} tweets")
-
-                        time.sleep(1)
-                        st.rerun()
-
-                    except Exception as e:
-                        st.error(f"Scrape failed: {str(e)[:100]}")
-
-    st.markdown("---")
-
-    # Recent scrapes
-    st.markdown("### Recent Scrapes")
-
-    recent_tweets = db.query(Tweet).order_by(Tweet.created_at.desc()).limit(10).all()
-
-    if recent_tweets:
-        for tweet in recent_tweets:
-            status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
-            st.markdown(f"""
-                <div style="background: var(--bg-secondary); padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; border: 1px solid var(--border-default);">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 500; color: var(--text-primary);">@{tweet.trend_topic or 'Unknown'}</span>
-                        <span class="status-badge status-{status_str.lower()}">{status_str}</span>
-                    </div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                        {tweet.original_text[:100]}...
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("No content scraped yet. Enter a thread URL above to get started.")
-
-
 # =============================================================================
 # SETTINGS VIEW
 # =============================================================================
@@ -1435,22 +1569,47 @@ def render_settings(db):
 
         st.markdown("---")
 
-        st.markdown("### Danger Zone")
-        st.warning("These actions cannot be undone")
+        # ---- Glossary Editor ----
+        st.markdown("### Glossary Editor")
+        glossary_path = Path(__file__).parent.parent.parent / "config" / "glossary.json"
+        try:
+            glossary_data = json.loads(glossary_path.read_text(encoding='utf-8')) if glossary_path.exists() else {}
+        except Exception:
+            glossary_data = {}
+        edited_glossary = st.text_area(
+            "Glossary (JSON)",
+            json.dumps(glossary_data, indent=2, ensure_ascii=False),
+            height=200,
+            key="glossary_editor"
+        )
+        if st.button("Save Glossary", key="save_glossary", use_container_width=True):
+            try:
+                json.loads(edited_glossary)  # validate JSON
+                glossary_path.parent.mkdir(parents=True, exist_ok=True)
+                glossary_path.write_text(edited_glossary, encoding='utf-8')
+                st.success("Glossary saved!")
+            except json.JSONDecodeError:
+                st.error("Invalid JSON. Please fix and try again.")
 
-        if st.button("Delete All Tweets", use_container_width=True):
-            db.query(Tweet).delete()
-            db.commit()
-            st.success("Deleted all tweets")
-            time.sleep(1)
-            st.rerun()
+        st.markdown("---")
 
-        if st.button("Delete All Threads", use_container_width=True):
-            db.query(Thread).delete()
-            db.commit()
-            st.success("Deleted all threads")
-            time.sleep(1)
-            st.rerun()
+        # ---- Style Guide Editor ----
+        st.markdown("### Style Guide Editor")
+        style_path = Path(__file__).parent.parent.parent / "config" / "style.txt"
+        try:
+            style_content = style_path.read_text(encoding='utf-8') if style_path.exists() else ""
+        except Exception:
+            style_content = ""
+        edited_style = st.text_area(
+            "Style Examples",
+            style_content,
+            height=200,
+            key="style_editor"
+        )
+        if st.button("Save Style Guide", key="save_style", use_container_width=True):
+            style_path.parent.mkdir(parents=True, exist_ok=True)
+            style_path.write_text(edited_style, encoding='utf-8')
+            st.success("Style guide saved!")
 
     with col2:
         st.markdown("### Status Guide")
@@ -1481,12 +1640,62 @@ def render_settings(db):
         4. **Publish** - Post to X (coming soon)
         """)
 
+        st.markdown("---")
+
+        # ---- Data Export ----
+        st.markdown("### Data Export")
+        all_tweets = db.query(Tweet).all()
+        tweets_export = json.dumps(
+            [{"id": t.id, "text": t.original_text, "hebrew": t.hebrew_draft, "status": t.status.value} for t in all_tweets],
+            indent=2, ensure_ascii=False
+        )
+        st.download_button("Export Tweets (JSON)", tweets_export, "tweets.json", mime="application/json", use_container_width=True)
+
+        all_trends = db.query(Trend).all()
+        trends_export = json.dumps(
+            [{"title": t.title, "source": t.source.value, "description": t.description} for t in all_trends],
+            indent=2, ensure_ascii=False
+        )
+        st.download_button("Export Trends (JSON)", trends_export, "trends.json", mime="application/json", use_container_width=True)
+
+    st.markdown("---")
+
+    # ---- Danger Zone ----
+    st.markdown("### Danger Zone")
+    with st.expander("Destructive Actions"):
+        st.warning("These actions cannot be undone")
+        confirm = st.checkbox("I understand this cannot be undone", key="danger_confirm")
+
+        dcol1, dcol2, dcol3 = st.columns(3)
+        with dcol1:
+            if st.button("Delete All Tweets", use_container_width=True, disabled=not confirm):
+                db.query(Tweet).delete()
+                db.commit()
+                st.success("Deleted all tweets")
+                time.sleep(1)
+                st.rerun()
+        with dcol2:
+            if st.button("Delete All Threads", use_container_width=True, disabled=not confirm):
+                db.query(Thread).delete()
+                db.commit()
+                st.success("Deleted all threads")
+                time.sleep(1)
+                st.rerun()
+        with dcol3:
+            if st.button("Delete All Trends", use_container_width=True, disabled=not confirm):
+                db.query(Trend).delete()
+                db.commit()
+                st.success("Deleted all trends")
+                time.sleep(1)
+                st.rerun()
+
 
 # =============================================================================
 # MAIN
 # =============================================================================
 
 def main():
+    create_tables()
     db = get_db()
     init_navigation()
 
@@ -1501,8 +1710,6 @@ def main():
         render_home(db)
     elif view == 'content':
         render_content(db)
-    elif view == 'scrape':
-        render_scrape(db)
     elif view == 'settings':
         render_settings(db)
     else:

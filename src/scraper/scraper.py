@@ -269,6 +269,10 @@ class TwitterScraper:
             # Wait for tweet to load
             await self.page.wait_for_selector('[data-testid="tweetText"]', timeout=15000)
 
+            # Expand truncated long tweets
+            await self._expand_long_tweets()
+            await asyncio.sleep(0.3)
+
             # Extract tweet text
             tweet_text_element = await self.page.query_selector('[data-testid="tweetText"]')
             tweet_text = await tweet_text_element.inner_text() if tweet_text_element else ""
@@ -492,6 +496,8 @@ class TwitterScraper:
         for attempt in range(max_scroll_attempts):
             # Expand "Show more replies" buttons
             await self._expand_replies()
+            # Expand truncated long tweets
+            await self._expand_long_tweets()
 
             # Scroll down
             scroll_distance = random.randint(600, 1000)
@@ -590,14 +596,16 @@ class TwitterScraper:
         for attempt in range(max_scroll_attempts):
             # Expand "Show more replies" buttons
             await self._expand_replies()
-            
+            # Expand truncated long tweets
+            await self._expand_long_tweets()
+
             # Scroll down
             scroll_distance = random.randint(600, 1000)
             await self.page.evaluate(f"window.scrollBy(0, {scroll_distance});")
-            
+
             # Random delay
             await self._random_delay(1.2, 2.5)
-            
+
             # Collect tweets
             new_tweets = await self._collect_tweets_from_page()
             
@@ -637,6 +645,37 @@ class TwitterScraper:
                         await btn.scroll_into_view_if_needed(timeout=500)
                         await btn.click(timeout=700)
                         await asyncio.sleep(random.uniform(0.25, 0.4))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    async def _expand_long_tweets(self):
+        """Click 'Show more' links inside individual tweets to expand truncated text."""
+        try:
+            articles = await self.page.query_selector_all('article[data-testid="tweet"]')
+
+            for article in articles:
+                try:
+                    # Try X's specific data-testid first
+                    show_more = await article.query_selector('[data-testid="tweet-text-show-more-link"]')
+
+                    if not show_more:
+                        # Fallback: look for role="link" elements near tweetText containing "show more"
+                        candidates = await article.query_selector_all('[role="link"]')
+                        for candidate in candidates:
+                            try:
+                                text = (await candidate.inner_text()).strip().lower()
+                                if text == "show more":
+                                    show_more = candidate
+                                    break
+                            except Exception:
+                                continue
+
+                    if show_more:
+                        await show_more.scroll_into_view_if_needed(timeout=500)
+                        await show_more.click(timeout=700)
+                        await asyncio.sleep(random.uniform(0.3, 0.6))
                 except Exception:
                     continue
         except Exception:
