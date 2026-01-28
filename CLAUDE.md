@@ -85,7 +85,7 @@ HFI/
 ├── k8s/                     # K8s manifests
 ├── tests/                   # Unit tests
 ├── docker-compose.yml
-├── .env.example
+├── .env                     # Environment configuration (not in git)
 ├── IMPLEMENTATION_PLAN.md  # Detailed implementation guide
 └── README.md
 ```

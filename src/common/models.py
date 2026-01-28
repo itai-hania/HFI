@@ -125,6 +125,7 @@ class TrendSource(enum.Enum):
     WSJ = "WSJ"
     TECHCRUNCH = "TechCrunch"
     BLOOMBERG = "Bloomberg"
+    MARKETWATCH = "MarketWatch"
     MANUAL = "Manual"
 
     def __str__(self):

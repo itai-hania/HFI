@@ -24,7 +24,7 @@ echo ""
 # Check if .env exists
 if [ ! -f ".env" ]; then
     echo -e "${RED}❌ .env file not found!${NC}"
-    echo -e "${YELLOW}→ Run: cp .env.example .env${NC}"
+    echo -e "${YELLOW}→ Create a .env file with your credentials${NC}"
     echo -e "${YELLOW}→ Then edit .env with your credentials${NC}"
     exit 1
 fi

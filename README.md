@@ -7,6 +7,7 @@
 - 📊 Smart ranking algorithm surfaces top 10 trending articles by cross-source keyword overlap
 - 🎯 One-click trend discovery in dashboard
 - 🔗 Thread scraping UI for X posts
+- 🎬 **NEW:** Complete thread media downloads (images + videos) with smart X video handling
 
 ## Project Status
 
@@ -80,8 +81,7 @@ cd HFI
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Copy environment template
-cp .env.example .env
+# Create .env file with your credentials
 ```
 
 ### 2. Configure Environment
@@ -255,7 +255,7 @@ HFI/
 │   └── *.yaml              # Manifests
 ├── tests/                   # Unit tests
 ├── docker-compose.yml       # Local development
-├── .env.example            # Environment template
+├── .env                     # Environment configuration (not in git)
 ├── IMPLEMENTATION_PLAN.md  # Detailed implementation guide
 └── README.md               # This file
 ```

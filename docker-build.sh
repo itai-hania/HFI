@@ -54,14 +54,8 @@ check_docker_daemon() {
 # Function to check if .env file exists
 check_env_file() {
     if [ ! -f "$PROJECT_ROOT/.env" ]; then
-        print_warning ".env file not found. Creating from .env.example..."
-        if [ -f "$PROJECT_ROOT/.env.example" ]; then
-            cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
-            print_warning "Please edit .env file with your actual credentials before running services"
-        else
-            print_error ".env.example not found. Cannot create .env file."
-            exit 1
-        fi
+        print_error ".env file not found. Please create a .env file with your credentials."
+        exit 1
     else
         print_success ".env file exists"
     fi

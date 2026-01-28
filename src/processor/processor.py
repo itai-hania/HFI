@@ -92,17 +92,27 @@ class ProcessorConfig:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required")
 
+        self.openai_model = os.getenv('OPENAI_MODEL')
+        if not self.openai_model:
+            raise ValueError("OPENAI_MODEL environment variable is required")
+
+        self.openai_temperature = os.getenv('OPENAI_TEMPERATURE')
+        if self.openai_temperature is None:
+            raise ValueError("OPENAI_TEMPERATURE environment variable is required")
+        self.openai_temperature = float(self.openai_temperature)
+
         self.glossary_path = CONFIG_DIR / "glossary.json"
         self.style_path = CONFIG_DIR / "style.txt"
 
-        # Load configuration files
         self.glossary = self._load_glossary()
         self.style_examples = self._load_style()
 
-        # OpenAI client
         self.openai_client = OpenAI(api_key=self.openai_api_key)
 
-        logger.info(f"Processor configured with {len(self.glossary)} glossary terms")
+        logger.info(f"Processor configured with:")
+        logger.info(f"  - Model: {self.openai_model}")
+        logger.info(f"  - Temperature: {self.openai_temperature}")
+        logger.info(f"  - Glossary terms: {len(self.glossary)}")
 
     def _load_glossary(self) -> Dict[str, str]:
         """Load financial terminology glossary from JSON file."""
@@ -289,13 +299,12 @@ CRITICAL RULES - FOLLOW EXACTLY:
                 logger.info(f"Translating text (attempt {attempt + 1}): {text[:100]}...")
 
                 response = self.client.chat.completions.create(
-                    model="gpt-4o",
+                    model=self.config.openai_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"Transcreate this to Hebrew:\n\n{text}"}
                     ],
-                    temperature=0.1 if attempt > 0 else 0.7,  # Lower temp on retry
-                    max_tokens=1000,
+                    temperature=self.config.openai_temperature,
                     top_p=0.9
                 )
 
@@ -355,6 +364,11 @@ class MediaDownloader:
 
     def __init__(self):
         self.media_dir = MEDIA_DIR
+        # Create subdirectories for organized storage
+        self.images_dir = self.media_dir / "images"
+        self.videos_dir = self.media_dir / "videos"
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        self.videos_dir.mkdir(parents=True, exist_ok=True)
 
     def download_media(self, media_url: str) -> Optional[str]:
         """
@@ -389,6 +403,30 @@ class MediaDownloader:
             logger.warning(f"Media download failed for {media_url}: {e}")
             return None
 
+    def _extract_video_id_from_thumbnail(self, thumbnail_url: str) -> Optional[str]:
+        """
+        Extract video ID from X/Twitter video thumbnail URL.
+
+        Thumbnail URL format: https://pbs.twimg.com/amplify_video_thumb/{VIDEO_ID}/img/{HASH}.jpg
+        Returns: VIDEO_ID (e.g., "1947778747421147138")
+        """
+        match = re.search(r'amplify_video_thumb/(\d+)/', thumbnail_url)
+        if match:
+            return match.group(1)
+        return None
+
+    def _construct_video_url_from_id(self, video_id: str) -> str:
+        """
+        Construct high-quality video URL from video ID.
+
+        Based on X network analysis, videos are at:
+        https://video.twimg.com/amplify_video/{VIDEO_ID}/vid/avc1/0/0/{RESOLUTION}/{HASH}.mp4
+
+        Since we don't know the hash, we'll use yt-dlp with a constructed base URL
+        that yt-dlp can follow to find the actual video.
+        """
+        return f"https://video.twimg.com/amplify_video/{video_id}/pl/playlist.m3u8"
+
     def _download_video(self, video_url: str) -> Optional[str]:
         """
         Download video using yt-dlp (handles HLS, m3u8, and other formats).
@@ -399,28 +437,62 @@ class MediaDownloader:
         - Robust error handling and retries
         - Used by millions, well-maintained
 
+        Special handling for X/Twitter videos:
+        - If URL is a thumbnail, extract video ID and construct m3u8 playlist URL
+        - yt-dlp will automatically find and download the best quality MP4
+
         Args:
-            video_url: URL of video to download
+            video_url: URL of video to download (can be thumbnail or direct video URL)
 
         Returns:
             Local file path if successful, None if failed
         """
+        # Check if this is an X video thumbnail URL
+        if "amplify_video_thumb" in video_url:
+            video_id = self._extract_video_id_from_thumbnail(video_url)
+            if video_id:
+                logger.info(f"Detected X video thumbnail, extracting video ID: {video_id}")
+                video_url = self._construct_video_url_from_id(video_id)
+                logger.info(f"Constructed m3u8 playlist URL: {video_url}")
+            else:
+                logger.warning(f"Failed to extract video ID from thumbnail URL: {video_url}")
+                return None
+
         # Generate unique filename
         url_hash = hashlib.md5(video_url.encode()).hexdigest()[:10]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = f"video_{timestamp}_{url_hash}.mp4"
-        output_path = self.media_dir / output_filename
+        output_path = self.videos_dir / output_filename
 
         logger.info(f"Downloading video from {video_url}")
 
         try:
+            # Find yt-dlp binary (check common locations)
+            yt_dlp_paths = [
+                'yt-dlp',  # In PATH
+                '/usr/local/bin/yt-dlp',  # Homebrew
+                str(Path.home() / 'Library' / 'Python' / '3.9' / 'bin' / 'yt-dlp'),  # pip3 user install
+                str(Path.home() / 'Library' / 'Python' / '3.10' / 'bin' / 'yt-dlp'),
+                str(Path.home() / 'Library' / 'Python' / '3.11' / 'bin' / 'yt-dlp'),
+            ]
+
+            yt_dlp_cmd = None
+            for path in yt_dlp_paths:
+                if Path(path).exists() or subprocess.run(['which', path], capture_output=True).returncode == 0:
+                    yt_dlp_cmd = path
+                    break
+
+            if not yt_dlp_cmd:
+                logger.error("yt-dlp not found in PATH or common locations")
+                return None
+
             # Use yt-dlp command-line tool
             # -f best: Download best quality
             # --no-playlist: Don't download playlists
             # --no-warnings: Cleaner output
             # -o: Output path
             subprocess.run([
-                'yt-dlp',
+                yt_dlp_cmd,
                 '-f', 'best',
                 '--no-playlist',
                 '--no-warnings',
@@ -472,7 +544,7 @@ class MediaDownloader:
         url_hash = hashlib.md5(image_url.encode()).hexdigest()[:10]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = f"image_{timestamp}_{url_hash}.{extension}"
-        output_path = self.media_dir / output_filename
+        output_path = self.images_dir / output_filename
 
         logger.info(f"Downloading image from {image_url}")
 
@@ -498,6 +570,96 @@ class MediaDownloader:
         except Exception as e:
             logger.error(f"Unexpected error downloading image: {e}")
             return None
+
+    def download_thread_media(self, thread_data: Dict) -> List[Dict[str, str]]:
+        """
+        Download all media from a thread (images and videos).
+
+        Based on X thread structure analysis:
+        - Images: Direct URLs from pbs.twimg.com/media/{id}
+        - Videos: MP4 URLs from video.twimg.com/amplify_video/{video_id}/vid/avc1/...
+
+        Args:
+            thread_data: Thread JSON from scraper with structure:
+                {
+                    "tweets": [
+                        {
+                            "tweet_id": "...",
+                            "text": "...",
+                            "media": [
+                                {"type": "photo", "src": "https://..."},
+                                {"type": "video", "src": "https://..."}
+                            ]
+                        }
+                    ]
+                }
+
+        Returns:
+            List of downloaded media info:
+            [
+                {"tweet_id": "...", "type": "photo", "src": "...", "local_path": "..."},
+                {"tweet_id": "...", "type": "video", "src": "...", "local_path": "..."}
+            ]
+        """
+        if not thread_data or "tweets" not in thread_data:
+            logger.warning("Invalid thread data, no tweets found")
+            return []
+
+        downloaded_media = []
+        tweets = thread_data.get("tweets", [])
+
+        logger.info(f"Processing media from {len(tweets)} tweets in thread")
+
+        for tweet in tweets:
+            tweet_id = tweet.get("tweet_id", "unknown")
+            media_items = tweet.get("media", [])
+
+            if not media_items:
+                continue
+
+            logger.info(f"Tweet {tweet_id}: Found {len(media_items)} media items")
+
+            for media_item in media_items:
+                media_type = media_item.get("type", "")
+                media_src = media_item.get("src", "")
+
+                if not media_src:
+                    logger.warning(f"Tweet {tweet_id}: Empty media src, skipping")
+                    continue
+
+                # Download based on type
+                local_path = None
+
+                if media_type == "photo":
+                    logger.info(f"Downloading image from tweet {tweet_id}: {media_src}")
+                    local_path = self._download_image(media_src)
+                elif media_type == "video":
+                    # For X videos, use tweet permalink if available (yt-dlp can extract from tweets)
+                    tweet_permalink = tweet.get("permalink", "")
+                    if tweet_permalink:
+                        logger.info(f"Downloading video from tweet permalink: {tweet_permalink}")
+                        local_path = self._download_video(tweet_permalink)
+                    else:
+                        logger.info(f"Downloading video from tweet {tweet_id}: {media_src}")
+                        local_path = self._download_video(media_src)
+                else:
+                    logger.warning(f"Unknown media type '{media_type}' in tweet {tweet_id}")
+                    continue
+
+                # Store result
+                if local_path:
+                    downloaded_media.append({
+                        "tweet_id": tweet_id,
+                        "type": media_type,
+                        "src": media_src,
+                        "local_path": local_path
+                    })
+                    logger.info(f"✅ Downloaded {media_type}: {local_path}")
+                else:
+                    logger.warning(f"❌ Failed to download {media_type} from tweet {tweet_id}")
+
+        logger.info(f"Thread media download complete: {len(downloaded_media)} files downloaded")
+        return downloaded_media
 
 
 class TweetProcessor:

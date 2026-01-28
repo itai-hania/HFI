@@ -71,7 +71,6 @@ def main():
         # Config
         (project_root / "config" / "glossary.json", "Glossary file"),
         (project_root / "config" / "style.txt", "Style guide"),
-        (project_root / ".env.example", "Environment template"),
     ]
 
     for file_path, description in files:
@@ -96,8 +95,7 @@ def main():
                     print(f"  ⚠️  {var} is missing (optional for some services)")
     else:
         print(f"⚠️  Environment file not found: {env_file}")
-        print("  → Run: cp .env.example .env")
-        print("  → Then edit .env with your credentials")
+        print("  → Create a .env file with your credentials")
 
     # Check Python modules (scraper dependencies)
     print("\n📦 Checking Scraper Dependencies...")
@@ -145,7 +143,7 @@ def main():
         print("\nCommon fixes:")
         print("- Install missing dependencies: pip install -r src/scraper/requirements.txt")
         print("- Install Playwright browsers: playwright install chromium")
-        print("- Copy .env.example to .env and configure")
+        print("- Create .env file with your credentials")
         return 1
 
     print("="*60)

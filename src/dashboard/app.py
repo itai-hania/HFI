@@ -369,8 +369,13 @@ st.markdown("""
     .source-wsj { background: rgba(25, 154, 245, 0.15); color: #47B1FF; border: 1px solid rgba(25, 154, 245, 0.3); }
     .source-techcrunch { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3); }
     .source-bloomberg { background: rgba(155, 89, 182, 0.15); color: #BB86FC; border: 1px solid rgba(155, 89, 182, 0.3); }
+    .source-marketwatch { background: rgba(255, 193, 7, 0.15); color: #FFC107; border: 1px solid rgba(255, 193, 7, 0.3); }
     .source-manual { background: rgba(155, 163, 174, 0.15); color: #9BA3AE; border: 1px solid rgba(155, 163, 174, 0.3); }
     .source-x { background: rgba(255, 255, 255, 0.1); color: #E4E6EA; border: 1px solid rgba(255, 255, 255, 0.2); }
+
+    /* Category Badges */
+    .category-finance { background: rgba(255, 159, 10, 0.15); color: #FFA726; border: 1px solid rgba(255, 159, 10, 0.3); }
+    .category-tech { background: rgba(33, 150, 243, 0.15); color: #42A5F5; border: 1px solid rgba(33, 150, 243, 0.3); }
 
     /* ===========================================
        FORM ELEMENTS - Typefully Style
@@ -808,6 +813,7 @@ def get_source_badge_class(source_name: str) -> str:
         'WSJ': 'source-wsj',
         'TechCrunch': 'source-techcrunch',
         'Bloomberg': 'source-bloomberg',
+        'MarketWatch': 'source-marketwatch',
         'Manual': 'source-manual',
         'X': 'source-x',
     }
@@ -1092,7 +1098,7 @@ def _render_acquire_section(db):
 
     fcol1, fcol2 = st.columns([3, 1])
     with fcol1:
-        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles from Yahoo Finance, WSJ, TechCrunch Fintech & Bloomberg and rank by cross-source keyword overlap.</p>', unsafe_allow_html=True)
+        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles with weighted sampling: 70% finance (Yahoo, WSJ, Bloomberg) + 30% tech (TechCrunch), ranked by keyword overlap.</p>', unsafe_allow_html=True)
     with fcol2:
         fetch_all = st.button("Fetch All Trends", type="primary", use_container_width=True, key="fetch_all_trends")
 
@@ -1101,7 +1107,9 @@ def _render_acquire_section(db):
             try:
                 from scraper.news_scraper import NewsScraper
                 scraper = NewsScraper()
-                ranked_news = scraper.get_latest_news(limit_per_source=5, total_limit=10)
+                # Use weighted sampling: 70% finance, 30% tech
+                # Fetch 10 per source to account for deduplication and filtering
+                ranked_news = scraper.get_latest_news(limit_per_source=10, total_limit=10, finance_weight=0.7)
 
                 # Save to DB with article_url
                 source_map = {
@@ -1109,6 +1117,7 @@ def _render_acquire_section(db):
                     'WSJ': TrendSource.WSJ,
                     'TechCrunch': TrendSource.TECHCRUNCH,
                     'Bloomberg': TrendSource.BLOOMBERG,
+                    'MarketWatch': TrendSource.MARKETWATCH,
                 }
                 saved = 0
                 for article in ranked_news:
@@ -1132,13 +1141,28 @@ def _render_acquire_section(db):
     # ---- Show Ranked Articles ----
     ranked = st.session_state.get('ranked_articles', None)
     if ranked:
-        st.markdown("### Top Articles (Ranked)")
+        # Count distribution
+        finance_count = sum(1 for a in ranked if a.get('category') == 'Finance')
+        tech_count = sum(1 for a in ranked if a.get('category') == 'Tech')
+
+        st.markdown(f"""
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="margin: 0;">Top Articles (Ranked)</h3>
+                <div style="display: flex; gap: 0.5rem;">
+                    <span class="status-badge category-finance">💰 Finance: {finance_count}</span>
+                    <span class="status-badge category-tech">💻 Tech: {tech_count}</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
         for idx, art in enumerate(ranked, 1):
             art_url = art.get('url', '')
             art_title = art.get('title', '')
             art_desc = (art.get('description', '') or '')[:120]
             art_source = art.get('source', '')
+            art_category = art.get('category', 'Unknown')
             badge_cls = get_source_badge_class(art_source)
+            category_emoji = "💰" if art_category == "Finance" else "💻"
             title_html = f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>' if art_url else f'<span style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">{art_title}</span>'
             desc_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{art_desc}</div>' if art_desc else ''
 
@@ -1147,6 +1171,7 @@ def _render_acquire_section(db):
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                             <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 1.5rem;">#{idx}</span>
+                            <span style="font-size: 1rem;">{category_emoji}</span>
                             {title_html}
                         </div>
                         <span class="status-badge {badge_cls}">{art_source}</span>
