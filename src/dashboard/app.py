@@ -1523,7 +1523,7 @@ def render_editor(db, tweet_id):
                         
                         if local_path and Path(local_path).exists():
                             if media_type == 'photo':
-                                st.image(local_path, caption=f"Tweet #{idx+1}", use_container_width=True)
+                                st.image(local_path, caption=f"Tweet #{idx+1}")
                             elif media_type == 'video':
                                 st.video(local_path)
                                 st.caption(f"🎥 Video #{idx+1}")

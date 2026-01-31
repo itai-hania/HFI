@@ -98,10 +98,12 @@ class ProcessorConfig:
         if not self.openai_model:
             raise ValueError("OPENAI_MODEL environment variable is required")
 
-        self.openai_temperature = os.getenv('OPENAI_TEMPERATURE')
-        if self.openai_temperature is None:
-            raise ValueError("OPENAI_TEMPERATURE environment variable is required")
-        self.openai_temperature = float(self.openai_temperature)
+        # Temperature is now optional - some models (like gpt-5-nano) don't support it
+        temp_str = os.getenv('OPENAI_TEMPERATURE')
+        if temp_str is not None and temp_str.strip():
+            self.openai_temperature = float(temp_str)
+        else:
+            self.openai_temperature = None  # Will use model default
 
         self.glossary_path = CONFIG_DIR / "glossary.json"
         self.style_path = CONFIG_DIR / "style.txt"
@@ -113,7 +115,7 @@ class ProcessorConfig:
 
         logger.info(f"Processor configured with:")
         logger.info(f"  - Model: {self.openai_model}")
-        logger.info(f"  - Temperature: {self.openai_temperature}")
+        logger.info(f"  - Temperature: {self.openai_temperature if self.openai_temperature else 'default'}")
         logger.info(f"  - Glossary terms: {len(self.glossary)}")
 
     def _load_glossary(self) -> Dict[str, str]:
@@ -162,6 +164,28 @@ class TranslationService:
     def __init__(self, config: ProcessorConfig):
         self.config = config
         self.client = config.openai_client
+
+    def _get_completion_params(self, system_prompt: str, user_content: str) -> dict:
+        """
+        Build API call parameters, conditionally including temperature.
+        
+        Some models (like gpt-5-nano) don't support custom temperature settings.
+        This method only includes temperature if it's explicitly configured.
+        """
+        params = {
+            "model": self.config.openai_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ]
+        }
+        
+        # Only add temperature if explicitly configured
+        if self.config.openai_temperature is not None:
+            params["temperature"] = self.config.openai_temperature
+            params["top_p"] = 0.9
+        
+        return params
 
     def is_hebrew(self, text: str) -> bool:
         """Check if text is already primarily Hebrew."""
@@ -300,15 +324,11 @@ CRITICAL RULES - FOLLOW EXACTLY:
             try:
                 logger.info(f"Translating text (attempt {attempt + 1}): {text[:100]}...")
 
-                response = self.client.chat.completions.create(
-                    model=self.config.openai_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Transcreate this to Hebrew:\n\n{text}"}
-                    ],
-                    temperature=self.config.openai_temperature,
-                    top_p=0.9
+                params = self._get_completion_params(
+                    system_prompt,
+                    f"Transcreate this to Hebrew:\n\n{text}"
                 )
+                response = self.client.chat.completions.create(**params)
 
                 hebrew_text = response.choices[0].message.content.strip()
 
@@ -478,13 +498,7 @@ Remember: Create ONE unified Hebrew post that tells the complete story."""
 Transcreate this entire thread into ONE flowing Hebrew post."""
 
                 response = self.client.chat.completions.create(
-                    model=self.config.openai_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message}
-                    ],
-                    temperature=self.config.openai_temperature,
-                    top_p=0.9
+                    **self._get_completion_params(system_prompt, user_message)
                 )
 
                 hebrew_text = response.choices[0].message.content.strip()
@@ -604,13 +618,7 @@ Transcreate this tweet to Hebrew:"""
                     logger.info(f"Translating tweet {idx+1}/{len(tweets)} (attempt {attempt + 1})")
 
                     response = self.client.chat.completions.create(
-                        model=self.config.openai_model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": tweet_text}
-                        ],
-                        temperature=self.config.openai_temperature,
-                        top_p=0.9
+                        **self._get_completion_params(system_prompt, tweet_text)
                     )
 
                     hebrew_text = response.choices[0].message.content.strip()
