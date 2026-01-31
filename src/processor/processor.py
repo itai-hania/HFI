@@ -45,6 +45,8 @@ import os
 import json
 import hashlib
 import subprocess
+import shutil
+import platform
 import requests
 import re
 from pathlib import Path
@@ -654,6 +656,50 @@ class MediaDownloader:
         self.images_dir.mkdir(parents=True, exist_ok=True)
         self.videos_dir.mkdir(parents=True, exist_ok=True)
 
+    def _find_yt_dlp(self) -> Optional[str]:
+        """
+        Find yt-dlp executable in a cross-platform way.
+        
+        Uses shutil.which() for PATH search (works on Windows, macOS, Linux),
+        then falls back to common installation locations based on platform.
+        
+        Returns:
+            Path to yt-dlp if found, None otherwise
+        """
+        yt_dlp = shutil.which('yt-dlp')
+        if yt_dlp:
+            return yt_dlp
+        
+        if platform.system() == 'Windows':
+            additional_paths = [
+                Path.home() / 'AppData' / 'Local' / 'Programs' / 'Python' / 'Python39' / 'Scripts' / 'yt-dlp.exe',
+                Path.home() / 'AppData' / 'Local' / 'Programs' / 'Python' / 'Python310' / 'Scripts' / 'yt-dlp.exe',
+                Path.home() / 'AppData' / 'Local' / 'Programs' / 'Python' / 'Python311' / 'Scripts' / 'yt-dlp.exe',
+                Path.home() / 'AppData' / 'Local' / 'Programs' / 'Python' / 'Python312' / 'Scripts' / 'yt-dlp.exe',
+                Path.home() / 'AppData' / 'Roaming' / 'Python' / 'Python39' / 'Scripts' / 'yt-dlp.exe',
+                Path.home() / 'AppData' / 'Roaming' / 'Python' / 'Python310' / 'Scripts' / 'yt-dlp.exe',
+                Path.home() / 'AppData' / 'Roaming' / 'Python' / 'Python311' / 'Scripts' / 'yt-dlp.exe',
+                Path.home() / 'AppData' / 'Roaming' / 'Python' / 'Python312' / 'Scripts' / 'yt-dlp.exe',
+                Path('C:/yt-dlp/yt-dlp.exe'),
+            ]
+        else:
+            additional_paths = [
+                Path('/usr/local/bin/yt-dlp'),
+                Path('/usr/bin/yt-dlp'),
+                Path.home() / '.local' / 'bin' / 'yt-dlp',
+                Path.home() / 'Library' / 'Python' / '3.9' / 'bin' / 'yt-dlp',
+                Path.home() / 'Library' / 'Python' / '3.10' / 'bin' / 'yt-dlp',
+                Path.home() / 'Library' / 'Python' / '3.11' / 'bin' / 'yt-dlp',
+                Path.home() / 'Library' / 'Python' / '3.12' / 'bin' / 'yt-dlp',
+            ]
+        
+        for path in additional_paths:
+            if path.exists():
+                return str(path)
+        
+        return None
+
+
     def download_media(self, media_url: str) -> Optional[str]:
         """
         Download media from URL and save to local storage.
@@ -751,20 +797,8 @@ class MediaDownloader:
         logger.info(f"Downloading video from {video_url}")
 
         try:
-            # Find yt-dlp binary (check common locations)
-            yt_dlp_paths = [
-                'yt-dlp',  # In PATH
-                '/usr/local/bin/yt-dlp',  # Homebrew
-                str(Path.home() / 'Library' / 'Python' / '3.9' / 'bin' / 'yt-dlp'),  # pip3 user install
-                str(Path.home() / 'Library' / 'Python' / '3.10' / 'bin' / 'yt-dlp'),
-                str(Path.home() / 'Library' / 'Python' / '3.11' / 'bin' / 'yt-dlp'),
-            ]
-
-            yt_dlp_cmd = None
-            for path in yt_dlp_paths:
-                if Path(path).exists() or subprocess.run(['which', path], capture_output=True).returncode == 0:
-                    yt_dlp_cmd = path
-                    break
+            # Find yt-dlp binary using cross-platform method
+            yt_dlp_cmd = self._find_yt_dlp()
 
             if not yt_dlp_cmd:
                 logger.error("yt-dlp not found in PATH or common locations")

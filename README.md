@@ -71,6 +71,8 @@ Sources: X (Twitter) + Yahoo Finance + WSJ + TechCrunch Fintech + Bloomberg
 - X (Twitter) account (burner recommended)
 - Docker (optional, for containerized deployment)
 
+**Platform Support:** ✅ macOS, ✅ Windows, ✅ Linux
+
 ### 1. Clone and Setup
 
 ```bash
@@ -162,6 +164,17 @@ cd src/dashboard
 streamlit run app.py
 # Access at http://localhost:8501
 ```
+
+### Cross-Platform Launcher
+
+For a simpler experience, use the cross-platform Python launcher:
+
+```bash
+# Works on Windows, macOS, and Linux
+python start_services.py
+```
+
+This provides an interactive menu to start services without platform-specific commands.
 
 ### Using the Dashboard
 
@@ -399,7 +412,16 @@ _Note: 2 failing tests in `test_processor_comprehensive.py` are unrelated to cor
 | **yt-dlp fails** | Install ffmpeg: `brew install ffmpeg` (Mac) or `apt install ffmpeg` (Linux) |
 | **Dashboard blank** | Ensure database exists: `ls -la data/hfi.db`, run `python init_db.py` |
 | **News scraper fails** | Check RSS feed connectivity: `curl -I https://finance.yahoo.com/news/rssindex` |
-| **total_limit error** | Restart Streamlit to clear module cache: `pkill -f streamlit && streamlit run app.py` |
+| **total_limit error** | Restart Streamlit to clear module cache: `pkill -f streamlit && streamlit run app.py` (Mac/Linux) or use Task Manager (Windows) |
+
+### Windows-Specific Issues
+
+| Issue | Solution |
+|-------|----------|
+| **yt-dlp not found** | Install via pip: `pip install yt-dlp` or add to PATH |
+| **Streamlit won't restart** | Use Task Manager to end Python processes, or `taskkill /F /IM python.exe` |
+| **Path errors** | Ensure paths use forward slashes or raw strings (`r"C:\path"`) |
+| **PowerShell script issues** | Use `python start_services.py` instead of bash scripts |
 
 ---
 

@@ -412,7 +412,7 @@ class TestMediaDownloader:
 
         assert mock_run.called
         call_args = mock_run.call_args[0][0]
-        assert 'yt-dlp' in call_args
+        assert 'yt-dlp' in call_args[0]  # First arg is the binary path, check it contains 'yt-dlp'
         assert '-f' in call_args
         assert 'best' in call_args
 
