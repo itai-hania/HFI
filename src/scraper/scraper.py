@@ -493,6 +493,40 @@ class TwitterScraper:
         idle_scrolls = 0
         max_idle = 5
 
+        # First, scroll to top to make sure we see the beginning
+        await self.page.evaluate("window.scrollTo(0, 0)")
+        await asyncio.sleep(1)
+        
+        # Try to click "Show more" buttons ONLY within the main content area (not sidebar)
+        for _ in range(3):  # Try 3 times
+            clicked = await self.page.evaluate("""
+                () => {
+                    // Only look within the primary column (main content area)
+                    const mainContent = document.querySelector('[data-testid="primaryColumn"]');
+                    if (!mainContent) return 0;
+                    
+                    const elements = mainContent.querySelectorAll('span, div[role="button"]');
+                    let clicked = 0;
+                    for (const el of elements) {
+                        const text = el.textContent?.trim().toLowerCase() || '';
+                        // Only click exact matches for thread expansion
+                        if (text === 'show more' || text === 'show this thread') {
+                            // Make sure it's visible and not navigation
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                el.click();
+                                clicked++;
+                            }
+                        }
+                    }
+                    return clicked;
+                }
+            """)
+            if clicked > 0:
+                await asyncio.sleep(2)  # Wait for content to load
+            else:
+                break
+
         for attempt in range(max_scroll_attempts):
             # Expand "Show more replies" buttons
             await self._expand_replies()
@@ -630,25 +664,38 @@ class TwitterScraper:
         return list(seen.values())
 
     async def _expand_replies(self):
-        """Click 'Show more replies' buttons."""
-        patterns = ["Show more", "View replies", "Show thread"]
+        """Click 'Show more replies' buttons using JavaScript (more reliable)."""
         try:
-            buttons = await self.page.query_selector_all('[role="button"], a[role="link"]')
-            
-            for btn in buttons:
-                try:
-                    text = await btn.inner_text()
-                    aria = await btn.get_attribute("aria-label") or ""
-                    label = f"{text or ''} {aria}".lower()
+            # Use JavaScript to click Show more within the main content area only
+            clicked = await self.page.evaluate("""
+                () => {
+                    const mainContent = document.querySelector('[data-testid="primaryColumn"]');
+                    if (!mainContent) return 0;
                     
-                    if any(p.lower() in label for p in patterns):
-                        await btn.scroll_into_view_if_needed(timeout=500)
-                        await btn.click(timeout=700)
-                        await asyncio.sleep(random.uniform(0.25, 0.4))
-                except Exception:
-                    continue
+                    const elements = mainContent.querySelectorAll('span, div[role="button"]');
+                    let clicked = 0;
+                    
+                    for (const el of elements) {
+                        const text = el.textContent?.trim().toLowerCase() || '';
+                        if (text === 'show more' || text === 'show this thread' || 
+                            text === 'view replies' || text.includes('more replies')) {
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                el.click();
+                                clicked++;
+                            }
+                        }
+                    }
+                    return clicked;
+                }
+            """)
+            
+            if clicked > 0:
+                await asyncio.sleep(1.5)
+                
         except Exception:
             pass
+
 
     async def _expand_long_tweets(self):
         """Click 'Show more' links inside individual tweets to expand truncated text."""

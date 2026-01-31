@@ -7,9 +7,15 @@ import streamlit as st
 import sys
 import logging
 import asyncio
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 import time
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(env_path)
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -999,12 +1005,16 @@ def _render_acquire_section(db):
         label_visibility="collapsed"
     )
 
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
     with col1:
         add_to_queue = st.checkbox("Add to queue", value=True)
     with col2:
         consolidate = st.checkbox("Consolidate thread", value=True)
     with col3:
+        auto_translate = st.checkbox("Auto-translate", value=True, help="Translate using context-aware AI")
+    with col4:
+        download_media = st.checkbox("Download media", value=False, help="Download images and videos from thread")
+    with col5:
         if st.button("Scrape Thread", type="primary", use_container_width=True):
             if not url:
                 st.warning("Enter a URL first")
@@ -1031,40 +1041,117 @@ def _render_acquire_section(db):
 
                         if add_to_queue:
                             if consolidate and len(tweets_data) > 1:
+                                # Combine original text for reference
                                 combined_text = "\n\n---\n\n".join([t.get('text', '') for t in tweets_data])
                                 first_url = tweets_data[0].get('permalink', url) if tweets_data else url
                                 media_urls = [t['media'][0]['src'] for t in tweets_data if t.get('media')]
+
                                 if not db.query(Tweet).filter_by(source_url=first_url).first():
+                                    # Auto-translate if enabled
+                                    hebrew_draft = None
+                                    tweet_status = TweetStatus.PENDING
+
+                                    if auto_translate:
+                                        progress.progress(60, "Translating with context awareness...")
+                                        try:
+                                            from processor.processor import ProcessorConfig, TranslationService
+                                            config = ProcessorConfig()
+                                            translator = TranslationService(config)
+
+                                            # Use context-aware consolidated translation
+                                            hebrew_draft = translator.translate_thread_consolidated(tweets_data)
+                                            tweet_status = TweetStatus.PROCESSED
+                                            logger.info(f"✅ Context-aware translation complete: {hebrew_draft[:100]}...")
+                                        except Exception as e:
+                                            logger.error(f"Translation failed: {e}")
+                                            st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
+
+                                    # Download all thread media (optional)
+                                    media_paths_json = None
+                                    first_media_path = None
+                                    if download_media:
+                                        try:
+                                            progress.progress(75, "Downloading media...")
+                                            from processor.processor import MediaDownloader
+                                            downloader = MediaDownloader()
+                                            media_results = downloader.download_thread_media(result)
+                                            if media_results:
+                                                import json as json_mod
+                                                media_paths_json = json_mod.dumps(media_results)
+                                                first_media_path = media_results[0].get('local_path')
+                                                logger.info(f"✅ Downloaded {len(media_results)} media files")
+                                        except Exception as e:
+                                            logger.warning(f"Media download failed: {e}")
+
                                     db.add(Tweet(
                                         source_url=first_url,
                                         original_text=combined_text,
-                                        status=TweetStatus.PENDING,
+                                        hebrew_draft=hebrew_draft,
+                                        status=tweet_status,
                                         media_url=media_urls[0] if media_urls else None,
+                                        media_path=first_media_path,
+                                        media_paths=media_paths_json,
                                         trend_topic=result.get('author_handle', '')
                                     ))
                                     db.commit()
                                     progress.progress(100, "Done!")
-                                    st.success(f"Added consolidated thread ({len(tweets_data)} tweets combined)")
+
+                                    if auto_translate and hebrew_draft:
+                                        st.success(f"✅ Added & translated consolidated thread ({len(tweets_data)} tweets → 1 flowing post)")
+                                    else:
+                                        st.success(f"Added consolidated thread ({len(tweets_data)} tweets combined)")
                                 else:
                                     progress.progress(100, "Done!")
                                     st.info("Thread already exists in queue")
                             else:
+                                # Separate tweets mode
                                 saved = 0
-                                for t in tweets_data:
+                                hebrew_translations = []
+
+                                # Auto-translate if enabled (context-aware)
+                                if auto_translate and tweets_data:
+                                    progress.progress(60, "Translating with context awareness...")
+                                    try:
+                                        from processor.processor import ProcessorConfig, TranslationService
+                                        config = ProcessorConfig()
+                                        translator = TranslationService(config)
+
+                                        # Use context-aware separate translation
+                                        hebrew_translations = translator.translate_thread_separate(tweets_data)
+                                        logger.info(f"✅ Context-aware translation complete: {len(hebrew_translations)} tweets translated")
+                                    except Exception as e:
+                                        logger.error(f"Translation failed: {e}")
+                                        st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
+                                        hebrew_translations = []
+
+                                for idx, t in enumerate(tweets_data):
                                     permalink = t.get('permalink', '')
                                     if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
                                         media_url = t['media'][0]['src'] if t.get('media') else None
+
+                                        # Get Hebrew translation if available
+                                        hebrew_draft = None
+                                        tweet_status = TweetStatus.PENDING
+                                        if hebrew_translations and idx < len(hebrew_translations):
+                                            hebrew_draft = hebrew_translations[idx]
+                                            tweet_status = TweetStatus.PROCESSED
+
                                         db.add(Tweet(
                                             source_url=permalink,
                                             original_text=t.get('text', ''),
-                                            status=TweetStatus.PENDING,
+                                            hebrew_draft=hebrew_draft,
+                                            status=tweet_status,
                                             media_url=media_url,
                                             trend_topic=t.get('author_handle', '')
                                         ))
                                         saved += 1
                                 db.commit()
                                 progress.progress(100, "Done!")
-                                st.success(f"Added {saved} tweets to queue")
+
+                                if auto_translate and hebrew_translations:
+                                    st.success(f"✅ Added & translated {saved} tweets (with thread context)")
+                                else:
+                                    st.success(f"Added {saved} tweets to queue")
                         else:
                             existing = db.query(Thread).filter_by(source_url=url).first()
                             if existing:
@@ -1261,8 +1348,25 @@ def _render_queue_section(db):
 
 
 def render_content_item(tweet, db):
-    """Render a content list item"""
+    """Render a content list item with media indicators"""
     status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
+
+    # Parse media_paths JSON to get media count and types
+    media_count = 0
+    media_icon = ""
+    if tweet.media_paths:
+        try:
+            import json as json_mod
+            media_list = json_mod.loads(tweet.media_paths)
+            media_count = len(media_list)
+            has_video = any(m.get('type') == 'video' for m in media_list)
+            has_photo = any(m.get('type') == 'photo' for m in media_list)
+            if has_video:
+                media_icon = "🎥"
+            elif has_photo:
+                media_icon = "🖼️"
+        except:
+            pass
 
     with st.container():
         col1, col2, col3 = st.columns([4, 1, 1])
@@ -1281,7 +1385,13 @@ def render_content_item(tweet, db):
             """, unsafe_allow_html=True)
 
         with col2:
-            if tweet.hebrew_draft:
+            if media_count > 0:
+                st.markdown(f"""
+                    <div style="font-size: 0.75rem; color: var(--accent-primary); text-align: center;">
+                        {media_icon} {media_count} media
+                    </div>
+                """, unsafe_allow_html=True)
+            elif tweet.hebrew_draft:
                 st.markdown(f"""
                     <div style="font-size: 0.75rem; color: var(--accent-success); direction: rtl; text-align: right;">
                         Translated
@@ -1384,6 +1494,48 @@ def render_editor(db, tweet_id):
         """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # Media Gallery Section (if media exists)
+    if tweet.media_paths:
+        try:
+            import json as json_mod
+            from pathlib import Path
+            media_list = json_mod.loads(tweet.media_paths)
+            
+            if media_list:
+                st.markdown("---")
+                st.markdown(f"""
+                    <div style="background: var(--bg-tertiary); padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
+                        <span style="font-size: 0.75rem; font-weight: 600; color: var(--accent-primary); text-transform: uppercase;">
+                            Thread Media ({len(media_list)} files)
+                        </span>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                num_cols = min(len(media_list), 4)
+                cols = st.columns(num_cols)
+                
+                for idx, media_item in enumerate(media_list):
+                    with cols[idx % num_cols]:
+                        media_type = media_item.get('type', 'unknown')
+                        local_path = media_item.get('local_path', '')
+                        tweet_id = media_item.get('tweet_id', 'N/A')
+                        
+                        if local_path and Path(local_path).exists():
+                            if media_type == 'photo':
+                                st.image(local_path, caption=f"Tweet #{idx+1}", use_container_width=True)
+                            elif media_type == 'video':
+                                st.video(local_path)
+                                st.caption(f"🎥 Video #{idx+1}")
+                        else:
+                            st.markdown(f"""
+                                <div style="background: var(--bg-elevated); padding: 1rem; border-radius: 8px; text-align: center; color: var(--text-muted);">
+                                    ❌ {media_type.title()} missing<br>
+                                    <small>File not found</small>
+                                </div>
+                            """, unsafe_allow_html=True)
+        except Exception as e:
+            logger.warning(f"Failed to parse media_paths: {e}")
 
     # Action buttons
     col1, col2, col3, col4, col5 = st.columns(5)

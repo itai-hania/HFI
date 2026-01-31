@@ -186,6 +186,11 @@ class Tweet(Base):
         nullable=True,
         comment="Local filesystem path to downloaded media (relative to data/media/)"
     )
+    media_paths = Column(
+        Text,
+        nullable=True,
+        comment="JSON array of all media files: [{tweet_id, type, src, local_path}, ...]"
+    )
 
     # Classification
     trend_topic = Column(
@@ -250,6 +255,7 @@ class Tweet(Base):
             'hebrew_draft': self.hebrew_draft,
             'media_url': self.media_url,
             'media_path': self.media_path,
+            'media_paths': self.media_paths,
             'trend_topic': self.trend_topic,
             'status': self.status.value,
             'error_message': self.error_message,
@@ -476,6 +482,19 @@ def create_tables(drop_existing: bool = False):
                 )
                 conn.commit()
                 logger.info("Migration: added article_url column to trends")
+            except Exception:
+                pass  # Column already exists
+
+        # Safe migration: add media_paths column to tweets if missing
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE tweets ADD COLUMN media_paths TEXT"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added media_paths column to tweets")
             except Exception:
                 pass  # Column already exists
 

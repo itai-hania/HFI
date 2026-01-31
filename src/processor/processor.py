@@ -358,6 +358,290 @@ CRITICAL RULES - FOLLOW EXACTLY:
 
         return self.translate_and_rewrite(combined)
 
+    def translate_thread_consolidated(self, tweets: List[Dict], max_retries: int = 2) -> str:
+        """
+        Translate entire thread as one flowing narrative in Hebrew.
+
+        This method treats the thread as a SINGLE story to be rewritten,
+        not as separate tweets to be concatenated. The result is a cohesive
+        Hebrew post without thread markers (1/5, 2/5) or separators.
+
+        Args:
+            tweets: List of tweet dicts with 'text', 'author_handle', etc.
+                   Expected structure: [{'text': '...', 'author_handle': '@user', ...}, ...]
+            max_retries: Number of retry attempts if validation fails
+
+        Returns:
+            Single flowing Hebrew post (no thread markers or separators)
+
+        Example:
+            >>> tweets = [
+            ...     {'text': 'Breaking: Bitcoin hits new ATH', 'author_handle': '@crypto'},
+            ...     {'text': 'This is significant because...', 'author_handle': '@crypto'},
+            ...     {'text': 'Market implications are huge', 'author_handle': '@crypto'}
+            ... ]
+            >>> translation = translator.translate_thread_consolidated(tweets)
+            >>> print(translation)
+            'ביטקוין הגיע לשיא חדש. זה משמעותי כי...'
+        """
+        if not tweets:
+            return ""
+
+        # Extract text from all tweets
+        texts = [t.get('text', '') for t in tweets if t.get('text')]
+
+        if not texts:
+            logger.warning("No text found in tweets")
+            return ""
+
+        # Combine into single context
+        combined_text = "\n\n".join(texts)
+
+        # Skip if already Hebrew
+        if self.is_hebrew(combined_text):
+            logger.info("Thread already Hebrew, skipping translation")
+            return combined_text
+
+        # Extract items to preserve from ALL tweets
+        all_preservables = {
+            'urls': [],
+            'mentions': [],
+            'hashtags': []
+        }
+        for text in texts:
+            preservables = self.extract_preservables(text)
+            all_preservables['urls'].extend(preservables['urls'])
+            all_preservables['mentions'].extend(preservables['mentions'])
+            all_preservables['hashtags'].extend(preservables['hashtags'])
+
+        # Build glossary string
+        glossary_str = "\n".join([
+            f"- {eng}: {heb}"
+            for eng, heb in self.config.glossary.items()
+        ]) if self.config.glossary else "No specific terms"
+
+        # Terms to keep in English
+        keep_english_str = ", ".join(sorted(self.KEEP_ENGLISH))
+
+        # Enhanced system prompt for narrative rewrite
+        system_prompt = f"""You are an expert Hebrew financial content creator specializing in fintech and tech news.
+
+Your task is to TRANSCREATE (not just translate) an English Twitter THREAD into Hebrew.
+
+CRITICAL - THIS IS A THREAD, NOT A SINGLE TWEET:
+- This is {len(tweets)} tweets by the same author forming ONE story
+- Rewrite as a SINGLE FLOWING HEBREW POST
+- NO thread markers (1/5, 2/5, 1/n, etc.)
+- NO separators (---, ===, •••)
+- NO "part 1", "part 2" references
+- Combine into ONE cohesive narrative
+- Use natural Hebrew paragraph structure
+- Preserve ALL key information and insights
+- Keep it concise but complete
+
+OUTPUT REQUIREMENTS:
+1. KEEP THESE TERMS IN ENGLISH (do NOT translate):
+   {keep_english_str}
+
+2. PRESERVE EXACTLY (copy as-is):
+   - URLs: {', '.join(all_preservables['urls'][:5]) or 'none'}
+   - @mentions: {', '.join(all_preservables['mentions'][:5]) or 'none'}
+   - #hashtags: {', '.join(all_preservables['hashtags'][:5]) or 'none'}
+   - Numbers, percentages, company names
+
+3. GLOSSARY (use these translations):
+{glossary_str}
+
+4. STYLE:
+{self.config.style_examples}
+
+5. FORMAT:
+   - Output ONLY Hebrew content
+   - Use paragraph breaks naturally (not per original tweet)
+   - 1-2 emojis maximum
+   - No explanations or metadata
+   - At least 50% of letters must be Hebrew
+
+Remember: Create ONE unified Hebrew post that tells the complete story."""
+
+        for attempt in range(max_retries + 1):
+            try:
+                logger.info(f"Translating thread ({len(tweets)} tweets) as consolidated narrative (attempt {attempt + 1})")
+
+                # Prepare user message
+                user_message = f"""Original thread ({len(tweets)} tweets):
+
+{combined_text}
+
+Transcreate this entire thread into ONE flowing Hebrew post."""
+
+                response = self.client.chat.completions.create(
+                    model=self.config.openai_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=self.config.openai_temperature,
+                    top_p=0.9
+                )
+
+                hebrew_text = response.choices[0].message.content.strip()
+
+                # Validate output
+                is_valid, reason = self.validate_hebrew_output(hebrew_text)
+
+                if is_valid:
+                    logger.info(f"Thread translation successful: {hebrew_text[:100]}...")
+                    return hebrew_text
+                else:
+                    logger.warning(f"Validation failed: {reason}")
+                    if attempt < max_retries:
+                        system_prompt += f"\n\nPREVIOUS ATTEMPT FAILED: {reason}. Ensure output is primarily Hebrew."
+                    else:
+                        logger.warning(f"Returning unvalidated result after {max_retries + 1} attempts")
+                        return hebrew_text
+
+            except Exception as e:
+                logger.error(f"Thread translation failed (attempt {attempt + 1}): {e}")
+                if attempt == max_retries:
+                    raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
+
+        return combined_text  # Fallback
+
+    def translate_thread_separate(self, tweets: List[Dict], max_retries: int = 2) -> List[str]:
+        """
+        Translate each tweet in a thread with context of previous tweets.
+
+        This method maintains thread structure (separate tweets) but provides
+        context from earlier tweets to ensure continuity and avoid repetition.
+
+        Args:
+            tweets: List of tweet dicts with 'text', 'author_handle', etc.
+            max_retries: Number of retry attempts per tweet if validation fails
+
+        Returns:
+            List of Hebrew translations (one per tweet, in same order)
+
+        Example:
+            >>> tweets = [
+            ...     {'text': 'Breaking news about fintech', ...},
+            ...     {'text': 'More details here...', ...}
+            ... ]
+            >>> translations = translator.translate_thread_separate(tweets)
+            >>> len(translations) == 2
+            True
+        """
+        if not tweets:
+            return []
+
+        results = []
+        context_texts = []  # Store original English context
+
+        logger.info(f"Translating thread ({len(tweets)} tweets) as separate tweets with context")
+
+        for idx, tweet in enumerate(tweets):
+            tweet_text = tweet.get('text', '')
+
+            if not tweet_text:
+                logger.warning(f"Tweet {idx+1} has no text, skipping")
+                results.append("")
+                continue
+
+            # Skip if already Hebrew
+            if self.is_hebrew(tweet_text):
+                logger.info(f"Tweet {idx+1} already Hebrew, using as-is")
+                results.append(tweet_text)
+                context_texts.append(f"{idx+1}. {tweet_text}")
+                continue
+
+            # Build context string from previous tweets
+            context_str = "\n".join(context_texts) if context_texts else "This is the first tweet in the thread."
+
+            # Extract preservables
+            preservables = self.extract_preservables(tweet_text)
+
+            # Build glossary
+            glossary_str = "\n".join([
+                f"- {eng}: {heb}"
+                for eng, heb in self.config.glossary.items()
+            ]) if self.config.glossary else "No specific terms"
+
+            keep_english_str = ", ".join(sorted(self.KEEP_ENGLISH))
+
+            # Context-aware system prompt
+            system_prompt = f"""You are an expert Hebrew financial content creator.
+
+You are translating tweet {idx+1}/{len(tweets)} from a Twitter thread.
+
+CONTEXT - PREVIOUS TWEETS IN THIS THREAD:
+{context_str}
+
+CURRENT TWEET TO TRANSLATE:
+{tweet_text}
+
+CRITICAL INSTRUCTIONS:
+1. This tweet is part of a larger thread
+2. Consider the context from previous tweets
+3. Avoid repeating information already mentioned
+4. Maintain narrative continuity
+5. Use references appropriately ("this", "therefore", etc.)
+
+OUTPUT REQUIREMENTS:
+1. KEEP IN ENGLISH: {keep_english_str}
+2. PRESERVE: URLs={', '.join(preservables['urls']) or 'none'}, @mentions={', '.join(preservables['mentions']) or 'none'}, #hashtags={', '.join(preservables['hashtags']) or 'none'}
+3. GLOSSARY:
+{glossary_str}
+4. STYLE:
+{self.config.style_examples}
+5. Output ONLY Hebrew content (at least 50% Hebrew characters)
+
+Transcreate this tweet to Hebrew:"""
+
+            for attempt in range(max_retries + 1):
+                try:
+                    logger.info(f"Translating tweet {idx+1}/{len(tweets)} (attempt {attempt + 1})")
+
+                    response = self.client.chat.completions.create(
+                        model=self.config.openai_model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": tweet_text}
+                        ],
+                        temperature=self.config.openai_temperature,
+                        top_p=0.9
+                    )
+
+                    hebrew_text = response.choices[0].message.content.strip()
+
+                    # Validate output
+                    is_valid, reason = self.validate_hebrew_output(hebrew_text)
+
+                    if is_valid:
+                        logger.info(f"Tweet {idx+1} translated: {hebrew_text[:80]}...")
+                        results.append(hebrew_text)
+                        # Add to context for next tweets
+                        context_texts.append(f"{idx+1}. {tweet_text}")
+                        break
+                    else:
+                        logger.warning(f"Tweet {idx+1} validation failed: {reason}")
+                        if attempt < max_retries:
+                            system_prompt += f"\n\nPREVIOUS ATTEMPT FAILED: {reason}. Ensure Hebrew output."
+                        else:
+                            logger.warning(f"Using unvalidated result for tweet {idx+1}")
+                            results.append(hebrew_text)
+                            context_texts.append(f"{idx+1}. {tweet_text}")
+
+                except Exception as e:
+                    logger.error(f"Tweet {idx+1} translation failed (attempt {attempt + 1}): {e}")
+                    if attempt == max_retries:
+                        logger.error(f"Failed to translate tweet {idx+1} after {max_retries + 1} attempts")
+                        results.append(tweet_text)  # Fallback to original
+                        context_texts.append(f"{idx+1}. {tweet_text}")
+                        break
+
+        logger.info(f"Thread separate translation complete: {len(results)} tweets translated")
+        return results
+
 
 class MediaDownloader:
     """Handles downloading media files from URLs (videos and images)."""
