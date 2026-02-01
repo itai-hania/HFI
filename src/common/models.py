@@ -27,6 +27,7 @@ from sqlalchemy import (
     Index,
     event,
     Engine,
+    JSON,
 )
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -403,6 +404,29 @@ class Trend(Base):
         comment="Original article URL from source"
     )
 
+    # AI-generated summary and context
+    summary = Column(
+        Text,
+        nullable=True,
+        comment="AI-generated 1-2 sentence summary of the article"
+    )
+    keywords = Column(
+        JSON,
+        nullable=True,
+        comment="Extracted keywords from article title (JSON array)"
+    )
+    source_count = Column(
+        Integer,
+        default=1,
+        nullable=False,
+        comment="Number of sources mentioning this trend"
+    )
+    related_trend_ids = Column(
+        JSON,
+        nullable=True,
+        comment="IDs of related trends grouped by keyword overlap (JSON array)"
+    )
+
     # Source tracking
     source = Column(
         SQLEnum(TrendSource),
@@ -442,6 +466,10 @@ class Trend(Base):
             'title': self.title,
             'description': self.description,
             'article_url': self.article_url,
+            'summary': self.summary,
+            'keywords': self.keywords,
+            'source_count': self.source_count,
+            'related_trend_ids': self.related_trend_ids,
             'source': self.source.value,
             'discovered_at': self.discovered_at.isoformat() if self.discovered_at else None,
         }
@@ -495,6 +523,55 @@ def create_tables(drop_existing: bool = False):
                 )
                 conn.commit()
                 logger.info("Migration: added media_paths column to tweets")
+            except Exception:
+                pass  # Column already exists
+
+        # Safe migration: add summary fields to trends if missing
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE trends ADD COLUMN summary TEXT"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added summary column to trends")
+            except Exception:
+                pass  # Column already exists
+
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE trends ADD COLUMN keywords TEXT"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added keywords column to trends")
+            except Exception:
+                pass  # Column already exists
+
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE trends ADD COLUMN source_count INTEGER DEFAULT 1"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added source_count column to trends")
+            except Exception:
+                pass  # Column already exists
+
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE trends ADD COLUMN related_trend_ids TEXT"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added related_trend_ids column to trends")
             except Exception:
                 pass  # Column already exists
 

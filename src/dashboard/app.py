@@ -8,6 +8,7 @@ import sys
 import logging
 import asyncio
 import os
+import html
 from pathlib import Path
 from datetime import datetime, timezone
 import time
@@ -24,6 +25,16 @@ import json
 from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
+
+# Import summary generator (lazy load to avoid import errors if OpenAI key not set)
+def get_summary_generator():
+    """Lazy load summary generator to avoid import errors."""
+    try:
+        from processor.summary_generator import SummaryGenerator
+        return SummaryGenerator()
+    except Exception as e:
+        logger.warning(f"Could not initialize SummaryGenerator: {e}")
+        return None
 
 # Page config
 st.set_page_config(
@@ -939,17 +950,33 @@ def render_home(db):
             for trend in trends:
                 source_val = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
                 badge_cls = get_source_badge_class(source_val)
-                desc_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{trend.description[:120]}...</div>' if trend.description and len(trend.description) > 10 else ''
-                link_html = f'<a href="{trend.article_url}" target="_blank" style="color: var(--accent-primary); font-size: 0.8rem; text-decoration: none;">{trend.title}</a>' if trend.article_url else f'<span style="color: var(--text-primary); font-size: 0.85rem;">{trend.title}</span>'
-                st.markdown(f"""
-                    <div class="queue-item">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            {link_html}
-                            <span class="status-badge {badge_cls}">{source_val}</span>
-                        </div>
-                        {desc_html}
-                    </div>
-                """, unsafe_allow_html=True)
+                # HTML-escape user content to prevent rendering issues
+                safe_title = html.escape(trend.title or '')
+                link_html = f'<a href="{html.escape(trend.article_url or "")}" target="_blank" style="color: var(--accent-primary); font-size: 0.8rem; text-decoration: none;">{safe_title}</a>' if trend.article_url else f'<span style="color: var(--text-primary); font-size: 0.85rem;">{safe_title}</span>'
+
+                # Show AI summary if available, otherwise show description (escaped)
+                if trend.summary:
+                    safe_summary = html.escape(trend.summary[:150])
+                    summary_html = f'<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem; line-height: 1.4;">{safe_summary}{"..." if len(trend.summary) > 150 else ""}</div>'
+                elif trend.description and len(trend.description) > 10:
+                    safe_desc = html.escape(trend.description[:120])
+                    summary_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{safe_desc}...</div>'
+                else:
+                    summary_html = ''
+
+                # Show keywords as small tags (escaped)
+                keywords_html = ''
+                if trend.keywords and isinstance(trend.keywords, list) and len(trend.keywords) > 0:
+                    keywords_tags = ' '.join([f'<span style="background: var(--bg-tertiary); color: var(--text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; margin-right: 0.25rem;">{html.escape(str(kw))}</span>' for kw in trend.keywords[:4]])
+                    keywords_html = f'<div style="margin-top: 0.35rem;">{keywords_tags}</div>'
+
+                # Show source count if multiple sources
+                source_count_html = ''
+                if trend.source_count and trend.source_count > 1:
+                    source_count_html = f'<span style="background: rgba(34, 197, 94, 0.15); color: #4ADE80; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.65rem; margin-left: 0.5rem;">{trend.source_count} sources</span>'
+
+                card_html = f'<div class="queue-item"><div style="display: flex; justify-content: space-between; align-items: center;">{link_html}<div style="display: flex; align-items: center;">{source_count_html}<span class="status-badge {badge_cls}">{html.escape(source_val)}</span></div></div>{summary_html}{keywords_html}</div>'
+                st.markdown(card_html, unsafe_allow_html=True)
         else:
             st.info("No trends discovered yet. Go to Content to fetch trends.")
 
@@ -1183,11 +1210,32 @@ def _render_acquire_section(db):
     # ---- Fetch All Trends ----
     st.markdown("### Discover Trends")
 
-    fcol1, fcol2 = st.columns([3, 1])
+    fcol1, fcol2, fcol3 = st.columns([2, 1, 1])
     with fcol1:
-        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles with weighted sampling: 70% finance (Yahoo, WSJ, Bloomberg) + 30% tech (TechCrunch), ranked by keyword overlap.</p>', unsafe_allow_html=True)
+        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles with weighted sampling: 70% finance + 30% tech, ranked by keyword overlap.</p>', unsafe_allow_html=True)
     with fcol2:
+        auto_summarize = st.checkbox("Auto-summarize", value=True, key="auto_gen_summary", help="Generate AI summaries automatically when fetching trends")
+        st.session_state.auto_generate_summaries = auto_summarize
+    with fcol3:
         fetch_all = st.button("Fetch All Trends", type="primary", use_container_width=True, key="fetch_all_trends")
+
+    # Generate Summaries button for existing trends without summaries
+    trends_without_summary = db.query(Trend).filter(Trend.summary == None).count()
+    if trends_without_summary > 0:
+        gcol1, gcol2 = st.columns([3, 1])
+        with gcol1:
+            st.markdown(f'<p style="color: var(--text-muted); font-size: 0.8rem;">{trends_without_summary} trends need AI summaries</p>', unsafe_allow_html=True)
+        with gcol2:
+            if st.button("Generate Summaries", key="gen_summaries_btn", use_container_width=True):
+                generator = get_summary_generator()
+                if generator:
+                    with st.spinner(f"Generating summaries for {trends_without_summary} trends..."):
+                        stats = generator.backfill_summaries(db, limit=20)
+                        st.success(f"Generated {stats['success']} summaries ({stats['failed']} failed)")
+                        time.sleep(0.5)
+                        st.rerun()
+                else:
+                    st.error("Could not initialize summary generator. Check OPENAI_API_KEY.")
 
     if fetch_all:
         with st.spinner("Fetching from all sources..."):
@@ -1207,19 +1255,36 @@ def _render_acquire_section(db):
                     'MarketWatch': TrendSource.MARKETWATCH,
                 }
                 saved = 0
+                new_trend_ids = []
                 for article in ranked_news:
                     if not db.query(Trend).filter_by(title=article['title']).first():
-                        db.add(Trend(
+                        new_trend = Trend(
                             title=article['title'],
                             description=article.get('description', '')[:500],
                             source=source_map.get(article['source'], TrendSource.MANUAL),
                             article_url=article.get('url', ''),
-                        ))
+                        )
+                        db.add(new_trend)
+                        db.flush()  # Get the ID
+                        new_trend_ids.append(new_trend.id)
                         saved += 1
                 db.commit()
 
                 st.session_state.ranked_articles = ranked_news
+                st.session_state.new_trend_ids = new_trend_ids
                 st.success(f"Fetched & ranked top {len(ranked_news)} articles, saved {saved} new trends")
+
+                # Auto-generate summaries for new trends
+                if new_trend_ids and st.session_state.get('auto_generate_summaries', True):
+                    generator = get_summary_generator()
+                    if generator:
+                        with st.spinner(f"Generating AI summaries for {len(new_trend_ids)} trends..."):
+                            success_count = 0
+                            for trend_id in new_trend_ids:
+                                if generator.process_trend(db, trend_id):
+                                    success_count += 1
+                            st.success(f"Generated {success_count} AI summaries")
+
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
@@ -1243,29 +1308,34 @@ def _render_acquire_section(db):
         """, unsafe_allow_html=True)
 
         for idx, art in enumerate(ranked, 1):
-            art_url = art.get('url', '')
-            art_title = art.get('title', '')
-            art_desc = (art.get('description', '') or '')[:120]
-            art_source = art.get('source', '')
+            art_url = html.escape(art.get('url', '') or '')
+            art_title = html.escape(art.get('title', '') or '')
+            art_desc = html.escape((art.get('description', '') or '')[:120])
+            art_source = html.escape(art.get('source', '') or '')
             art_category = art.get('category', 'Unknown')
-            badge_cls = get_source_badge_class(art_source)
+            badge_cls = get_source_badge_class(art.get('source', ''))
             category_emoji = "💰" if art_category == "Finance" else "💻"
-            title_html = f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>' if art_url else f'<span style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">{art_title}</span>'
-            desc_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{art_desc}</div>' if art_desc else ''
+            title_html = f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>' if art.get('url') else f'<span style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">{art_title}</span>'
 
-            st.markdown(f"""
-                <div class="queue-item">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 1.5rem;">#{idx}</span>
-                            <span style="font-size: 1rem;">{category_emoji}</span>
-                            {title_html}
-                        </div>
-                        <span class="status-badge {badge_cls}">{art_source}</span>
-                    </div>
-                    {desc_html}
-                </div>
-            """, unsafe_allow_html=True)
+            # Check if this trend has a summary in DB
+            db_trend = db.query(Trend).filter_by(title=art.get('title', '')).first()
+            if db_trend and db_trend.summary:
+                safe_summary = html.escape(db_trend.summary[:180])
+                summary_html = f'<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem; line-height: 1.4; background: rgba(25, 154, 245, 0.05); padding: 0.5rem; border-radius: 6px; border-left: 2px solid var(--accent-primary);">{safe_summary}{"..." if len(db_trend.summary) > 180 else ""}</div>'
+                # Show keywords
+                keywords_html = ''
+                if db_trend.keywords and isinstance(db_trend.keywords, list) and len(db_trend.keywords) > 0:
+                    keywords_tags = ' '.join([f'<span style="background: var(--bg-tertiary); color: var(--text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; margin-right: 0.25rem;">{html.escape(str(kw))}</span>' for kw in db_trend.keywords[:4]])
+                    keywords_html = f'<div style="margin-top: 0.35rem;">{keywords_tags}</div>'
+            elif art_desc:
+                summary_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{art_desc}</div>'
+                keywords_html = ''
+            else:
+                summary_html = ''
+                keywords_html = ''
+
+            card_html = f'<div class="queue-item"><div style="display: flex; justify-content: space-between; align-items: center;"><div style="display: flex; align-items: center; gap: 0.5rem;"><span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 1.5rem;">#{idx}</span><span style="font-size: 1rem;">{category_emoji}</span>{title_html}</div><span class="status-badge {badge_cls}">{art_source}</span></div>{summary_html}{keywords_html}</div>'
+            st.markdown(card_html, unsafe_allow_html=True)
     else:
         # Show recent trends from DB if no ranked results
         trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(10).all()
@@ -1274,15 +1344,33 @@ def _render_acquire_section(db):
             for trend in trends:
                 source_val = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
                 badge_cls = get_source_badge_class(source_val)
-                link_html = f'<a href="{trend.article_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">{trend.title}</a>' if trend.article_url else f'<span style="color: var(--text-primary);">{trend.title}</span>'
-                st.markdown(f"""
-                    <div class="queue-item">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            {link_html}
-                            <span class="status-badge {badge_cls}">{source_val}</span>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                # HTML-escape user content
+                safe_title = html.escape(trend.title or '')
+                link_html = f'<a href="{html.escape(trend.article_url or "")}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">{safe_title}</a>' if trend.article_url else f'<span style="color: var(--text-primary);">{safe_title}</span>'
+
+                # Show AI summary if available (escaped)
+                if trend.summary:
+                    safe_summary = html.escape(trend.summary[:150])
+                    summary_html = f'<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem; line-height: 1.4;">{safe_summary}{"..." if len(trend.summary) > 150 else ""}</div>'
+                elif trend.description and len(trend.description) > 10:
+                    safe_desc = html.escape(trend.description[:120])
+                    summary_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{safe_desc}...</div>'
+                else:
+                    summary_html = ''
+
+                # Show keywords as small tags (escaped)
+                keywords_html = ''
+                if trend.keywords and isinstance(trend.keywords, list) and len(trend.keywords) > 0:
+                    keywords_tags = ' '.join([f'<span style="background: var(--bg-tertiary); color: var(--text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; margin-right: 0.25rem;">{html.escape(str(kw))}</span>' for kw in trend.keywords[:4]])
+                    keywords_html = f'<div style="margin-top: 0.35rem;">{keywords_tags}</div>'
+
+                # Source count indicator
+                source_count_html = ''
+                if trend.source_count and trend.source_count > 1:
+                    source_count_html = f'<span style="background: rgba(34, 197, 94, 0.15); color: #4ADE80; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.65rem; margin-left: 0.5rem;">{trend.source_count} sources</span>'
+
+                card_html = f'<div class="queue-item"><div style="display: flex; justify-content: space-between; align-items: center;">{link_html}<div style="display: flex; align-items: center;">{source_count_html}<span class="status-badge {badge_cls}">{html.escape(source_val)}</span></div></div>{summary_html}{keywords_html}</div>'
+                st.markdown(card_html, unsafe_allow_html=True)
 
     st.markdown("---")
 
