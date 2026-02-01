@@ -39,12 +39,25 @@ logger = logging.getLogger(__name__)
 
 # ==================== Configuration ====================
 
-# Ensure data directory exists
-data_dir = Path(__file__).parent.parent.parent / "data"
-data_dir.mkdir(parents=True, exist_ok=True)
+# Get database URL from environment first
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Get database URL from environment, default to SQLite in data directory
-DATABASE_URL = os.getenv('DATABASE_URL', f'sqlite:///{data_dir}/hfi.db')
+if DATABASE_URL:
+    # Extract data directory from DATABASE_URL if it's a file path
+    if DATABASE_URL.startswith('sqlite:///'):
+        db_path = DATABASE_URL.replace('sqlite:///', '')
+        data_dir = Path(db_path).parent
+        # Only create directory if it doesn't exist and we're not at root level
+        if not data_dir.exists() and str(data_dir) not in ['/', '/data', '\\']:
+            try:
+                data_dir.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                logger.warning(f"Cannot create data directory {data_dir}, assuming it exists or is mounted")
+else:
+    # Default: use relative path from source files
+    data_dir = Path(__file__).parent.parent.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    DATABASE_URL = f'sqlite:///{data_dir}/hfi.db'
 
 logger.info(f"Database configured: {DATABASE_URL}")
 

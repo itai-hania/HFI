@@ -51,7 +51,7 @@ services:
       - hfi-network
     # Keep container running but idle - execute scraper manually
     # This saves CPU/memory since Playwright is resource-intensive
-    command: /bin/bash -c "echo '✅ Scraper ready. Run: docker-compose exec scraper python main.py'; tail -f /dev/null"
+    command: tail -f /dev/null
 
   # Processor: Translates content and downloads media
   # Runs continuously, polling for new tweets every 30 seconds

@@ -10,24 +10,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy and install Python dependencies
 COPY src/dashboard/requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime image
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy Python packages from builder stage
-COPY --from=builder /root/.local /root/.local
-
-# Add Python packages to PATH
-ENV PATH=/root/.local/bin:$PATH
+# Copy Python packages from builder stage (system-wide)
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY src/dashboard/ .
 
 # Copy common models from parent directory
 COPY src/common /app/common
+
+# Copy scraper module (needed for news_scraper)
+COPY src/scraper /app/scraper
 
 # Create directories for data persistence
 RUN mkdir -p /app/data/media
