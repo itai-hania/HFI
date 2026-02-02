@@ -763,6 +763,105 @@ st.markdown("""
     .pulse {
         animation: pulse 2s ease-in-out infinite;
     }
+
+    /* ===========================================
+       RTL SUPPORT FOR HEBREW CONTENT
+       =========================================== */
+    .rtl-container {
+        direction: rtl;
+        text-align: right;
+        font-family: 'Heebo', 'Segoe UI', 'Arial', sans-serif;
+    }
+
+    .ltr-container {
+        direction: ltr;
+        text-align: left;
+    }
+
+    /* Side-by-side translation panel */
+    .translation-panel {
+        background: var(--bg-secondary);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-default);
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+    }
+
+    .translation-panel-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--radius-sm);
+        margin-bottom: 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .translation-panel-english {
+        background: var(--bg-tertiary);
+        color: var(--text-muted);
+    }
+
+    .translation-panel-hebrew {
+        background: rgba(34, 197, 94, 0.1);
+        color: var(--accent-success);
+    }
+
+    .translation-content {
+        font-size: 0.9rem;
+        line-height: 1.7;
+        color: var(--text-secondary);
+        padding: 0.75rem;
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-sm);
+        min-height: 60px;
+        white-space: pre-wrap;
+    }
+
+    .translation-content.hebrew {
+        direction: rtl;
+        text-align: right;
+        color: var(--text-primary);
+        font-family: 'Heebo', 'David', 'Segoe UI', sans-serif;
+    }
+
+    .thread-tweet-item {
+        background: var(--bg-secondary);
+        border-radius: var(--radius-md);
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        border: 1px solid var(--border-default);
+        transition: all 0.2s ease;
+    }
+
+    .thread-tweet-item:hover {
+        border-color: rgba(25, 154, 245, 0.3);
+    }
+
+    .thread-tweet-number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        background: var(--accent-primary);
+        color: white;
+        font-size: 0.7rem;
+        font-weight: 700;
+        border-radius: 50%;
+        margin-right: 0.5rem;
+    }
+
+    .thread-tweet-number.rtl {
+        margin-right: 0;
+        margin-left: 0.5rem;
+    }
+
+    /* Hebrew font loading */
+    @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap');
 </style>
 """, unsafe_allow_html=True)
 
@@ -1046,14 +1145,17 @@ def render_content(db):
         render_editor(db, st.session_state.selected_item)
         return
 
-    # Use tabs to organize: Acquire | Queue
-    tab_acquire, tab_queue = st.tabs(["Acquire", "Queue"])
+    # Use tabs to organize: Acquire | Queue | Thread Translation
+    tab_acquire, tab_queue, tab_threads = st.tabs(["Acquire", "Queue", "Thread Translation"])
 
     with tab_acquire:
         _render_acquire_section(db)
 
     with tab_queue:
         _render_queue_section(db)
+
+    with tab_threads:
+        _render_thread_translation(db)
 
 
 def _render_acquire_section(db):
@@ -1470,6 +1572,277 @@ def _render_queue_section(db):
 
     for tweet in tweets:
         render_content_item(tweet, db)
+
+
+def _render_thread_translation(db):
+    """Thread Translation section with side-by-side English/Hebrew display."""
+
+    st.markdown("### Thread Translation")
+    st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Paste a Twitter/X thread URL to fetch and translate with side-by-side RTL Hebrew display.</p>', unsafe_allow_html=True)
+
+    # Initialize session state for thread translation
+    if 'thread_data' not in st.session_state:
+        st.session_state.thread_data = None
+    if 'thread_translations' not in st.session_state:
+        st.session_state.thread_translations = None
+    if 'thread_url' not in st.session_state:
+        st.session_state.thread_url = ""
+
+    # URL input and fetch button
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        thread_url = st.text_input(
+            "Thread URL",
+            placeholder="https://x.com/user/status/1234567890",
+            key="thread_trans_url",
+            label_visibility="collapsed",
+            value=st.session_state.thread_url
+        )
+    with col2:
+        fetch_btn = st.button("Fetch Thread", type="primary", use_container_width=True, key="fetch_thread_btn")
+
+    # Fetch thread when button clicked
+    if fetch_btn and thread_url:
+        with st.spinner("Fetching thread..."):
+            try:
+                from scraper.scraper import TwitterScraper
+
+                async def fetch():
+                    scraper = TwitterScraper()
+                    try:
+                        await scraper.ensure_logged_in()
+                        return await scraper.fetch_raw_thread(thread_url, author_only=True)
+                    finally:
+                        await scraper.close()
+
+                result = asyncio.run(fetch())
+                tweets_data = result.get('tweets', [])
+
+                if tweets_data:
+                    st.session_state.thread_data = {
+                        'tweets': tweets_data,
+                        'author_handle': result.get('author_handle', ''),
+                        'author_name': result.get('author_name', ''),
+                        'url': thread_url
+                    }
+                    st.session_state.thread_url = thread_url
+                    st.session_state.thread_translations = None  # Reset translations
+                    st.success(f"Fetched {len(tweets_data)} tweets from thread")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.warning("No tweets found in thread")
+
+            except Exception as e:
+                st.error(f"Failed to fetch thread: {str(e)[:100]}")
+
+    # Display thread if fetched
+    if st.session_state.thread_data:
+        thread = st.session_state.thread_data
+        tweets = thread.get('tweets', [])
+        author = thread.get('author_handle', 'Unknown')
+
+        st.markdown("---")
+
+        # Thread header with author and translate button
+        header_col1, header_col2, header_col3 = st.columns([2, 1, 1])
+        with header_col1:
+            st.markdown(f'<p style="font-weight: 600; color: var(--text-primary);">{html.escape(author)} ({len(tweets)} tweets)</p>', unsafe_allow_html=True)
+        with header_col2:
+            translation_mode = st.selectbox(
+                "Mode",
+                ["Consolidated", "Separate"],
+                key="trans_mode",
+                label_visibility="collapsed",
+                help="Consolidated: One flowing post. Separate: Keep thread structure."
+            )
+        with header_col3:
+            translate_btn = st.button("Translate to Hebrew", type="primary", use_container_width=True, key="translate_thread_btn")
+
+        # Translate thread when button clicked
+        if translate_btn:
+            with st.spinner("Translating thread to Hebrew..."):
+                try:
+                    from processor.processor import ProcessorConfig, TranslationService
+                    config = ProcessorConfig()
+                    translator = TranslationService(config)
+
+                    if translation_mode == "Consolidated":
+                        # Single flowing post
+                        hebrew_text = translator.translate_thread_consolidated(tweets)
+                        st.session_state.thread_translations = {
+                            'mode': 'consolidated',
+                            'hebrew': hebrew_text
+                        }
+                    else:
+                        # Separate tweets with context
+                        hebrew_list = translator.translate_thread_separate(tweets)
+                        st.session_state.thread_translations = {
+                            'mode': 'separate',
+                            'hebrew_list': hebrew_list
+                        }
+
+                    st.success("Translation complete!")
+                    time.sleep(0.5)
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Translation failed: {str(e)[:100]}")
+
+        # Side-by-side display
+        st.markdown("---")
+
+        col_en, col_he = st.columns(2)
+
+        translations = st.session_state.thread_translations
+
+        with col_en:
+            st.markdown('<div class="translation-panel-header translation-panel-english">English (LTR)</div>', unsafe_allow_html=True)
+
+            if translations and translations.get('mode') == 'consolidated':
+                # Show original combined text
+                combined_text = "\n\n".join([t.get('text', '') for t in tweets])
+                st.markdown(f'<div class="translation-content ltr-container">{html.escape(combined_text)}</div>', unsafe_allow_html=True)
+            else:
+                # Show individual tweets with numbers
+                for idx, tweet in enumerate(tweets, 1):
+                    tweet_text = tweet.get('text', '')
+                    st.markdown(f'''
+                        <div class="thread-tweet-item">
+                            <span class="thread-tweet-number">{idx}</span>
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">{html.escape(tweet_text)}</span>
+                        </div>
+                    ''', unsafe_allow_html=True)
+
+        with col_he:
+            st.markdown('<div class="translation-panel-header translation-panel-hebrew">Hebrew (RTL)</div>', unsafe_allow_html=True)
+
+            if translations:
+                if translations.get('mode') == 'consolidated':
+                    # Show consolidated Hebrew translation
+                    hebrew_text = translations.get('hebrew', '')
+                    if hebrew_text:
+                        st.markdown(f'<div class="translation-content hebrew rtl-container">{html.escape(hebrew_text)}</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="translation-content" style="color: var(--text-muted); font-style: italic;">Translation pending...</div>', unsafe_allow_html=True)
+                else:
+                    # Show individual Hebrew tweets with numbers (RTL)
+                    hebrew_list = translations.get('hebrew_list', [])
+                    for idx, hebrew_text in enumerate(hebrew_list, 1):
+                        if hebrew_text:
+                            st.markdown(f'''
+                                <div class="thread-tweet-item rtl-container">
+                                    <span class="thread-tweet-number rtl">{idx}</span>
+                                    <span style="color: var(--text-primary); font-size: 0.85rem;">{html.escape(hebrew_text)}</span>
+                                </div>
+                            ''', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'''
+                                <div class="thread-tweet-item rtl-container">
+                                    <span class="thread-tweet-number rtl">{idx}</span>
+                                    <span style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">Not translated</span>
+                                </div>
+                            ''', unsafe_allow_html=True)
+            else:
+                # Placeholder for Hebrew translations
+                for idx in range(1, len(tweets) + 1):
+                    st.markdown(f'''
+                        <div class="thread-tweet-item rtl-container">
+                            <span class="thread-tweet-number rtl">{idx}</span>
+                            <span style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">Click "Translate to Hebrew" to translate</span>
+                        </div>
+                    ''', unsafe_allow_html=True)
+
+        # Action buttons for translated content
+        if translations:
+            st.markdown("---")
+
+            action_col1, action_col2, action_col3, action_col4 = st.columns(4)
+
+            with action_col1:
+                if st.button("Add to Queue", use_container_width=True, key="add_trans_queue"):
+                    try:
+                        if translations.get('mode') == 'consolidated':
+                            # Add as single consolidated tweet
+                            combined_text = "\n\n".join([t.get('text', '') for t in tweets])
+                            hebrew_text = translations.get('hebrew', '')
+
+                            if not db.query(Tweet).filter_by(source_url=thread.get('url', '')).first():
+                                new_tweet = Tweet(
+                                    source_url=thread.get('url', ''),
+                                    original_text=combined_text,
+                                    hebrew_draft=hebrew_text,
+                                    trend_topic=thread.get('author_handle', ''),
+                                    status=TweetStatus.PROCESSED if hebrew_text else TweetStatus.PENDING
+                                )
+                                db.add(new_tweet)
+                                db.commit()
+                                st.success("Added consolidated thread to queue!")
+                            else:
+                                st.info("Thread already in queue")
+                        else:
+                            # Add as separate tweets
+                            hebrew_list = translations.get('hebrew_list', [])
+                            saved = 0
+                            for idx, tweet in enumerate(tweets):
+                                permalink = tweet.get('permalink', '')
+                                if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
+                                    hebrew_text = hebrew_list[idx] if idx < len(hebrew_list) else None
+                                    new_tweet = Tweet(
+                                        source_url=permalink,
+                                        original_text=tweet.get('text', ''),
+                                        hebrew_draft=hebrew_text,
+                                        trend_topic=thread.get('author_handle', ''),
+                                        status=TweetStatus.PROCESSED if hebrew_text else TweetStatus.PENDING
+                                    )
+                                    db.add(new_tweet)
+                                    saved += 1
+                            db.commit()
+                            st.success(f"Added {saved} tweets to queue!")
+
+                        time.sleep(0.5)
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Failed to add to queue: {str(e)[:80]}")
+
+            with action_col2:
+                # Copy Hebrew text button
+                if translations.get('mode') == 'consolidated':
+                    hebrew_copy = translations.get('hebrew', '')
+                else:
+                    hebrew_copy = "\n\n".join(translations.get('hebrew_list', []))
+
+                if hebrew_copy:
+                    st.download_button(
+                        "Download Hebrew",
+                        data=hebrew_copy,
+                        file_name="hebrew_translation.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        key="download_hebrew"
+                    )
+
+            with action_col3:
+                if st.button("Re-translate", use_container_width=True, key="retranslate_btn"):
+                    st.session_state.thread_translations = None
+                    st.rerun()
+
+            with action_col4:
+                if st.button("Clear Thread", use_container_width=True, key="clear_thread_btn"):
+                    st.session_state.thread_data = None
+                    st.session_state.thread_translations = None
+                    st.session_state.thread_url = ""
+                    st.rerun()
+    else:
+        # Empty state
+        st.markdown("""
+            <div class="empty-state" style="margin-top: 2rem;">
+                <div class="empty-state-icon">🧵</div>
+                <div class="empty-state-title">No thread loaded</div>
+                <div class="empty-state-text">Paste a Twitter/X thread URL above and click "Fetch Thread" to get started with side-by-side translation.</div>
+            </div>
+        """, unsafe_allow_html=True)
 
 
 def render_content_item(tweet, db):

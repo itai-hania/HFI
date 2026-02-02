@@ -1,8 +1,8 @@
 # HFI Dashboard Improvements - Technical Specification
 
-**Version:** 2.2
-**Date:** 2026-02-01
-**Status:** Phase 1 Complete, Phase 2 In Progress
+**Version:** 3.0
+**Date:** 2026-02-02
+**Status:** Phase 1-3 Complete, Phase 4 In Planning
 
 ---
 
@@ -15,7 +15,7 @@ This specification outlines improvements to the Hebrew FinTech Informant (HFI) d
 1. **AI Article Summaries** - Auto-generate summaries to quickly understand what each article is about
 2. **UX Polish** - Smoother interactions, better visual feedback, more comfortable workflow
 3. **Thread Translation** - Full Hebrew rewrite of threads in your style (RTL display)
-4. **Keyboard Shortcuts** - (Low priority) Quick actions for power users
+4. **Home Page Layout** - Collapsible sections for better content organization
 
 **What we're NOT doing:**
 - ❌ Migrating away from Streamlit
@@ -31,8 +31,8 @@ This specification outlines improvements to the Hebrew FinTech Informant (HFI) d
 |-------|--------|------------|
 | Phase 1: AI Summaries | ✅ Complete | 100% |
 | Phase 2: UX Polish | ✅ Complete | 100% |
-| Phase 3: Thread Translation RTL | 🔄 Next | 0% |
-| Phase 4: Keyboard Shortcuts | ⏳ Pending | 0% |
+| Phase 3: Thread Translation RTL | ✅ Complete | 100% |
+| Phase 4: Home Page Layout | 📋 Planning | 0% |
 
 ---
 
@@ -122,7 +122,7 @@ This specification outlines improvements to the Hebrew FinTech Informant (HFI) d
 
 ---
 
-## Phase 3: Thread Translation (Hebrew RTL)
+## Phase 3: Thread Translation (Hebrew RTL) ✅ COMPLETE
 
 **Goal:** Translate fetched threads to Hebrew in your writing style.
 
@@ -148,40 +148,193 @@ This specification outlines improvements to the Hebrew FinTech Informant (HFI) d
 
 **Existing Code:** Translation logic in `src/processor/processor.py` (TranslationService)
 
-### Phase 3 Testing Plan
+### Completed Tasks
 
-**Unit Tests:**
-- [ ] Translation service produces Hebrew output
-- [ ] Thread structure preserved in translation
-- [ ] Glossary terms applied correctly
+- [x] **Thread Translation Tab** - Added new "Thread Translation" tab in Content view
+- [x] **URL Input & Fetch** - Paste thread URL and click "Fetch Thread" to scrape
+- [x] **Side-by-Side Display** - English (LTR) left, Hebrew (RTL) right
+- [x] **Translation Modes** - Consolidated (single flowing post) or Separate (preserve thread structure)
+- [x] **RTL CSS Support** - Added CSS for proper Hebrew RTL text direction
+- [x] **Hebrew Font Loading** - Added Heebo Google Font for better Hebrew rendering
+- [x] **Numbered Tweets** - Display tweet numbers with RTL-aware positioning
+- [x] **Action Buttons** - Add to Queue, Download Hebrew, Re-translate, Clear Thread
+
+### Technical Details
+
+**CSS Additions:**
+- `.rtl-container` - Direction: RTL, text-align: right
+- `.translation-panel-header` - Styled headers for English/Hebrew columns
+- `.thread-tweet-item` - Individual tweet cards with hover effects
+- `.thread-tweet-number` - Circular numbered badges
+- Hebrew font: Heebo from Google Fonts
+
+**TranslationService Methods:**
+- `translate_thread_consolidated()` - Combines thread into one flowing Hebrew post
+- `translate_thread_separate()` - Translates each tweet with context awareness
+- `is_hebrew()` - Detects if text is already Hebrew (skip re-translation)
+- `validate_hebrew_output()` - Ensures output is ≥50% Hebrew characters
+
+### Phase 3 Testing ✅
+
+**Unit Tests (26 passed):**
+- [x] Hebrew detection (`is_hebrew()`) works correctly
+- [x] Hebrew output validation catches invalid translations
+- [x] URL/mention/hashtag extraction preserves content
+- [x] Consolidated thread translation produces Hebrew output
+- [x] Separate thread translation preserves order
+- [x] Already-Hebrew content is not re-translated
+- [x] RTL structure and numbers preserved
 
 **Browser Tests (MCP Chrome):**
-- [ ] Paste thread URL - verify fetch works
-- [ ] Click translate - verify Hebrew appears
-- [ ] Hebrew text displays RTL correctly
-- [ ] Side-by-side view renders properly
+- [x] Thread Translation tab renders correctly
+- [x] URL input field displays with placeholder
+- [x] "Fetch Thread" button is functional
+- [x] Empty state shows instructions
+- [x] Side-by-side columns display properly
 
 ---
 
-## Phase 4: Keyboard Shortcuts (Low Priority)
+## Phase 4: Home Page Layout & Content Organization
+
+**Goal:** Make Home page more comfortable to browse by changing from 2-column to collapsible row-based layout.
+
+### User Requirements (Q&A Summary)
+
+| Question | Answer |
+|----------|--------|
+| What to do with trends? | **Option B**: Scan quickly, expand interesting ones, translate & publish tweets |
+| Keep Queue as separate tab? | Yes, keep it as a separate tab |
+| Layout preference | 2 **rows** instead of 2 columns, with collapsible/dropdown sections |
+| Processed Threads preview | Show first 10-15 words as intro, click to see full thread |
+| Trend details on expand | Summary + source link + all existing functions |
+
+### Current Layout (Problem)
+
+```
+┌─────────────────────────┬─────────────────────────┐
+│  Processed Content      │  Discovered Trends      │
+│  (narrow column)        │  (narrow column)        │
+│                         │                         │
+│  Hard to read when      │  Hard to read when      │
+│  details expanded       │  details expanded       │
+└─────────────────────────┴─────────────────────────┘
+```
+
+**Problem:** When expanding trend details, content is cramped in a narrow column.
+
+### Target Layout (Solution)
+
+```
+┌───────────────────────────────────────────────────┐
+│ ▼ Discovered Trends (10)                    [▲▼]  │
+├───────────────────────────────────────────────────┤
+│  #1 Article Title...                    [SOURCE]  │
+│      Summary text here...                         │
+│      keywords: tag1, tag2, tag3                   │
+│      [▶ Details] [+ Add to Queue]                 │
+├───────────────────────────────────────────────────┤
+│  #2 Article Title...                    [SOURCE]  │
+│      ...                                          │
+└───────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────┐
+│ ▼ Processed Threads (3)                     [▲▼]  │
+├───────────────────────────────────────────────────┤
+│  "First 10-15 words of the original thread..."    │
+│      Status: PENDING | Source: @username          │
+│      [▶ View Full Thread]                         │
+├───────────────────────────────────────────────────┤
+│  "Another thread preview text here..."            │
+│      Status: TRANSLATED | Source: @another        │
+│      [▶ View Full Thread]                         │
+└───────────────────────────────────────────────────┘
+```
+
+### 4.1 Collapsible Sections
+
+- [ ] **Discovered Trends section** - Full-width, collapsible header
+  - Click header to expand/collapse entire section
+  - Show count in header: "Discovered Trends (10)"
+  - When expanded: All trends displayed as rows (full width)
+
+- [ ] **Processed Threads section** - Full-width, collapsible header
+  - Click header to expand/collapse entire section
+  - Show count in header: "Processed Threads (3)"
+  - When expanded: All threads displayed as rows (full width)
+
+### 4.2 Trend Row Display
+
+Each trend row (full width) shows:
+- [ ] Rank number (#1, #2, etc.)
+- [ ] Title (clickable link to source)
+- [ ] AI-generated summary
+- [ ] Keywords as tags
+- [ ] Source badge (right-aligned)
+- [ ] Expandable "Details" section
+- [ ] "Add to Queue" button
+
+### 4.3 Thread Row Display (Preview Mode)
+
+Each processed thread row shows:
+- [ ] **Preview text**: First 10-15 words of the original thread
+- [ ] **Status badge**: PENDING | TRANSLATED | APPROVED | PUBLISHED
+- [ ] **Source**: @username who posted the thread
+- [ ] **"View Full Thread" button**: Expands to show full content
+
+### 4.4 Thread Expanded View
+
+When "View Full Thread" is clicked:
+- [ ] Original thread content (all tweets)
+- [ ] Hebrew translation (if available)
+- [ ] Side-by-side display (English LTR | Hebrew RTL)
+- [ ] Action buttons: Translate, Edit, Approve, etc.
+
+### Phase 4 Implementation Tasks
+
+| Task | Priority | Status |
+|------|----------|--------|
+| Convert 2-column layout to 2-row layout | High | ⏳ Pending |
+| Add collapsible section headers | High | ⏳ Pending |
+| Implement trend rows (full width) | High | ⏳ Pending |
+| Implement thread preview rows | High | ⏳ Pending |
+| Add "View Full Thread" expansion | Medium | ⏳ Pending |
+| Add section item counts in headers | Low | ⏳ Pending |
+| Polish animations/transitions | Low | ⏳ Pending |
+
+### Phase 4 Testing Plan
+
+**Unit Tests:**
+- [ ] Collapsible sections expand/collapse correctly
+- [ ] Thread preview generates first 10-15 words
+- [ ] Full thread expansion shows all content
+
+**Browser Tests (MCP Chrome):**
+- [ ] Home page loads with 2-row layout (not columns)
+- [ ] Click "Discovered Trends" header - section expands/collapses
+- [ ] Click "Processed Threads" header - section expands/collapses
+- [ ] Trend rows display full-width with all elements
+- [ ] Trend details expand comfortably (full width, not cramped)
+- [ ] Thread preview shows first 10-15 words
+- [ ] "View Full Thread" expands to show complete thread
+- [ ] Hebrew translation visible in expanded thread view
+- [ ] All interactions feel smooth (no page jumps)
+
+---
+
+## Future Considerations
+
+### Keyboard Shortcuts (Deferred)
 
 **Goal:** Quick actions for power users.
 
-**Proposed Shortcuts:**
+**Proposed Shortcuts (if implemented later):**
 - `A` - Approve current article
 - `R` - Reject current article
 - `↑/↓` or `J/K` - Navigate between articles
 - `Enter` - Open article details
 - `/` - Focus search
 
-**Note:** Streamlit has limited keyboard support. May require custom JavaScript injection or accepting limitations.
-
-### Phase 4 Testing Plan
-
-**Browser Tests (MCP Chrome):**
-- [ ] Press `A` on focused item - verify approval
-- [ ] Press arrow keys - verify navigation
-- [ ] Visual feedback when action taken
+**Note:** Streamlit has limited keyboard support. May require custom JavaScript injection.
 
 ---
 
@@ -227,6 +380,6 @@ related_trend_ids = Column(JSON, nullable=True) # Related articles
 
 ---
 
-**Document Version:** 2.3
-**Last Updated:** 2026-02-01
-**Status:** Phase 1 & 2 Complete, Phase 3 Next
+**Document Version:** 3.0
+**Last Updated:** 2026-02-02
+**Status:** Phase 1, 2 & 3 Complete, Phase 4 In Planning
