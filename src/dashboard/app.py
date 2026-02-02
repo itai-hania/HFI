@@ -950,33 +950,70 @@ def render_home(db):
             for trend in trends:
                 source_val = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
                 badge_cls = get_source_badge_class(source_val)
-                # HTML-escape user content to prevent rendering issues
                 safe_title = html.escape(trend.title or '')
-                link_html = f'<a href="{html.escape(trend.article_url or "")}" target="_blank" style="color: var(--accent-primary); font-size: 0.8rem; text-decoration: none;">{safe_title}</a>' if trend.article_url else f'<span style="color: var(--text-primary); font-size: 0.85rem;">{safe_title}</span>'
 
-                # Show AI summary if available, otherwise show description (escaped)
-                if trend.summary:
-                    safe_summary = html.escape(trend.summary[:150])
-                    summary_html = f'<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem; line-height: 1.4;">{safe_summary}{"..." if len(trend.summary) > 150 else ""}</div>'
-                elif trend.description and len(trend.description) > 10:
-                    safe_desc = html.escape(trend.description[:120])
-                    summary_html = f'<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">{safe_desc}...</div>'
-                else:
-                    summary_html = ''
+                # Check if already in queue
+                in_queue = db.query(Tweet).filter(Tweet.trend_topic == trend.title).first() is not None
 
-                # Show keywords as small tags (escaped)
-                keywords_html = ''
-                if trend.keywords and isinstance(trend.keywords, list) and len(trend.keywords) > 0:
-                    keywords_tags = ' '.join([f'<span style="background: var(--bg-tertiary); color: var(--text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; margin-right: 0.25rem;">{html.escape(str(kw))}</span>' for kw in trend.keywords[:4]])
-                    keywords_html = f'<div style="margin-top: 0.35rem;">{keywords_tags}</div>'
-
-                # Show source count if multiple sources
+                # Source count badge
                 source_count_html = ''
                 if trend.source_count and trend.source_count > 1:
                     source_count_html = f'<span style="background: rgba(34, 197, 94, 0.15); color: #4ADE80; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.65rem; margin-left: 0.5rem;">{trend.source_count} sources</span>'
 
-                card_html = f'<div class="queue-item"><div style="display: flex; justify-content: space-between; align-items: center;">{link_html}<div style="display: flex; align-items: center;">{source_count_html}<span class="status-badge {badge_cls}">{html.escape(source_val)}</span></div></div>{summary_html}{keywords_html}</div>'
-                st.markdown(card_html, unsafe_allow_html=True)
+                # Header with title, badges
+                link_html = f'<a href="{html.escape(trend.article_url or "")}" target="_blank" style="color: var(--accent-primary); font-size: 0.85rem; text-decoration: none; font-weight: 500;">{safe_title}</a>' if trend.article_url else f'<span style="color: var(--text-primary); font-size: 0.85rem; font-weight: 500;">{safe_title}</span>'
+                header_html = f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">{link_html}<div style="display: flex; align-items: center; gap: 0.25rem;">{source_count_html}<span class="status-badge {badge_cls}">{html.escape(source_val)}</span></div></div>'
+
+                # Summary
+                summary_text = ''
+                if trend.summary:
+                    summary_text = html.escape(trend.summary[:150]) + ('...' if len(trend.summary) > 150 else '')
+                elif trend.description and len(trend.description) > 10:
+                    summary_text = html.escape(trend.description[:120]) + '...'
+                summary_html = f'<div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">{summary_text}</div>' if summary_text else ''
+
+                # Keywords
+                keywords_html = ''
+                if trend.keywords and isinstance(trend.keywords, list) and len(trend.keywords) > 0:
+                    keywords_tags = ' '.join([f'<span style="background: var(--bg-tertiary); color: var(--text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem;">{html.escape(str(kw))}</span>' for kw in trend.keywords[:4]])
+                    keywords_html = f'<div style="margin-top: 0.35rem; display: flex; gap: 0.25rem; flex-wrap: wrap;">{keywords_tags}</div>'
+
+                # Render card with button
+                with st.container():
+                    st.markdown(f'<div class="queue-item" style="padding: 1rem;">{header_html}{summary_html}{keywords_html}</div>', unsafe_allow_html=True)
+
+                    # Action button row
+                    btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 1])
+                    with btn_col2:
+                        # Expandable details
+                        with st.expander("Details", expanded=False):
+                            if trend.article_url:
+                                st.markdown(f"**Source:** [{html.escape(source_val)}]({html.escape(trend.article_url)})")
+                            if trend.description:
+                                st.markdown(f"**Full Description:**\n{html.escape(trend.description)}")
+                            elif trend.summary:
+                                st.markdown(f"**Summary:**\n{html.escape(trend.summary)}")
+                            if trend.keywords and isinstance(trend.keywords, list):
+                                st.markdown(f"**Keywords:** {', '.join(trend.keywords)}")
+                            if trend.discovered_at:
+                                st.markdown(f"**Discovered:** {trend.discovered_at.strftime('%Y-%m-%d %H:%M')}")
+                    with btn_col3:
+                        if in_queue:
+                            st.markdown('<span style="color: var(--accent-success); font-size: 0.75rem;">✓ In Queue</span>', unsafe_allow_html=True)
+                        else:
+                            if st.button("+ Queue", key=f"add_trend_{trend.id}", use_container_width=True):
+                                # Add to queue as a Tweet
+                                new_tweet = Tweet(
+                                    source_url=trend.article_url or f"trend_{trend.id}",
+                                    original_text=f"{trend.title}\n\n{trend.description or trend.summary or ''}",
+                                    trend_topic=trend.title,
+                                    status=TweetStatus.PENDING
+                                )
+                                db.add(new_tweet)
+                                db.commit()
+                                st.success(f"Added to queue!")
+                                time.sleep(0.5)
+                                st.rerun()
         else:
             st.info("No trends discovered yet. Go to Content to fetch trends.")
 
