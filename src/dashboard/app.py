@@ -1014,39 +1014,31 @@ def render_home(db):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Two-column layout: processed content + trends
-    col_left, col_right = st.columns(2)
+    # ==========================================================================
+    # PHASE 4: Full-width rows with collapsible sections (using session state)
+    # ==========================================================================
 
-    with col_left:
-        st.markdown("### Processed Content")
-        processed = db.query(Tweet).filter(
-            Tweet.status.in_([TweetStatus.PROCESSED, TweetStatus.APPROVED, TweetStatus.PUBLISHED])
-        ).order_by(Tweet.updated_at.desc()).limit(10).all()
+    # Initialize section toggle states
+    if 'home_trends_expanded' not in st.session_state:
+        st.session_state.home_trends_expanded = True
+    if 'home_threads_expanded' not in st.session_state:
+        st.session_state.home_threads_expanded = True
 
-        if processed:
-            for tweet in processed:
-                status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
-                hebrew_preview = (tweet.hebrew_draft[:80] + '...') if tweet.hebrew_draft and len(tweet.hebrew_draft) > 80 else (tweet.hebrew_draft or '')
-                link_html = f'<a href="{tweet.source_url}" target="_blank" style="color: var(--accent-primary); font-size: 0.7rem; text-decoration: none;">source</a>' if tweet.source_url and tweet.source_url.startswith('http') else ''
-                st.markdown(f"""
-                    <div class="queue-item">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span class="queue-item-author">{tweet.trend_topic or 'Unknown'}</span>
-                            <span class="status-badge status-{status_str.lower()}">{status_str}</span>
-                        </div>
-                        <div class="queue-item-text" style="direction: rtl; text-align: right; margin-top: 0.35rem;">{hebrew_preview}</div>
-                        <div class="queue-item-meta">{link_html}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No processed content yet. Go to Content to scrape and translate.")
+    # --- Section 1: Discovered Trends (Full Width) ---
+    trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(15).all()
+    trends_count = len(trends)
 
-    with col_right:
-        st.markdown("### Discovered Trends")
-        trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(15).all()
+    # Collapsible section using checkbox styled as header
+    trends_expanded = st.checkbox(
+        f"📰 Discovered Trends ({trends_count})",
+        value=st.session_state.home_trends_expanded,
+        key="trends_section_toggle"
+    )
+    st.session_state.home_trends_expanded = trends_expanded
 
+    if trends_expanded:
         if trends:
-            for trend in trends:
+            for idx, trend in enumerate(trends):
                 source_val = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
                 badge_cls = get_source_badge_class(source_val)
                 safe_title = html.escape(trend.title or '')
@@ -1054,54 +1046,40 @@ def render_home(db):
                 # Check if already in queue
                 in_queue = db.query(Tweet).filter(Tweet.trend_topic == trend.title).first() is not None
 
-                # Source count badge
-                source_count_html = ''
-                if trend.source_count and trend.source_count > 1:
-                    source_count_html = f'<span style="background: rgba(34, 197, 94, 0.15); color: #4ADE80; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.65rem; margin-left: 0.5rem;">{trend.source_count} sources</span>'
-
-                # Header with title, badges
-                link_html = f'<a href="{html.escape(trend.article_url or "")}" target="_blank" style="color: var(--accent-primary); font-size: 0.85rem; text-decoration: none; font-weight: 500;">{safe_title}</a>' if trend.article_url else f'<span style="color: var(--text-primary); font-size: 0.85rem; font-weight: 500;">{safe_title}</span>'
-                header_html = f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">{link_html}<div style="display: flex; align-items: center; gap: 0.25rem;">{source_count_html}<span class="status-badge {badge_cls}">{html.escape(source_val)}</span></div></div>'
-
-                # Summary
+                # Summary (more room now - full width)
                 summary_text = ''
                 if trend.summary:
-                    summary_text = html.escape(trend.summary[:150]) + ('...' if len(trend.summary) > 150 else '')
+                    summary_text = html.escape(trend.summary[:250]) + ('...' if len(trend.summary) > 250 else '')
                 elif trend.description and len(trend.description) > 10:
-                    summary_text = html.escape(trend.description[:120]) + '...'
-                summary_html = f'<div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">{summary_text}</div>' if summary_text else ''
+                    summary_text = html.escape(trend.description[:200]) + '...'
 
-                # Keywords
-                keywords_html = ''
-                if trend.keywords and isinstance(trend.keywords, list) and len(trend.keywords) > 0:
-                    keywords_tags = ' '.join([f'<span style="background: var(--bg-tertiary); color: var(--text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem;">{html.escape(str(kw))}</span>' for kw in trend.keywords[:4]])
-                    keywords_html = f'<div style="margin-top: 0.35rem; display: flex; gap: 0.25rem; flex-wrap: wrap;">{keywords_tags}</div>'
-
-                # Render card with button
+                # Full-width trend card using st.container
                 with st.container():
-                    st.markdown(f'<div class="queue-item" style="padding: 1rem;">{header_html}{summary_html}{keywords_html}</div>', unsafe_allow_html=True)
-
-                    # Action button row
-                    btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 1])
-                    with btn_col2:
-                        # Expandable details
-                        with st.expander("Details", expanded=False):
-                            if trend.article_url:
-                                st.markdown(f"**Source:** [{html.escape(source_val)}]({html.escape(trend.article_url)})")
-                            if trend.description:
-                                st.markdown(f"**Full Description:**\n{html.escape(trend.description)}")
-                            elif trend.summary:
-                                st.markdown(f"**Summary:**\n{html.escape(trend.summary)}")
-                            if trend.keywords and isinstance(trend.keywords, list):
-                                st.markdown(f"**Keywords:** {', '.join(trend.keywords)}")
-                            if trend.discovered_at:
-                                st.markdown(f"**Discovered:** {trend.discovered_at.strftime('%Y-%m-%d %H:%M')}")
-                    with btn_col3:
-                        if in_queue:
-                            st.markdown('<span style="color: var(--accent-success); font-size: 0.75rem;">✓ In Queue</span>', unsafe_allow_html=True)
+                    # Main card row - title and badge
+                    card_col1, card_col2, card_col3 = st.columns([5, 1, 1])
+                    with card_col1:
+                        # Title with rank
+                        if trend.article_url:
+                            st.markdown(f"**#{idx + 1}** [{safe_title}]({html.escape(trend.article_url)})")
                         else:
-                            if st.button("+ Queue", key=f"add_trend_{trend.id}", use_container_width=True):
-                                # Add to queue as a Tweet
+                            st.markdown(f"**#{idx + 1}** {safe_title}")
+                        # Summary
+                        if summary_text:
+                            st.caption(summary_text)
+                        # Keywords
+                        if trend.keywords and isinstance(trend.keywords, list) and len(trend.keywords) > 0:
+                            st.markdown(f"🏷️ {', '.join(trend.keywords[:5])}")
+                    with card_col2:
+                        # Source badge
+                        st.markdown(f'<span class="status-badge {badge_cls}">{html.escape(source_val)}</span>', unsafe_allow_html=True)
+                        if trend.source_count and trend.source_count > 1:
+                            st.caption(f"{trend.source_count} sources")
+                    with card_col3:
+                        # Queue button in same row
+                        if in_queue:
+                            st.success("✓ In Queue")
+                        else:
+                            if st.button("+ Queue", key=f"home_add_trend_{trend.id}", use_container_width=True):
                                 new_tweet = Tweet(
                                     source_url=trend.article_url or f"trend_{trend.id}",
                                     original_text=f"{trend.title}\n\n{trend.description or trend.summary or ''}",
@@ -1113,8 +1091,117 @@ def render_home(db):
                                 st.success(f"Added to queue!")
                                 time.sleep(0.5)
                                 st.rerun()
+
+                    # Details expander - FULL WIDTH (not in a column)
+                    with st.expander("📋 View Details", expanded=False):
+                        # Use columns inside expander for organized layout
+                        detail_col1, detail_col2 = st.columns(2)
+                        with detail_col1:
+                            if trend.article_url:
+                                st.markdown(f"**🔗 Source:** [{html.escape(source_val)}]({html.escape(trend.article_url)})")
+                            if trend.discovered_at:
+                                st.markdown(f"**📅 Discovered:** {trend.discovered_at.strftime('%Y-%m-%d %H:%M')}")
+                            if trend.keywords and isinstance(trend.keywords, list):
+                                st.markdown(f"**🏷️ Keywords:** {', '.join(trend.keywords)}")
+                        with detail_col2:
+                            if trend.description:
+                                st.markdown(f"**📝 Full Description:**")
+                                st.markdown(html.escape(trend.description))
+                            elif trend.summary:
+                                st.markdown(f"**📝 Summary:**")
+                                st.markdown(html.escape(trend.summary))
+
+                    st.divider()
         else:
             st.info("No trends discovered yet. Go to Content to fetch trends.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- Section 2: Processed Threads (Full Width) ---
+    # Only show actual X/Twitter threads (not trend articles added to queue)
+    all_tweets = db.query(Tweet).filter(
+        Tweet.status.in_([TweetStatus.PROCESSED, TweetStatus.APPROVED, TweetStatus.PUBLISHED, TweetStatus.PENDING])
+    ).order_by(Tweet.updated_at.desc()).limit(50).all()
+
+    # Filter to only X/Twitter threads
+    x_threads = [t for t in all_tweets if t.source_url and ('x.com/' in t.source_url or 'twitter.com/' in t.source_url)]
+    threads_count = len(x_threads)
+
+    # Collapsible section using checkbox styled as header
+    threads_expanded = st.checkbox(
+        f"🧵 Processed Threads ({threads_count})",
+        value=st.session_state.home_threads_expanded,
+        key="threads_section_toggle"
+    )
+    st.session_state.home_threads_expanded = threads_expanded
+
+    if threads_expanded:
+        if x_threads:
+            for idx, tweet in enumerate(x_threads[:10]):  # Limit to 10
+                status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
+
+                # Preview: First 10-15 words of original text
+                original_words = (tweet.original_text or '').split()
+                preview_text = ' '.join(original_words[:15])
+                if len(original_words) > 15:
+                    preview_text += '...'
+                preview_text = preview_text if preview_text else 'No content'
+
+                # Source info - extract @username from X URL
+                source_handle = ''
+                if tweet.source_url:
+                    try:
+                        if 'x.com/' in tweet.source_url:
+                            parts = tweet.source_url.split('x.com/')[1].split('/')
+                            if parts:
+                                source_handle = f"@{parts[0]}"
+                        elif 'twitter.com/' in tweet.source_url:
+                            parts = tweet.source_url.split('twitter.com/')[1].split('/')
+                            if parts:
+                                source_handle = f"@{parts[0]}"
+                    except:
+                        pass
+
+                with st.container():
+                    # Preview row
+                    preview_col1, preview_col2 = st.columns([5, 1])
+                    with preview_col1:
+                        st.markdown(f'**"{preview_text}"**')
+                        status_source = f"Status: **{status_str}**"
+                        if source_handle:
+                            status_source += f" | Source: {source_handle}"
+                        st.caption(status_source)
+                    with preview_col2:
+                        st.markdown(f'<span class="status-badge status-{status_str.lower()}">{status_str}</span>', unsafe_allow_html=True)
+
+                    # View Full Thread expander - FULL WIDTH
+                    with st.expander("📖 View Full Thread"):
+                        # Two-column layout inside expander for better readability
+                        thread_col1, thread_col2 = st.columns(2)
+                        with thread_col1:
+                            st.markdown("**Original Thread:**")
+                            st.text_area("", value=tweet.original_text or "No content", height=200, disabled=True, key=f"orig_{tweet.id}", label_visibility="collapsed")
+                        with thread_col2:
+                            st.markdown("**Hebrew Translation:**")
+                            if tweet.hebrew_draft:
+                                st.text_area("", value=tweet.hebrew_draft, height=200, disabled=True, key=f"heb_{tweet.id}", label_visibility="collapsed")
+                            else:
+                                st.info("No Hebrew translation yet.")
+
+                        # Action buttons
+                        btn1, btn2, btn3, btn4 = st.columns(4)
+                        with btn1:
+                            if tweet.source_url and tweet.source_url.startswith('http'):
+                                st.markdown(f'[🔗 View Source]({tweet.source_url})')
+                        with btn2:
+                            if st.button("✏️ Edit", key=f"home_edit_{tweet.id}"):
+                                st.session_state.selected_item = tweet.id
+                                st.session_state.current_view = 'content'
+                                st.rerun()
+
+                    st.divider()
+        else:
+            st.info("No X/Twitter threads yet. Go to Content > Thread Translation to fetch and translate threads.")
 
 
 # =============================================================================

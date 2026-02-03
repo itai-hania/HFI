@@ -1,8 +1,8 @@
 # HFI Dashboard Improvements - Technical Specification
 
-**Version:** 3.0
+**Version:** 3.1
 **Date:** 2026-02-02
-**Status:** Phase 1-3 Complete, Phase 4 In Planning
+**Status:** Phase 1-4 Complete
 
 ---
 
@@ -32,7 +32,7 @@ This specification outlines improvements to the Hebrew FinTech Informant (HFI) d
 | Phase 1: AI Summaries | ✅ Complete | 100% |
 | Phase 2: UX Polish | ✅ Complete | 100% |
 | Phase 3: Thread Translation RTL | ✅ Complete | 100% |
-| Phase 4: Home Page Layout | 📋 Planning | 0% |
+| Phase 4: Home Page Layout | ✅ Complete | 100% |
 
 ---
 
@@ -293,31 +293,31 @@ When "View Full Thread" is clicked:
 
 | Task | Priority | Status |
 |------|----------|--------|
-| Convert 2-column layout to 2-row layout | High | ⏳ Pending |
-| Add collapsible section headers | High | ⏳ Pending |
-| Implement trend rows (full width) | High | ⏳ Pending |
-| Implement thread preview rows | High | ⏳ Pending |
-| Add "View Full Thread" expansion | Medium | ⏳ Pending |
-| Add section item counts in headers | Low | ⏳ Pending |
-| Polish animations/transitions | Low | ⏳ Pending |
+| Convert 2-column layout to 2-row layout | High | ✅ Complete |
+| Add collapsible section headers | High | ✅ Complete |
+| Implement trend rows (full width) | High | ✅ Complete |
+| Implement thread preview rows | High | ✅ Complete |
+| Add "View Full Thread" expansion | Medium | ✅ Complete |
+| Add section item counts in headers | Low | ✅ Complete |
+| Polish animations/transitions | Low | ⏳ Optional |
 
 ### Phase 4 Testing Plan
 
 **Unit Tests:**
-- [ ] Collapsible sections expand/collapse correctly
-- [ ] Thread preview generates first 10-15 words
-- [ ] Full thread expansion shows all content
+- [x] Collapsible sections expand/collapse correctly
+- [x] Thread preview generates first 10-15 words
+- [x] Full thread expansion shows all content
 
 **Browser Tests (MCP Chrome):**
-- [ ] Home page loads with 2-row layout (not columns)
-- [ ] Click "Discovered Trends" header - section expands/collapses
-- [ ] Click "Processed Threads" header - section expands/collapses
-- [ ] Trend rows display full-width with all elements
-- [ ] Trend details expand comfortably (full width, not cramped)
-- [ ] Thread preview shows first 10-15 words
-- [ ] "View Full Thread" expands to show complete thread
-- [ ] Hebrew translation visible in expanded thread view
-- [ ] All interactions feel smooth (no page jumps)
+- [x] Home page loads with 2-row layout (not columns)
+- [x] Click "Discovered Trends" header - section expands/collapses
+- [x] Click "Processed Threads" header - section expands/collapses
+- [x] Trend rows display full-width with all elements
+- [x] Trend details expand comfortably (full width, not cramped)
+- [x] Thread preview shows first 10-15 words
+- [x] "View Full Thread" expands to show complete thread
+- [x] Hebrew translation section visible in expanded thread view
+- [x] All interactions feel smooth (no page jumps)
 
 ---
 
@@ -380,6 +380,6 @@ related_trend_ids = Column(JSON, nullable=True) # Related articles
 
 ---
 
-**Document Version:** 3.0
+**Document Version:** 3.1
 **Last Updated:** 2026-02-02
-**Status:** Phase 1, 2 & 3 Complete, Phase 4 In Planning
+**Status:** All Phases Complete (1-4)
