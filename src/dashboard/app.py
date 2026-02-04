@@ -918,6 +918,16 @@ def delete_tweet(db, tweet_id):
     return False
 
 
+def delete_trend(db, trend_id):
+    """Delete a trend from the database."""
+    trend = db.query(Trend).filter(Trend.id == trend_id).first()
+    if trend:
+        db.delete(trend)
+        db.commit()
+        return True
+    return False
+
+
 # =============================================================================
 # TREND RANKING
 # =============================================================================
@@ -1055,8 +1065,8 @@ def render_home(db):
 
                 # Full-width trend card using st.container
                 with st.container():
-                    # Main card row - title and badge
-                    card_col1, card_col2, card_col3 = st.columns([5, 1, 1])
+                    # Main card row - title, badge, queue button, and delete button
+                    card_col1, card_col2, card_col3, card_col4 = st.columns([5, 1, 1, 0.5])
                     with card_col1:
                         # Title with rank
                         if trend.article_url:
@@ -1091,6 +1101,11 @@ def render_home(db):
                                 st.success(f"Added to queue!")
                                 time.sleep(0.5)
                                 st.rerun()
+                    with card_col4:
+                        # Delete button (trash icon)
+                        if st.button("🗑️", key=f"delete_trend_{trend.id}", help="Delete this trend"):
+                            delete_trend(db, trend.id)
+                            st.rerun()
 
                     # Details expander - FULL WIDTH (not in a column)
                     with st.expander("📋 View Details", expanded=False):
@@ -1511,6 +1526,8 @@ def _render_acquire_section(db):
                                     success_count += 1
                             st.success(f"Generated {success_count} AI summaries")
 
+                # Auto-navigate to Home tab after fetch completes
+                st.session_state.current_view = 'home'
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
