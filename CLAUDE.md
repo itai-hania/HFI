@@ -25,7 +25,7 @@
 - ✅ Database models (SQLAlchemy + SQLite)
 - ✅ Docker containers + Compose file
 - ✅ Kubernetes manifests (ready for deployment)
-- ✅ Comprehensive testing (98% pass rate - 106/108 tests)
+- ✅ Comprehensive testing (100% pass rate - 202/202 tests)
 
 **Pending:**
 - ⏳ Publisher service (auto-posting to X)
@@ -126,9 +126,11 @@ HFI/
 
 ### When Helping with Translation/Processing
 - **`src/processor/processor.py`** - Translation + media download
+- **`src/processor/style_manager.py`** - Style example management (DB-backed, cached)
 - **Key Classes:**
   - `TranslationService` - GPT-4o API wrapper with style matching
   - `ContentProcessor` - Orchestrates translation + downloads
+  - `StyleManager` - Manages style examples from DB with topic tag matching
 - **Dependencies:** openai, yt-dlp, requests
 
 ### When Helping with Dashboard
@@ -146,6 +148,7 @@ HFI/
   - `tweets` - Main content table (status workflow: pending → processed → approved → published)
   - `trends` - Trending topics discovered (supports TrendSource enum)
   - `threads` - Full thread data stored as JSON
+  - `style_examples` - Hebrew style examples with topic tags (is_active Boolean)
 - **Important Enums:**
   - `TweetStatus`: PENDING, PROCESSED, APPROVED, PUBLISHED, FAILED
   - `TrendSource`: X_TWITTER, YAHOO_FINANCE, WSJ, TECHCRUNCH, BLOOMBERG, MANUAL
@@ -310,14 +313,18 @@ pytest tests/test_dashboard.py -v
 pytest --cov=src tests/
 ```
 
-**Current Status:** 106/108 tests passing (98%)
-- 2 failing tests in `test_processor_comprehensive.py` are unrelated to core functionality (max_tokens and batch failure counting)
+**Current Status:** 202/202 tests passing (100%)
 
 **Test Files:**
 - `tests/test_models.py` - Database models
 - `tests/test_scraper.py` - X scraper functionality
 - `tests/test_processor.py` - Translation + downloads
+- `tests/test_processor_comprehensive.py` - Processor config, translation, batch processing
 - `tests/test_dashboard.py` - Dashboard database operations
+- `tests/test_api_endpoints.py` - FastAPI trend/summary endpoints
+- `tests/test_summary_generator.py` - Summary generation logic
+- `tests/test_thread_media.py` - Thread media downloads
+- `tests/test_thread_translation.py` - Thread translation logic
 - Dashboard UI tested manually (Streamlit apps)
 
 ---
@@ -435,7 +442,25 @@ Before declaring a dashboard feature complete:
 
 ## Recent Updates & Changes
 
-### 2026-01-27 (Latest)
+### 2026-02-05 (Latest)
+- ✅ **Implemented Style Learning (SPEC v2)** (`src/processor/style_manager.py`)
+  - DB-backed style examples with `style_examples` table
+  - Topic tag extraction and matching for context-aware translation
+  - Style cache with refresh support
+  - 5 examples + 800 char truncation per prompt
+  - Hebrew content threshold (50%) validation
+- ✅ **Dashboard style management UI**
+  - Add/edit/delete style examples
+  - Topic tag editing with visual chips
+  - Tag-based filtering
+  - X thread preview for style examples
+  - "Load More" pagination
+- ✅ **Fixed all tests** (202/202 passing, 100%)
+  - Fixed 22 pre-existing test failures across API, dashboard, and processor tests
+  - Fixed module identity issues between `src.common.models` and `common.models`
+  - Fixed ProcessorConfig, TranslationService, and batch processing test assertions
+
+### 2026-01-27
 - ✅ **Added multi-source news scraper** (`src/scraper/news_scraper.py`)
   - Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg
   - Cross-source keyword overlap ranking algorithm
@@ -648,6 +673,6 @@ When helping:
 
 ---
 
-**Last Updated:** 2026-01-27
-**Version:** 1.2
+**Last Updated:** 2026-02-05
+**Version:** 1.3
 **Maintained by:** HFI Project Team
