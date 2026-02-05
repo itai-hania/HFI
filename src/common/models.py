@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sqlalchemy import (
     create_engine,
+    Boolean,
     Column,
     Integer,
     String,
@@ -488,6 +489,88 @@ class Trend(Base):
         }
 
 
+class StyleExample(Base):
+    """
+    Stores Hebrew writing style examples for few-shot translation prompting.
+
+    Examples are imported from:
+    - X threads (user's own Hebrew content)
+    - Local files (.txt, .md)
+    - Manual entry
+
+    Used by TranslationService to match user's writing style.
+    """
+    __tablename__ = 'style_examples'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    content = Column(
+        Text,
+        nullable=False,
+        comment="Hebrew text content for style learning"
+    )
+
+    source_type = Column(
+        String(50),
+        nullable=False,
+        default='manual',
+        comment="Source type: 'x_thread', 'local_file', 'manual'"
+    )
+
+    source_url = Column(
+        String(500),
+        nullable=True,
+        comment="Original URL if imported from X"
+    )
+
+    topic_tags = Column(
+        JSON,
+        nullable=True,
+        comment="Topic tags: ['fintech', 'crypto', 'banking', ...]"
+    )
+
+    word_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Word count for selection/filtering"
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+        comment="When example was added"
+    )
+
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Soft delete: True = active, False = deleted"
+    )
+
+    def __repr__(self):
+        return (
+            f"<StyleExample(id={self.id}, source={self.source_type}, "
+            f"words={self.word_count}, active={self.is_active})>"
+        )
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            'id': self.id,
+            'content': self.content,
+            'source_type': self.source_type,
+            'source_url': self.source_url,
+            'topic_tags': self.topic_tags,
+            'word_count': self.word_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'is_active': self.is_active,
+        }
+
+
 # ==================== Database Utilities ====================
 
 def create_tables(drop_existing: bool = False):
@@ -587,6 +670,23 @@ def create_tables(drop_existing: bool = False):
                 logger.info("Migration: added related_trend_ids column to trends")
             except Exception:
                 pass  # Column already exists
+
+        # Safe migration: convert style_examples.is_active from string '1'/'0' to boolean 1/0
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "UPDATE style_examples SET is_active = 1 WHERE is_active = '1'"
+                    )
+                )
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "UPDATE style_examples SET is_active = 0 WHERE is_active = '0'"
+                    )
+                )
+                conn.commit()
+            except Exception:
+                pass  # Table may not exist yet or already migrated
 
         logger.info(f"Database tables created successfully at: {DATABASE_URL}")
 

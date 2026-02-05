@@ -51,7 +51,8 @@ def test_db():
     """Create an in-memory database for testing."""
     os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
 
-    # Recreate tables
+    # Drop and recreate tables for clean state
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
     # Create session
@@ -158,10 +159,10 @@ class TestDatabaseQueries:
 
         stats = {
             'total': test_db.query(func.count(Tweet.id)).scalar(),
-            'pending': test_db.query(func.count(Tweet.id)).filter(Tweet.status == 'pending').scalar(),
-            'processed': test_db.query(func.count(Tweet.id)).filter(Tweet.status == 'processed').scalar(),
-            'approved': test_db.query(func.count(Tweet.id)).filter(Tweet.status == 'approved').scalar(),
-            'published': test_db.query(func.count(Tweet.id)).filter(Tweet.status == 'published').scalar(),
+            'pending': test_db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PENDING).scalar(),
+            'processed': test_db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PROCESSED).scalar(),
+            'approved': test_db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.APPROVED).scalar(),
+            'published': test_db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PUBLISHED).scalar(),
         }
 
         assert stats['total'] == 0

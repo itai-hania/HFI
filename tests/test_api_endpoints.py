@@ -36,16 +36,29 @@ def setup_database():
     import src.common.models
     importlib.reload(src.common.models)
 
+    # The API code imports from 'common.models' (not 'src.common.models')
+    # which is a separate module in sys.modules. We need to update the
+    # SessionLocal in api.dependencies so the API uses our test database.
+    api_deps = sys.modules.get('api.dependencies')
+    old_session_local = getattr(api_deps, 'SessionLocal', None) if api_deps else None
+    if api_deps:
+        api_deps.SessionLocal = src.common.models.SessionLocal
+
     from src.common.models import create_tables
     create_tables()
 
     yield
 
+    # Restore api.dependencies.SessionLocal
+    if api_deps and old_session_local is not None:
+        api_deps.SessionLocal = old_session_local
+
     # Restore original
     if original_db_url:
         os.environ['DATABASE_URL'] = original_db_url
     else:
-        del os.environ['DATABASE_URL']
+        if 'DATABASE_URL' in os.environ:
+            del os.environ['DATABASE_URL']
 
 
 @pytest.fixture
@@ -57,11 +70,13 @@ def client(setup_database):
 @pytest.fixture
 def db_session(setup_database):
     """Provide database session."""
-    with get_db() as db:
-        # Clean database before each test
-        db.query(Trend).delete()
-        db.commit()
-        yield db
+    from src.common.models import SessionLocal
+    db = SessionLocal()
+    # Clean database before each test
+    db.query(Trend).delete()
+    db.commit()
+    yield db
+    db.close()
 
 
 @pytest.fixture
@@ -253,7 +268,7 @@ class TestGetTrendsStats:
 class TestGenerateSummary:
     """Test POST /api/trends/{trend_id}/generate-summary endpoint."""
 
-    @patch('src.processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.OpenAI')
     def test_generate_summary_success(self, mock_openai, client, sample_trends, db_session):
         """Test successful summary generation."""
         # Mock OpenAI response
@@ -275,7 +290,7 @@ class TestGenerateSummary:
         assert len(data['keywords']) > 0
         assert data['source_count'] >= 1
 
-    @patch('src.processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.OpenAI')
     def test_generate_summary_already_exists(self, mock_openai, client, sample_trends):
         """Test generating summary for trend that already has one."""
         trend = sample_trends[0]  # Has summary
@@ -284,7 +299,7 @@ class TestGenerateSummary:
         assert response.status_code == 400
         assert 'already has a summary' in response.json()['detail']
 
-    @patch('src.processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.OpenAI')
     def test_generate_summary_force_regenerate(self, mock_openai, client, sample_trends):
         """Test forcing summary regeneration."""
         mock_client = Mock()
@@ -313,7 +328,7 @@ class TestGenerateSummary:
 class TestGenerateSummariesBulk:
     """Test POST /api/trends/generate-summaries endpoint."""
 
-    @patch('src.processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.OpenAI')
     def test_generate_summaries_bulk(self, mock_openai, client, sample_trends):
         """Test bulk summary generation."""
         mock_client = Mock()
@@ -333,7 +348,7 @@ class TestGenerateSummariesBulk:
         # Should process only 1 trend (the one without summary)
         assert data['success'] == 1
 
-    @patch('src.processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.OpenAI')
     def test_generate_summaries_bulk_with_limit(self, mock_openai, client, db_session):
         """Test bulk generation with limit."""
         mock_client = Mock()

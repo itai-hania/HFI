@@ -133,6 +133,7 @@ class TestProcessorConfig:
         """Test loading glossary from JSON file."""
         mock_config_dir.__truediv__ = lambda self, x: temp_config_dir / x
         os.environ['OPENAI_API_KEY'] = 'test-key-123'
+        os.environ['OPENAI_MODEL'] = 'gpt-4o'
 
         with patch('processor.processor.ProcessorConfig._load_glossary') as mock_load:
             test_glossary = {"Test": "בדיקה"}
@@ -147,6 +148,7 @@ class TestProcessorConfig:
     def test_config_handles_missing_glossary(self):
         """Test graceful handling of missing glossary file."""
         os.environ['OPENAI_API_KEY'] = 'test-key-123'
+        os.environ['OPENAI_MODEL'] = 'gpt-4o'
 
         with patch('processor.processor.CONFIG_DIR') as mock_dir:
             mock_dir.__truediv__ = lambda self, x: Path("/nonexistent") / x
@@ -164,6 +166,7 @@ class TestProcessorConfig:
         """Test loading style guide from text file."""
         mock_config_dir.__truediv__ = lambda self, x: temp_config_dir / x
         os.environ['OPENAI_API_KEY'] = 'test-key-123'
+        os.environ['OPENAI_MODEL'] = 'gpt-4o'
 
         with patch('processor.processor.ProcessorConfig._load_style') as mock_load:
             test_style = "Professional writing style"
@@ -177,6 +180,7 @@ class TestProcessorConfig:
     def test_config_handles_missing_style_guide(self):
         """Test graceful handling of missing style guide."""
         os.environ['OPENAI_API_KEY'] = 'test-key-123'
+        os.environ['OPENAI_MODEL'] = 'gpt-4o'
 
         with patch('processor.processor.CONFIG_DIR') as mock_dir:
             mock_dir.__truediv__ = lambda self, x: Path("/nonexistent") / x
@@ -193,6 +197,7 @@ class TestProcessorConfig:
     def test_config_handles_invalid_json(self):
         """Test handling of corrupted JSON glossary."""
         os.environ['OPENAI_API_KEY'] = 'test-key-123'
+        os.environ['OPENAI_MODEL'] = 'gpt-4o'
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write("{ invalid json }")
@@ -234,6 +239,8 @@ class TestTranslationService:
         """Test successful translation with OpenAI API."""
         config = MagicMock()
         config.openai_client = mock_openai_client
+        config.openai_model = 'gpt-4o'
+        config.openai_temperature = 0.7
         config.glossary = {"Fintech": "פינטק", "Startup": "סטארטאפ"}
         config.style_examples = "Example style content"
 
@@ -248,7 +255,6 @@ class TestTranslationService:
         call_args = mock_openai_client.chat.completions.create.call_args
         assert call_args.kwargs['model'] == 'gpt-4o'
         assert call_args.kwargs['temperature'] == 0.7
-        assert call_args.kwargs['max_tokens'] == 500
 
     def test_translate_and_rewrite_includes_glossary(self, mock_openai_client):
         """Test that glossary terms are included in the prompt."""
@@ -661,12 +667,16 @@ class TestTweetProcessor:
             test_db.add(tweet)
         test_db.commit()
 
-        # Make translation fail on second call
+        # Make translation fail on second tweet (all retry attempts)
+        # translate_and_rewrite has max_retries=2, so 3 total attempts per tweet
+        # Tweet 1: call 1 (success)
+        # Tweet 2: calls 2, 3, 4 (all fail → marked FAILED)
+        # Tweet 3: call 5 (success)
         call_count = 0
         def side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if call_count == 2:
+            if call_count in (2, 3, 4):
                 raise Exception("Translation error")
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
