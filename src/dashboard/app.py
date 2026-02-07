@@ -1075,8 +1075,8 @@ def render_home(db):
 
                 # Full-width trend card using st.container
                 with st.container():
-                    # Main card row - title, badge, queue button, and delete button
-                    card_col1, card_col2, card_col3, card_col4 = st.columns([5, 1, 1, 0.5])
+                    # Main card row - title, badge, generate, queue, delete buttons
+                    card_col1, card_col2, card_col_gen, card_col3, card_col4 = st.columns([4, 1, 1, 1, 0.5])
                     with card_col1:
                         # Title with rank
                         if trend.article_url:
@@ -1094,6 +1094,14 @@ def render_home(db):
                         st.markdown(f'<span class="status-badge {badge_cls}">{html.escape(source_val)}</span>', unsafe_allow_html=True)
                         if trend.source_count and trend.source_count > 1:
                             st.caption(f"{trend.source_count} sources")
+                    with card_col_gen:
+                        if st.button("Generate", key=f"home_gen_{trend.id}", use_container_width=True):
+                            # Pre-fill source text and navigate to Content > Generate
+                            source = f"{trend.title}\n\n{trend.description or trend.summary or ''}"
+                            st.session_state['generate_source_text'] = source.strip()
+                            st.session_state.current_view = 'content'
+                            st.rerun()
+
                     with card_col3:
                         # Queue button in same row
                         if in_queue:
@@ -1257,8 +1265,8 @@ def render_content(db):
         render_editor(db, st.session_state.selected_item)
         return
 
-    # Use tabs to organize: Acquire | Queue | Thread Translation
-    tab_acquire, tab_queue, tab_threads = st.tabs(["Acquire", "Queue", "Thread Translation"])
+    # Use tabs to organize: Acquire | Queue | Thread Translation | Generate
+    tab_acquire, tab_queue, tab_threads, tab_generate = st.tabs(["Acquire", "Queue", "Thread Translation", "Generate"])
 
     with tab_acquire:
         _render_acquire_section(db)
@@ -1268,6 +1276,9 @@ def render_content(db):
 
     with tab_threads:
         _render_thread_translation(db)
+
+    with tab_generate:
+        _render_generate_section(db)
 
 
 def _render_acquire_section(db):
@@ -1959,6 +1970,258 @@ def _render_thread_translation(db):
         """, unsafe_allow_html=True)
 
 
+def _render_generate_section(db):
+    """Generate original Hebrew content from English source material."""
+
+    st.markdown("### Generate Original Hebrew Post")
+    st.caption("Paste English source content to generate original Hebrew posts in your voice.")
+
+    # Pre-fill from session state if navigated from trend card
+    prefill = st.session_state.get('generate_source_text', '')
+
+    source_text = st.text_area(
+        "Source Content (English)",
+        value=prefill,
+        height=150,
+        key="gen_source_text",
+        placeholder="Paste English article text, tweet, or news snippet here..."
+    )
+
+    # Clear prefill after displaying
+    if 'generate_source_text' in st.session_state:
+        del st.session_state['generate_source_text']
+
+    col_mode, col_angles, col_btn = st.columns([1, 2, 1])
+
+    with col_mode:
+        gen_mode = st.selectbox("Mode", ["Single Post", "Thread"], key="gen_mode")
+
+    with col_angles:
+        if gen_mode == "Single Post":
+            angle_options = ["All (3 variants)", "News/Breaking", "Educational", "Opinion/Analysis"]
+            selected_angle = st.selectbox("Angle", angle_options, key="gen_angle")
+        else:
+            thread_angle = st.selectbox("Thread Angle", ["Educational", "News/Breaking", "Opinion/Analysis"], key="gen_thread_angle")
+            thread_count = st.slider("Tweets in thread", 2, 5, 3, key="gen_thread_count")
+
+    with col_btn:
+        st.markdown("<br>", unsafe_allow_html=True)
+        generate_clicked = st.button("Generate", key="gen_submit", use_container_width=True, type="primary")
+
+    if generate_clicked and source_text and source_text.strip():
+        with st.spinner("Generating Hebrew content..."):
+            try:
+                from processor.content_generator import ContentGenerator
+                generator = ContentGenerator()
+
+                if gen_mode == "Single Post":
+                    # Map UI selection to angle names
+                    angle_map = {
+                        "All (3 variants)": None,
+                        "News/Breaking": ['news'],
+                        "Educational": ['educational'],
+                        "Opinion/Analysis": ['opinion'],
+                    }
+                    angles = angle_map.get(selected_angle)
+                    num = 3 if angles is None else 1
+                    variants = generator.generate_post(source_text, num_variants=num, angles=angles)
+                    st.session_state['gen_variants'] = variants
+                    st.session_state['gen_source_for_save'] = source_text
+                    st.session_state['gen_mode_result'] = 'post'
+                else:
+                    angle_name_map = {"Educational": "educational", "News/Breaking": "news", "Opinion/Analysis": "opinion"}
+                    thread_tweets = generator.generate_thread(
+                        source_text,
+                        num_tweets=thread_count,
+                        angle=angle_name_map.get(thread_angle, 'educational')
+                    )
+                    st.session_state['gen_thread_result'] = thread_tweets
+                    st.session_state['gen_source_for_save'] = source_text
+                    st.session_state['gen_mode_result'] = 'thread'
+
+                st.rerun()
+            except Exception as e:
+                st.error(f"Generation failed: {str(e)[:200]}")
+
+    # ---- Display generated post variants ----
+    if st.session_state.get('gen_mode_result') == 'post' and 'gen_variants' in st.session_state:
+        variants = st.session_state['gen_variants']
+        source_for_save = st.session_state.get('gen_source_for_save', '')
+
+        st.markdown("---")
+        st.markdown("### Generated Variants")
+        st.caption("Select a variant, edit if needed, then approve to save.")
+
+        for i, variant in enumerate(variants):
+            with st.container():
+                col_header, col_status = st.columns([4, 1])
+                with col_header:
+                    valid_icon = "" if variant.get('is_valid_hebrew') else ""
+                    st.markdown(f"**Variant {i+1}: {variant['label']}** {valid_icon}")
+                with col_status:
+                    st.caption(f"{variant['char_count']} chars")
+
+                # Editable text area with RTL support
+                edited = st.text_area(
+                    f"Variant {i+1}",
+                    value=variant['content'],
+                    height=120,
+                    key=f"gen_var_{i}",
+                    label_visibility="collapsed"
+                )
+
+                # Char counter
+                char_count = len(edited) if edited else 0
+                over = char_count > 280
+                st.markdown(
+                    f"<div style='text-align:right; font-size:0.75rem; color: {'var(--accent-danger)' if over else 'var(--text-muted)'};'>"
+                    f"{char_count}/280</div>",
+                    unsafe_allow_html=True
+                )
+
+                col_approve, col_save_draft = st.columns(2)
+                with col_approve:
+                    if st.button(f"Approve & Save", key=f"gen_approve_{i}", use_container_width=True, type="primary"):
+                        import hashlib as _hashlib
+                        source_hash = _hashlib.md5(source_for_save.encode()).hexdigest()[:12]
+                        new_tweet = Tweet(
+                            source_url=f"generated_{source_hash}_{i}",
+                            original_text=source_for_save,
+                            hebrew_draft=edited,
+                            content_type='generation',
+                            generation_metadata=json.dumps({
+                                'angle': variant['angle'],
+                                'label': variant['label'],
+                                'source_hash': variant.get('source_hash', ''),
+                                'variant_index': i,
+                            }),
+                            status=TweetStatus.APPROVED
+                        )
+                        db.add(new_tweet)
+                        db.commit()
+                        # Auto-style learning
+                        if edited and len(edited.strip()) > 30:
+                            _auto_learn_style(db, edited.strip())
+                        st.success(f"Variant {i+1} approved and saved!")
+                        time.sleep(0.5)
+                        st.rerun()
+
+                with col_save_draft:
+                    if st.button(f"Save as Draft", key=f"gen_draft_{i}", use_container_width=True):
+                        import hashlib as _hashlib
+                        source_hash = _hashlib.md5(source_for_save.encode()).hexdigest()[:12]
+                        new_tweet = Tweet(
+                            source_url=f"generated_{source_hash}_{i}",
+                            original_text=source_for_save,
+                            hebrew_draft=edited,
+                            content_type='generation',
+                            generation_metadata=json.dumps({
+                                'angle': variant['angle'],
+                                'label': variant['label'],
+                                'source_hash': variant.get('source_hash', ''),
+                                'variant_index': i,
+                            }),
+                            status=TweetStatus.PROCESSED
+                        )
+                        db.add(new_tweet)
+                        db.commit()
+                        st.success(f"Variant {i+1} saved as draft!")
+                        time.sleep(0.5)
+                        st.rerun()
+
+                st.divider()
+
+        if st.button("Clear Results", key="gen_clear"):
+            for k in ['gen_variants', 'gen_source_for_save', 'gen_mode_result']:
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    # ---- Display generated thread ----
+    if st.session_state.get('gen_mode_result') == 'thread' and 'gen_thread_result' in st.session_state:
+        thread_tweets = st.session_state['gen_thread_result']
+        source_for_save = st.session_state.get('gen_source_for_save', '')
+
+        st.markdown("---")
+        st.markdown("### Generated Thread")
+
+        all_edited = []
+        for i, tweet_data in enumerate(thread_tweets):
+            valid_icon = "" if tweet_data.get('is_valid_hebrew') else ""
+            st.markdown(f"**Tweet {tweet_data['index']}/{len(thread_tweets)}** {valid_icon} ({tweet_data['char_count']} chars)")
+
+            edited = st.text_area(
+                f"Thread tweet {i+1}",
+                value=tweet_data['content'],
+                height=80,
+                key=f"gen_thread_{i}",
+                label_visibility="collapsed"
+            )
+            all_edited.append(edited)
+
+            char_count = len(edited) if edited else 0
+            over = char_count > 280
+            st.markdown(
+                f"<div style='text-align:right; font-size:0.75rem; color: {'var(--accent-danger)' if over else 'var(--text-muted)'};'>"
+                f"{char_count}/280</div>",
+                unsafe_allow_html=True
+            )
+
+        col_approve_thread, col_draft_thread, col_clear_thread = st.columns(3)
+        with col_approve_thread:
+            if st.button("Approve Thread", key="gen_thread_approve", use_container_width=True, type="primary"):
+                import hashlib as _hashlib
+                source_hash = _hashlib.md5(source_for_save.encode()).hexdigest()[:12]
+                combined = "\n\n---\n\n".join(all_edited)
+                new_tweet = Tweet(
+                    source_url=f"generated_thread_{source_hash}",
+                    original_text=source_for_save,
+                    hebrew_draft=combined,
+                    content_type='generation',
+                    generation_metadata=json.dumps({
+                        'type': 'thread',
+                        'tweet_count': len(all_edited),
+                        'source_hash': source_hash,
+                    }),
+                    status=TweetStatus.APPROVED
+                )
+                db.add(new_tweet)
+                db.commit()
+                if combined and len(combined.strip()) > 30:
+                    _auto_learn_style(db, combined.strip())
+                st.success("Thread approved and saved!")
+                time.sleep(0.5)
+                st.rerun()
+
+        with col_draft_thread:
+            if st.button("Save as Draft", key="gen_thread_draft", use_container_width=True):
+                import hashlib as _hashlib
+                source_hash = _hashlib.md5(source_for_save.encode()).hexdigest()[:12]
+                combined = "\n\n---\n\n".join(all_edited)
+                new_tweet = Tweet(
+                    source_url=f"generated_thread_{source_hash}",
+                    original_text=source_for_save,
+                    hebrew_draft=combined,
+                    content_type='generation',
+                    generation_metadata=json.dumps({
+                        'type': 'thread',
+                        'tweet_count': len(all_edited),
+                        'source_hash': source_hash,
+                    }),
+                    status=TweetStatus.PROCESSED
+                )
+                db.add(new_tweet)
+                db.commit()
+                st.success("Thread saved as draft!")
+                time.sleep(0.5)
+                st.rerun()
+
+        with col_clear_thread:
+            if st.button("Clear", key="gen_thread_clear", use_container_width=True):
+                for k in ['gen_thread_result', 'gen_source_for_save', 'gen_mode_result']:
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+
 def render_content_item(tweet, db):
     """Render a content list item with media indicators"""
     status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
@@ -2018,6 +2281,38 @@ def render_content_item(tweet, db):
                 st.rerun()
 
         st.markdown("<hr style='margin: 0.5rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
+
+
+def _auto_learn_style(db, hebrew_text: str, source_url: str = None):
+    """Auto-add approved Hebrew content to style examples for learning."""
+    try:
+        sm = get_style_manager()
+        if not sm:
+            return
+        # Check minimum Hebrew content
+        if not sm.is_hebrew_content(hebrew_text, min_ratio=0.5):
+            return
+        word_count = sm.count_words(hebrew_text)
+        if word_count < 10:
+            return
+        # Avoid duplicates: check if content already exists
+        existing = db.query(StyleExample).filter(
+            StyleExample.content == hebrew_text,
+            StyleExample.is_active == True
+        ).first()
+        if existing:
+            return
+        # Extract topic tags using fallback (no API call on approval)
+        tags = sm._fallback_topic_tags(hebrew_text)
+        sm.add_style_example(
+            db, hebrew_text,
+            source_type='approved',
+            source_url=source_url,
+            topic_tags=tags
+        )
+        logger.info(f"Auto-learned style from approved content ({word_count} words)")
+    except Exception as e:
+        logger.warning(f"Auto-style learning failed: {e}")
 
 
 def render_editor(db, tweet_id):
@@ -2181,6 +2476,9 @@ def render_editor(db, tweet_id):
         if tweet.status != TweetStatus.APPROVED:
             if st.button("Approve", key="ed_approve", use_container_width=True):
                 update_tweet(db, tweet.id, status=TweetStatus.APPROVED, hebrew_draft=hebrew)
+                # Auto-style learning: add approved Hebrew content to style examples
+                if hebrew and len(hebrew.strip()) > 30:
+                    _auto_learn_style(db, hebrew.strip(), tweet.source_url)
                 st.success("Approved!")
                 time.sleep(0.5)
                 st.session_state.selected_item = None

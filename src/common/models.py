@@ -207,6 +207,20 @@ class Tweet(Base):
         comment="JSON array of all media files: [{tweet_id, type, src, local_path}, ...]"
     )
 
+    # Content type tracking
+    content_type = Column(
+        String(20),
+        nullable=False,
+        default='translation',
+        server_default='translation',
+        comment="Content type: 'translation', 'generation', 'original'"
+    )
+    generation_metadata = Column(
+        JSON,
+        nullable=True,
+        comment="Generation metadata: variant info, source hash, angle, etc."
+    )
+
     # Classification
     trend_topic = Column(
         String(256),
@@ -271,6 +285,8 @@ class Tweet(Base):
             'media_url': self.media_url,
             'media_path': self.media_path,
             'media_paths': self.media_paths,
+            'content_type': self.content_type,
+            'generation_metadata': self.generation_metadata,
             'trend_topic': self.trend_topic,
             'status': self.status.value,
             'error_message': self.error_message,
@@ -668,6 +684,32 @@ def create_tables(drop_existing: bool = False):
                 )
                 conn.commit()
                 logger.info("Migration: added related_trend_ids column to trends")
+            except Exception:
+                pass  # Column already exists
+
+        # Safe migration: add content_type column to tweets if missing
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE tweets ADD COLUMN content_type VARCHAR(20) DEFAULT 'translation'"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added content_type column to tweets")
+            except Exception:
+                pass  # Column already exists
+
+        # Safe migration: add generation_metadata column to tweets if missing
+        with engine.connect() as conn:
+            try:
+                conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE tweets ADD COLUMN generation_metadata TEXT"
+                    )
+                )
+                conn.commit()
+                logger.info("Migration: added generation_metadata column to tweets")
             except Exception:
                 pass  # Column already exists
 
