@@ -1,12 +1,21 @@
 # HFI Codebase Refactor Plan
 
 > Full code review conducted 2026-02-08. All decisions approved by user.
+> Committed & pushed: `f04efcd` on 2026-02-08.
 
 ## Current Status (2026-02-08)
 
-**Completed:** Phases 1, 2, 3, 4, 7
-**Skipped:** Phases 5, 6 (high-risk, deferred by user)
+**Completed:** Phases 1, 2, 3, 4, 7 — all committed and pushed to `main`
+**Deferred:** Phases 5, 6 (high-risk packaging + dashboard split — user chose to skip)
 **Tests:** 338/338 passing
+**Branch:** `main` is clean, up to date with remote
+
+## Next Session Context
+
+The low-hanging refactor work is done. Remaining options:
+- **Phase 5** (Python packaging) — replaces all `sys.path.append` hacks with proper `pyproject.toml` + `pip install -e .`. High risk: touches every import in the project.
+- **Phase 6** (Dashboard split) — breaks 3,000-line `app.py` into page modules. High risk: restructures entire UI.
+- **New work** — the refactor is complete for practical purposes. User may want to move on to new features or other tasks.
 
 ## Phases
 
