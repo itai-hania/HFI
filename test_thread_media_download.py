@@ -9,10 +9,11 @@ import json
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.append(str(Path(__file__).parent / "src"))
-
-from processor.processor import MediaDownloader
+try:
+    from processor.processor import MediaDownloader
+except ImportError:
+    sys.path.append(str(Path(__file__).parent / "src"))
+    from processor.processor import MediaDownloader
 
 def main():
     print("=" * 80)

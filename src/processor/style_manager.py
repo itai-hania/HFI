@@ -11,13 +11,8 @@ import re
 import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy.orm import Session
-
-# Add parent directory to path for common modules
-import sys
-sys.path.append(str(Path(__file__).parent.parent))
 
 from common.models import StyleExample
 from common.openai_client import get_openai_client

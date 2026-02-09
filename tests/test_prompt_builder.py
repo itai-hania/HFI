@@ -10,11 +10,7 @@ Run with: pytest tests/test_prompt_builder.py -v
 
 import pytest
 import os
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from processor.prompt_builder import (
     KEEP_ENGLISH,

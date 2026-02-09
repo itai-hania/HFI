@@ -6,11 +6,7 @@ Run with: pytest tests/test_models.py -v
 
 import pytest
 import os
-import sys
 from datetime import datetime, timezone
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from common.models import (
     create_tables,

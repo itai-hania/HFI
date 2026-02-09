@@ -15,14 +15,9 @@ For integration tests (actual scraping), run the scraper's main() function.
 """
 
 import pytest
-import sys
 import os
-from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import asyncio
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from scraper.scraper import TwitterScraper
 

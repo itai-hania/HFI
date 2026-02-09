@@ -4,7 +4,6 @@ Dark Mode UI with Simplified Navigation
 """
 
 import streamlit as st
-import sys
 import logging
 import asyncio
 import os
@@ -17,8 +16,6 @@ import time
 from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(env_path)
-
-sys.path.append(str(Path(__file__).parent.parent))
 
 from common.models import get_db_session, create_tables, Tweet, Trend, Thread, TrendSource, TweetStatus, StyleExample
 import json

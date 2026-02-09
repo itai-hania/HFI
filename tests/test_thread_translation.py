@@ -10,13 +10,8 @@ Last Updated: 2026-02-02
 import pytest
 import os
 from unittest.mock import Mock, patch, MagicMock
-import sys
-from pathlib import Path
 
-# Add src directory to path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from src.processor.processor import TranslationService, ProcessorConfig
+from processor.processor import TranslationService, ProcessorConfig
 
 
 @pytest.fixture
@@ -26,7 +21,7 @@ def mock_openai():
     mock_response = Mock()
     mock_response.choices = [Mock(message=Mock(content="זוהי תרגום בעברית לדוגמה."))]
     mock_client.chat.completions.create.return_value = mock_response
-    with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+    with patch('processor.processor.get_openai_client', return_value=mock_client):
         yield mock_client
 
 
@@ -307,7 +302,7 @@ class TestParameterizedOpenAIResponses:
     def test_validate_hebrew_varied_outputs(self, config, response_text, should_be_valid):
         """Parameterized test: validate_hebrew_output with varied response types."""
         mock_client = Mock()
-        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+        with patch('processor.processor.get_openai_client', return_value=mock_client):
             translator = TranslationService(config)
         is_valid, reason = translator.validate_hebrew_output(response_text)
         assert is_valid is should_be_valid, f"Expected {should_be_valid} for '{response_text}', got {is_valid} (reason: {reason})"
@@ -323,7 +318,7 @@ class TestParameterizedOpenAIResponses:
         mock_response.choices = [Mock(message=Mock(content=response_text))]
         mock_client.chat.completions.create.return_value = mock_response
 
-        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+        with patch('processor.processor.get_openai_client', return_value=mock_client):
             translator = TranslationService(config)
         translator.client = mock_client
 
@@ -339,7 +334,7 @@ class TestParameterizedOpenAIResponses:
         ]
         mock_client.chat.completions.create.side_effect = responses
 
-        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+        with patch('processor.processor.get_openai_client', return_value=mock_client):
             translator = TranslationService(config)
         translator.client = mock_client
 
@@ -356,7 +351,7 @@ class TestParameterizedOpenAIResponses:
             Exception("Rate limited"),
         ]
 
-        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+        with patch('processor.processor.get_openai_client', return_value=mock_client):
             translator = TranslationService(config)
         translator.client = mock_client
 
@@ -371,7 +366,7 @@ class TestParameterizedOpenAIResponses:
         mock_response.choices = [Mock(message=Mock(content="   "))]
         mock_client.chat.completions.create.return_value = mock_response
 
-        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+        with patch('processor.processor.get_openai_client', return_value=mock_client):
             translator = TranslationService(config)
         translator.client = mock_client
 

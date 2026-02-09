@@ -42,8 +42,6 @@ services:
       - ./data:/app/data
       # Configuration files (glossary, style guide)
       - ./config:/app/config
-      # Mount common models for shared database schema
-      - ./src/common:/app/common:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -69,8 +67,6 @@ services:
       - ./data:/app/data
       # Configuration files for glossary and style guide
       - ./config:/app/config
-      # Mount common models
-      - ./src/common:/app/common:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -103,8 +99,6 @@ services:
     volumes:
       # Shared data volume for database and media access
       - ./data:/app/data
-      # Mount common models
-      - ./src/common:/app/common:ro
     depends_on:
       - processor
     restart: unless-stopped

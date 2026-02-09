@@ -1,8 +1,11 @@
 import sys
 from pathlib import Path
-sys.path.append(str(Path.cwd() / "src"))
 
-from scraper.news_scraper import NewsScraper
+try:
+    from scraper.news_scraper import NewsScraper
+except ImportError:
+    sys.path.append(str(Path(__file__).parent / "src"))
+    from scraper.news_scraper import NewsScraper
 
 print("📰 Testing News Scraper...")
 scraper = NewsScraper()

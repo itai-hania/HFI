@@ -10,12 +10,9 @@ import json
 import hashlib
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Optional, List, Dict
 from datetime import datetime, timezone
-
-sys.path.append(str(Path(__file__).parent.parent))
 
 from openai import OpenAI
 from common.models import StyleExample, engine

@@ -21,9 +21,6 @@ import sys
 import os
 from pathlib import Path
 
-# Add parent directory for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
 from dotenv import load_dotenv
 from processor import ProcessorConfig, TranslationService, MediaDownloader, TweetProcessor
 from common.models import create_tables, SessionLocal, Tweet

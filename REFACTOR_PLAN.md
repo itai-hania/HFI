@@ -3,17 +3,16 @@
 > Full code review conducted 2026-02-08. All decisions approved by user.
 > Committed & pushed: `f04efcd` on 2026-02-08.
 
-## Current Status (2026-02-08)
+## Current Status (2026-02-09)
 
-**Completed:** Phases 1, 2, 3, 4, 7 — all committed and pushed to `main`
-**Deferred:** Phases 5, 6 (high-risk packaging + dashboard split — user chose to skip)
+**Completed:** Phases 1, 2, 3, 4, 5, 7 — all committed and pushed to `main`
+**Deferred:** Phase 6 (dashboard split — high risk, restructures entire UI)
 **Tests:** 338/338 passing
-**Branch:** `main` is clean, up to date with remote
+**Branch:** `main`
 
 ## Next Session Context
 
-The low-hanging refactor work is done. Remaining options:
-- **Phase 5** (Python packaging) — replaces all `sys.path.append` hacks with proper `pyproject.toml` + `pip install -e .`. High risk: touches every import in the project.
+The refactor work is nearly done. Remaining option:
 - **Phase 6** (Dashboard split) — breaks 3,000-line `app.py` into page modules. High risk: restructures entire UI.
 - **New work** — the refactor is complete for practical purposes. User may want to move on to new features or other tasks.
 
@@ -74,16 +73,16 @@ The low-hanging refactor work is done. Remaining options:
 
 ---
 
-### Phase 5: Python Packaging (High Risk — touches all imports) ⏸️ DEFERRED
-*Proper package structure. All imports change. Skipped by user — high risk.*
+### Phase 5: Python Packaging ✅ DONE
+*Proper package structure with `pyproject.toml` + `pip install -e .`. Completed 2026-02-09.*
 
-- [ ] **5.1** Create `pyproject.toml` with `[project]` and `[tool.setuptools.packages.find]`
-- [ ] **5.2** Add `__init__.py` files to all packages under `src/`
-- [ ] **5.3** Update all imports from `from common.models import ...` to `from hfi.common.models import ...` (or use relative imports within packages)
-- [ ] **5.4** Remove all 12 `sys.path.append()` hacks
-- [ ] **5.5** Update `conftest.py` to use the installed package
-- [ ] **5.6** Update Docker files to `pip install -e .`
-- [ ] **5.7** Run `pip install -e .` and verify
+- [x] **5.1** Normalize 3 inconsistent test files (`src.X` → short `X` imports)
+- [x] **5.2** Create `src/processor/__init__.py`
+- [x] **5.3** Create `pyproject.toml` with `[tool.setuptools.packages.find] where = ["src"]` + `[tool.pytest.ini_options] pythonpath = ["src"]`
+- [x] **5.4** Remove `sys.path` hacks from conftest.py + 13 test files
+- [x] **5.5** Remove `sys.path` hacks from 12 src/ files
+- [x] **5.6** Update root scripts with try/except fallback
+- [x] **5.7** Update Dockerfiles — `COPY src/ /app/src/` + `ENV PYTHONPATH=/app/src`
 
 ---
 

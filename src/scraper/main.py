@@ -12,11 +12,7 @@ import asyncio
 import sys
 import os
 import logging
-from pathlib import Path
 from datetime import datetime
-
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
 
 from scraper import TwitterScraper
 from common.models import create_tables, get_db_session, Tweet, Trend

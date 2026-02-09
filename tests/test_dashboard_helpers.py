@@ -9,10 +9,6 @@ Run with: pytest tests/test_dashboard_helpers.py -v
 
 import pytest
 import json
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from dashboard.helpers import get_source_badge_class, parse_media_info, format_status_str
 

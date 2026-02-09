@@ -10,42 +10,44 @@ Last Updated: 2026-02-01
 import pytest
 import os
 from unittest.mock import Mock, patch, MagicMock
-import sys
-from pathlib import Path
 
-# Add src directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from src.processor.summary_generator import SummaryGenerator
-from src.common.models import Trend, TrendSource, create_tables, SessionLocal, get_db
+from processor.summary_generator import SummaryGenerator
+import common.models as models_mod
+from common.models import Trend, TrendSource, Base, get_db
 from datetime import datetime, timezone, timedelta
 
 
 @pytest.fixture(scope="module")
 def setup_database():
     """Set up in-memory database for testing."""
-    # Use in-memory database for tests
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+    test_engine = create_engine(
+        'sqlite:///:memory:',
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
 
-    # Force reload of models module to use test database
-    import importlib
-    import src.common.models
-    importlib.reload(src.common.models)
+    orig_engine = models_mod.engine
+    orig_session_local = models_mod.SessionLocal
+    models_mod.engine = test_engine
+    models_mod.SessionLocal = TestSession
 
-    from src.common.models import create_tables
-    create_tables()
+    Base.metadata.create_all(bind=test_engine)
 
     yield
 
-    # Cleanup
-    del os.environ['DATABASE_URL']
+    models_mod.engine = orig_engine
+    models_mod.SessionLocal = orig_session_local
 
 
 @pytest.fixture
 def db_session(setup_database):
     """Provide a database session for each test."""
     with get_db() as db:
-        # Clean up all trends before each test
         db.query(Trend).delete()
         db.commit()
         yield db
@@ -58,7 +60,7 @@ def mock_openai():
     mock_response = Mock()
     mock_response.choices = [Mock(message=Mock(content="This is a test summary."))]
     mock_client.chat.completions.create.return_value = mock_response
-    with patch('src.processor.summary_generator.get_openai_client', return_value=mock_client) as mock:
+    with patch('processor.summary_generator.get_openai_client', return_value=mock_client) as mock:
         yield mock
 
 

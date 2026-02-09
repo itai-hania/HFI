@@ -14,13 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # --with-deps ensures all necessary system libraries are installed
 RUN playwright install chromium --with-deps
 
-# Copy application code
-COPY src/scraper/*.py .
-
-# Copy common models from parent directory
-# Note: Build context must be project root for this to work
-# This will be mounted as volume in production, but copied for standalone builds
-COPY src/common /app/common
+# Copy all source packages
+COPY src/ /app/src/
+ENV PYTHONPATH=/app/src
 
 # Create directories for data persistence
 RUN mkdir -p /app/data/session /app/data/media /app/config
@@ -35,4 +31,4 @@ USER pwuser
 
 # Default command: Run the scraper
 # In K8s CronJob, this will be overridden
-CMD ["python", "main.py"]
+CMD ["python", "-m", "scraper.main"]

@@ -13,7 +13,6 @@ Run with: pytest tests/test_processor_comprehensive.py -v
 
 import pytest
 import os
-import sys
 import json
 import tempfile
 import subprocess
@@ -21,9 +20,6 @@ from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import Mock, MagicMock, patch, mock_open
 from io import BytesIO
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from processor.processor import (
     ProcessorConfig,

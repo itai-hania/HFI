@@ -18,13 +18,8 @@ database operations that power the UI.
 
 import pytest
 import os
-import sys
-from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import Mock, MagicMock, patch
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from common.models import (
     Tweet,

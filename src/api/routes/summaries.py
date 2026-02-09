@@ -10,11 +10,6 @@ Last Updated: 2026-02-01
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-import sys
-from pathlib import Path
-
-# Add parent directory to path for common modules
-sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from common.models import Trend
 from api.dependencies import get_db

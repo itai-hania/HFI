@@ -10,11 +10,6 @@ Last Updated: 2026-02-01
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import sys
-from pathlib import Path
-
-# Add parent directory to path for common modules
-sys.path.append(str(Path(__file__).parent.parent))
 
 from api.routes import trends, summaries
 

@@ -21,14 +21,9 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application code
-COPY src/dashboard/ .
-
-# Copy common models from parent directory
-COPY src/common /app/common
-
-# Copy scraper module (needed for news_scraper)
-COPY src/scraper /app/scraper
+# Copy all source packages
+COPY src/ /app/src/
+ENV PYTHONPATH=/app/src
 
 # Create directories for data persistence
 RUN mkdir -p /app/data/media
@@ -52,7 +47,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # --server.headless=true: Run without browser auto-open
 # --server.fileWatcherType=none: Disable file watching for better performance
 # --browser.gatherUsageStats=false: Disable telemetry
-CMD ["streamlit", "run", "app.py", \
+CMD ["streamlit", "run", "src/dashboard/app.py", \
     "--server.address=0.0.0.0", \
     "--server.port=8501", \
     "--server.headless=true", \

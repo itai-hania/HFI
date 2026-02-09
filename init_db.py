@@ -9,10 +9,11 @@ Run this before starting any services.
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.append(str(Path(__file__).parent / "src"))
-
-from common.models import create_tables
+try:
+    from common.models import create_tables
+except ImportError:
+    sys.path.append(str(Path(__file__).parent / "src"))
+    from common.models import create_tables
 
 
 def init_directories():

@@ -9,11 +9,6 @@ Last Updated: 2026-02-01
 
 from typing import Generator
 from sqlalchemy.orm import Session
-import sys
-from pathlib import Path
-
-# Add parent directory to path for common modules
-sys.path.append(str(Path(__file__).parent.parent))
 
 from common.models import SessionLocal
 

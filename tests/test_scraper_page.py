@@ -9,12 +9,7 @@ Run with: pytest tests/test_scraper_page.py -v
 """
 
 import pytest
-import os
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from scraper.scraper import TwitterScraper
 

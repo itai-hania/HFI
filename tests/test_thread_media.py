@@ -12,12 +12,8 @@ Run with: pytest tests/test_thread_media.py -v
 
 import pytest
 import os
-import sys
 import json
 from datetime import datetime, timezone
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from common.models import (
     create_tables,

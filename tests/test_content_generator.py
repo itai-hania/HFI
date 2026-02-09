@@ -15,13 +15,9 @@ Run with: pytest tests/test_content_generator.py -v
 
 import pytest
 import os
-import sys
 import json
-from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timezone
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from common.models import (
     Tweet, TweetStatus, StyleExample, Base, engine, get_db_session, SessionLocal

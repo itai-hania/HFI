@@ -48,12 +48,9 @@ ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Copy application code
-COPY src/processor/processor.py src/processor/main.py ./
-
-# Copy common models from parent directory
-# Note: In Docker build context, this assumes build context is project root
-COPY src/common /app/common
+# Copy all source packages
+COPY src/ /app/src/
+ENV PYTHONPATH=/app/src
 
 # Create directories for data persistence
 RUN mkdir -p /app/data/media /app/data /app/config
@@ -69,7 +66,7 @@ USER processor
 # Health check: Verify Python can import modules
 # Runs every 30s, if 3 consecutive failures, container marked unhealthy
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; from processor import TweetProcessor; sys.exit(0)" || exit 1
+    CMD python -c "from processor.processor import TweetProcessor" || exit 1
 
 # Expose no ports (this is a worker service, not an API)
 
@@ -79,4 +76,4 @@ LABEL service="processor"
 LABEL description="Translates English tweets to Hebrew and downloads media"
 
 # Default command: Run the processor in polling mode
-CMD ["python", "main.py"]
+CMD ["python", "-m", "processor.main"]

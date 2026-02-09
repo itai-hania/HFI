@@ -16,12 +16,8 @@ Last Updated: 2026-02-01
 import os
 import re
 import logging
-from typing import Optional, List, Dict, Set
-from pathlib import Path
 import sys
-
-# Add parent directory to path for common modules
-sys.path.append(str(Path(__file__).parent.parent))
+from typing import Optional, List, Dict, Set
 
 from openai import OpenAI
 from sqlalchemy.orm import Session

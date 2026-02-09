@@ -2,8 +2,11 @@ import sys
 import os
 from pathlib import Path
 
-# Add src to path
-sys.path.append(str(Path.cwd() / "src"))
+try:
+    from scraper.news_scraper import NewsScraper as _test_import  # noqa: F401
+    del _test_import
+except ImportError:
+    sys.path.append(str(Path(__file__).parent / "src"))
 
 print("🔍 Verifying imports...")
 

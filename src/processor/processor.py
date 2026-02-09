@@ -53,7 +53,6 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Tuple, List
 import logging
-import sys
 
 # Language detection for skipping already-Hebrew content
 try:
@@ -61,9 +60,6 @@ try:
     HAS_LANGDETECT = True
 except ImportError:
     HAS_LANGDETECT = False
-
-# Add parent directory to path for common modules
-sys.path.append(str(Path(__file__).parent.parent))
 
 from openai import OpenAI
 from sqlalchemy.orm import Session

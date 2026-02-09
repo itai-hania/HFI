@@ -12,11 +12,6 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-import sys
-from pathlib import Path
-
-# Add parent directory to path for common modules
-sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from common.models import Trend, TrendSource
 from api.dependencies import get_db

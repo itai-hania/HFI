@@ -11,54 +11,52 @@ import pytest
 from fastapi.testclient import TestClient
 import os
 import sys
-from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, Mock
 
-# Add src directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from src.api.main import app
-from src.common.models import Trend, TrendSource, create_tables, get_db
+from api.main import app
+import common.models as models_mod
+from common.models import Trend, TrendSource, Base, get_db
 
 
 @pytest.fixture(scope="function")
 def setup_database():
     """Set up in-memory database for testing."""
-    # Save original DATABASE_URL
-    original_db_url = os.environ.get('DATABASE_URL')
-
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
     os.environ['OPENAI_API_KEY'] = 'test-key'
 
-    # Force reload of models module to use new database
-    import importlib
-    import src.common.models
-    importlib.reload(src.common.models)
+    # Create in-memory engine and session factory
+    test_engine = create_engine(
+        'sqlite:///:memory:',
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
 
-    # The API code imports from 'common.models' (not 'src.common.models')
-    # which is a separate module in sys.modules. We need to update the
-    # SessionLocal in api.dependencies so the API uses our test database.
+    # Swap module-level engine and SessionLocal
+    orig_engine = models_mod.engine
+    orig_session_local = models_mod.SessionLocal
+    models_mod.engine = test_engine
+    models_mod.SessionLocal = TestSession
+
+    # Also swap in api.dependencies
     api_deps = sys.modules.get('api.dependencies')
-    old_session_local = getattr(api_deps, 'SessionLocal', None) if api_deps else None
+    old_deps_sl = getattr(api_deps, 'SessionLocal', None) if api_deps else None
     if api_deps:
-        api_deps.SessionLocal = src.common.models.SessionLocal
+        api_deps.SessionLocal = TestSession
 
-    from src.common.models import create_tables
-    create_tables()
+    Base.metadata.create_all(bind=test_engine)
 
     yield
 
-    # Restore api.dependencies.SessionLocal
-    if api_deps and old_session_local is not None:
-        api_deps.SessionLocal = old_session_local
-
-    # Restore original
-    if original_db_url:
-        os.environ['DATABASE_URL'] = original_db_url
-    else:
-        if 'DATABASE_URL' in os.environ:
-            del os.environ['DATABASE_URL']
+    # Restore originals
+    models_mod.engine = orig_engine
+    models_mod.SessionLocal = orig_session_local
+    if api_deps:
+        api_deps.SessionLocal = old_deps_sl or orig_session_local
 
 
 @pytest.fixture
@@ -70,8 +68,7 @@ def client(setup_database):
 @pytest.fixture
 def db_session(setup_database):
     """Provide database session."""
-    from src.common.models import SessionLocal
-    db = SessionLocal()
+    db = models_mod.SessionLocal()
     # Clean database before each test
     db.query(Trend).delete()
     db.commit()
