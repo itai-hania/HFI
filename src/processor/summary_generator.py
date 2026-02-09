@@ -26,6 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from openai import OpenAI
 from sqlalchemy.orm import Session
 from common.models import Trend, get_db
+from common.openai_client import get_openai_client
 
 # Configure logging
 logging.basicConfig(
@@ -70,7 +71,7 @@ class SummaryGenerator:
             raise ValueError("OpenAI API key is required (set OPENAI_API_KEY env var)")
 
         self.model = model
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = get_openai_client() if not api_key else OpenAI(api_key=api_key)
         logger.info(f"Initialized SummaryGenerator with model: {self.model}")
 
     def generate_summary(self, title: str, description: Optional[str] = None) -> str:

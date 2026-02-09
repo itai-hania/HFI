@@ -33,6 +33,7 @@ Error Handling Strategy:
 - All errors logged with timestamps for debugging
 """
 
+import os
 import time
 import logging
 import signal
@@ -53,7 +54,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('/Users/itayy16/CursorProjects/HFI/data/processor.log')
+        logging.FileHandler(str(Path(os.getenv('LOG_DIR', str(Path(__file__).parent.parent.parent / 'data'))) / 'processor.log'))
     ]
 )
 logger = logging.getLogger(__name__)

@@ -23,6 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from common.models import get_db_session, create_tables, Tweet, Trend, Thread, TrendSource, TweetStatus, StyleExample
 import json
 from sqlalchemy import func
+from dashboard.helpers import get_source_badge_class, parse_media_info, format_status_str
 
 logger = logging.getLogger(__name__)
 
@@ -942,18 +943,7 @@ def delete_trend(db, trend_id):
 # TREND RANKING
 # =============================================================================
 
-def get_source_badge_class(source_name: str) -> str:
-    """Return CSS class for a source badge."""
-    mapping = {
-        'Yahoo Finance': 'source-yahoo-finance',
-        'WSJ': 'source-wsj',
-        'TechCrunch': 'source-techcrunch',
-        'Bloomberg': 'source-bloomberg',
-        'MarketWatch': 'source-marketwatch',
-        'Manual': 'source-manual',
-        'X': 'source-x',
-    }
-    return mapping.get(source_name, 'source-manual')
+# get_source_badge_class imported from dashboard.helpers
 
 
 # =============================================================================
@@ -1192,7 +1182,7 @@ def render_home(db):
                             parts = tweet.source_url.split('twitter.com/')[1].split('/')
                             if parts:
                                 source_handle = f"@{parts[0]}"
-                    except:
+                    except (IndexError, AttributeError):
                         pass
 
                 with st.container():
@@ -1205,7 +1195,8 @@ def render_home(db):
                             status_source += f" | Source: {source_handle}"
                         st.caption(status_source)
                     with preview_col2:
-                        st.markdown(f'<span class="status-badge status-{status_str.lower()}">{status_str}</span>', unsafe_allow_html=True)
+                        # SAFETY: status_str is from TweetStatus enum (controlled values)
+                        st.markdown(f'<span class="status-badge status-{status_str.lower()}">{html.escape(status_str)}</span>', unsafe_allow_html=True)
 
                     # View Full Thread expander - FULL WIDTH
                     with st.expander("📖 View Full Thread"):
@@ -2224,37 +2215,22 @@ def _render_generate_section(db):
 
 def render_content_item(tweet, db):
     """Render a content list item with media indicators"""
-    status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
-
-    # Parse media_paths JSON to get media count and types
-    media_count = 0
-    media_icon = ""
-    if tweet.media_paths:
-        try:
-            import json as json_mod
-            media_list = json_mod.loads(tweet.media_paths)
-            media_count = len(media_list)
-            has_video = any(m.get('type') == 'video' for m in media_list)
-            has_photo = any(m.get('type') == 'photo' for m in media_list)
-            if has_video:
-                media_icon = "🎥"
-            elif has_photo:
-                media_icon = "🖼️"
-        except:
-            pass
+    status_str = format_status_str(tweet.status)
+    media_count, media_icon = parse_media_info(tweet.media_paths)
 
     with st.container():
         col1, col2, col3 = st.columns([4, 1, 1])
 
         with col1:
+            # SAFETY: trend_topic and original_text are user-derived, must escape
             st.markdown(f"""
                 <div style="padding: 0.5rem 0;">
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <span style="font-weight: 500; color: var(--text-primary);">{tweet.trend_topic or 'Unknown'}</span>
-                        <span class="status-badge status-{status_str.lower()}">{status_str}</span>
+                        <span style="font-weight: 500; color: var(--text-primary);">{html.escape(tweet.trend_topic or 'Unknown')}</span>
+                        <span class="status-badge status-{status_str.lower()}">{html.escape(status_str)}</span>
                     </div>
                     <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                        {tweet.original_text[:120]}...
+                        {html.escape(tweet.original_text[:120])}...
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -2581,7 +2557,8 @@ def render_settings(db):
         glossary_path = Path(__file__).parent.parent.parent / "config" / "glossary.json"
         try:
             glossary_data = json.loads(glossary_path.read_text(encoding='utf-8')) if glossary_path.exists() else {}
-        except Exception:
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to load glossary: {e}")
             glossary_data = {}
         edited_glossary = st.text_area(
             "Glossary (JSON)",
@@ -2822,7 +2799,7 @@ def render_settings(db):
                 if isinstance(ex_tags, str):
                     try:
                         ex_tags = json.loads(ex_tags)
-                    except Exception:
+                    except (json.JSONDecodeError, ValueError):
                         ex_tags = []
                 if selected_tag.lower() in [t.lower() for t in ex_tags]:
                     filtered.append(ex)
@@ -2833,8 +2810,8 @@ def render_settings(db):
             filtered_count = example_count
 
         for ex in examples:
-            source_label = {'x_thread': 'X Thread', 'local_file': 'File', 'manual': 'Manual'}.get(ex.source_type, ex.source_type)
-            tags_str = ', '.join(ex.topic_tags[:3]) if ex.topic_tags else 'No tags'
+            source_label = html.escape({'x_thread': 'X Thread', 'local_file': 'File', 'manual': 'Manual'}.get(ex.source_type, ex.source_type or 'unknown'))
+            tags_str = html.escape(', '.join(ex.topic_tags[:3]) if ex.topic_tags else 'No tags')
             preview = html.escape(ex.content[:100]) + ('...' if len(ex.content) > 100 else '')
 
             # Check if this example is being edited
@@ -2927,19 +2904,19 @@ def render_settings(db):
 
         # ---- Data Export ----
         st.markdown("### Data Export")
-        all_tweets = db.query(Tweet).all()
-        tweets_export = json.dumps(
-            [{"id": t.id, "text": t.original_text, "hebrew": t.hebrew_draft, "status": t.status.value} for t in all_tweets],
-            indent=2, ensure_ascii=False
-        )
-        st.download_button("Export Tweets (JSON)", tweets_export, "tweets.json", mime="application/json", use_container_width=True)
+        tweet_count = db.query(Tweet).count()
+        tweets_data = []
+        for t in db.query(Tweet).yield_per(100):
+            tweets_data.append({"id": t.id, "text": t.original_text, "hebrew": t.hebrew_draft, "status": t.status.value})
+        tweets_export = json.dumps(tweets_data, indent=2, ensure_ascii=False)
+        st.download_button(f"Export Tweets (JSON) ({tweet_count})", tweets_export, "tweets.json", mime="application/json", use_container_width=True)
 
-        all_trends = db.query(Trend).all()
-        trends_export = json.dumps(
-            [{"title": t.title, "source": t.source.value, "description": t.description} for t in all_trends],
-            indent=2, ensure_ascii=False
-        )
-        st.download_button("Export Trends (JSON)", trends_export, "trends.json", mime="application/json", use_container_width=True)
+        trend_count = db.query(Trend).count()
+        trends_data = []
+        for t in db.query(Trend).yield_per(100):
+            trends_data.append({"title": t.title, "source": t.source.value, "description": t.description})
+        trends_export = json.dumps(trends_data, indent=2, ensure_ascii=False)
+        st.download_button(f"Export Trends (JSON) ({trend_count})", trends_export, "trends.json", mime="application/json", use_container_width=True)
 
     st.markdown("---")
 
@@ -2977,8 +2954,35 @@ def render_settings(db):
 # MAIN
 # =============================================================================
 
+def check_auth() -> bool:
+    """Simple password gate. Set DASHBOARD_PASSWORD env var to enable."""
+    password = os.getenv('DASHBOARD_PASSWORD')
+    if not password:
+        return True  # No password set = auth disabled
+
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+
+    if st.session_state.authenticated:
+        return True
+
+    st.markdown("### HFI Dashboard Login")
+    entered = st.text_input("Password", type="password", key="auth_password")
+    if st.button("Login"):
+        if entered == password:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password")
+    return False
+
+
 def main():
     create_tables()
+
+    if not check_auth():
+        return
+
     db = get_db()
     init_navigation()
 

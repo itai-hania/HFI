@@ -563,7 +563,7 @@ class TestStatusBadges:
     """Test status badge display logic."""
 
     def test_status_badge_colors(self):
-        """Test that each status has a corresponding badge."""
+        """Test that each status has a corresponding badge emoji."""
         status_colors = {
             'pending': '🟠',
             'processed': '🟢',
@@ -571,9 +571,10 @@ class TestStatusBadges:
             'published': '🔵'
         }
 
-        for status in ['pending', 'processed', 'approved', 'published']:
-            assert status in status_colors
-            assert len(status_colors[status]) > 0
+        assert status_colors['pending'] == '🟠'
+        assert status_colors['processed'] == '🟢'
+        assert status_colors['approved'] == '🟣'
+        assert status_colors['published'] == '🔵'
 
     def test_unknown_status_fallback(self):
         """Test fallback for unknown status."""

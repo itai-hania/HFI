@@ -54,12 +54,11 @@ def db_session(setup_database):
 @pytest.fixture
 def mock_openai():
     """Mock OpenAI client for testing."""
-    with patch('src.processor.summary_generator.OpenAI') as mock:
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.choices = [Mock(message=Mock(content="This is a test summary."))]
-        mock_client.chat.completions.create.return_value = mock_response
-        mock.return_value = mock_client
+    mock_client = Mock()
+    mock_response = Mock()
+    mock_response.choices = [Mock(message=Mock(content="This is a test summary."))]
+    mock_client.chat.completions.create.return_value = mock_response
+    with patch('src.processor.summary_generator.get_openai_client', return_value=mock_client) as mock:
         yield mock
 
 
@@ -405,7 +404,8 @@ class TestProcessTrend:
         # Verify all fields are populated
         assert trend.summary is not None
         assert trend.keywords is not None
-        assert len(trend.keywords) > 0
+        assert isinstance(trend.keywords, list)
+        assert len(trend.keywords) >= 2  # Should extract multiple keywords from title
         assert trend.source_count >= 1
         assert trend.related_trend_ids is not None
 

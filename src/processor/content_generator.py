@@ -19,6 +19,17 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from openai import OpenAI
 from common.models import StyleExample, engine
+from common.openai_client import get_openai_client
+from processor.prompt_builder import (
+    KEEP_ENGLISH as _KEEP_ENGLISH,
+    extract_topic_keywords,
+    build_glossary_section,
+    validate_hebrew_output as _validate_hebrew_output,
+    build_style_section,
+    load_style_examples_from_db,
+    get_completion_params,
+    call_with_retry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +58,7 @@ class ContentGenerator:
         },
     ]
 
-    KEEP_ENGLISH = {
-        'API', 'ML', 'AI', 'GPT', 'LLM', 'NFT', 'DeFi', 'ETF', 'IPO', 'VC',
-        'CEO', 'CTO', 'CFO', 'COO', 'SaaS', 'B2B', 'B2C', 'ROI', 'KPI',
-        'FOMO', 'HODL', 'DCA', 'ATH', 'FUD', 'DAO', 'DEX', 'CEX',
-        'startup', 'fintech', 'blockchain', 'crypto', 'bitcoin', 'ethereum',
-    }
+    KEEP_ENGLISH = _KEEP_ENGLISH
 
     def __init__(self, openai_client=None, model: Optional[str] = None,
                  temperature: Optional[float] = None,
@@ -60,10 +66,7 @@ class ContentGenerator:
         if openai_client:
             self.client = openai_client
         else:
-            api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable is required")
-            self.client = OpenAI(api_key=api_key)
+            self.client = get_openai_client()
 
         self.model = model or os.getenv('OPENAI_MODEL', 'gpt-4o')
         self.base_temperature = temperature
@@ -76,123 +79,34 @@ class ContentGenerator:
         try:
             with open(glossary_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except Exception:
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to load glossary: {e}")
             return {}
 
-    def _load_style_examples(self, source_text: Optional[str] = None, limit: int = 5) -> List[str]:
-        """Load style examples from DB, prioritizing topic-matched ones."""
-        from sqlalchemy.orm import Session as _Session
-        db = _Session(bind=engine, expire_on_commit=False)
-        try:
-            all_examples = (
-                db.query(StyleExample)
-                .filter(StyleExample.is_active == True)
-                .order_by(StyleExample.created_at.desc())
-                .all()
-            )
-            if not all_examples:
-                return []
-
-            if source_text:
-                source_tags = self._extract_keywords(source_text)
-                scored = []
-                for ex in all_examples:
-                    ex_tags = ex.topic_tags or []
-                    if isinstance(ex_tags, str):
-                        try:
-                            ex_tags = json.loads(ex_tags)
-                        except Exception:
-                            ex_tags = []
-                    matches = sum(1 for t in source_tags if t.lower() in [et.lower() for et in ex_tags])
-                    scored.append((ex, matches))
-                scored.sort(key=lambda x: (-x[1], -x[0].word_count))
-                candidates = [ex for ex, _ in scored]
-            else:
-                candidates = all_examples
-
-            pool = candidates[:limit * 3]
-            sorted_by_length = sorted(pool, key=lambda x: x.word_count)
-            if len(sorted_by_length) <= limit:
-                selected = sorted_by_length
-            else:
-                step = len(sorted_by_length) / limit
-                selected = [sorted_by_length[min(int(i * step), len(sorted_by_length) - 1)] for i in range(limit)]
-
-            return [ex.content for ex in selected]
-        except Exception as e:
-            logger.warning(f"Could not load style examples: {e}")
-            return []
-        finally:
-            db.close()
-
     def _extract_keywords(self, text: str) -> List[str]:
-        keyword_map = {
-            'fintech': ['fintech', 'financial technology', 'neobank'],
-            'crypto': ['crypto', 'cryptocurrency', 'token'],
-            'bitcoin': ['bitcoin', 'btc'],
-            'ethereum': ['ethereum', 'eth'],
-            'blockchain': ['blockchain', 'distributed ledger'],
-            'banking': ['bank', 'banking', 'deposit', 'loan'],
-            'payments': ['payment', 'transfer', 'paypal', 'stripe'],
-            'investing': ['invest', 'portfolio', 'fund', 'asset'],
-            'trading': ['trading', 'trade', 'exchange', 'broker'],
-            'markets': ['market', 'stock', 'bond', 'equity', 'nasdaq'],
-            'regulation': ['regulat', 'compliance', 'sec', 'fed'],
-            'startups': ['startup', 'founder', 'seed', 'venture'],
-            'AI': ['artificial intelligence', ' ai ', 'machine learning', 'llm'],
-            'DeFi': ['defi', 'decentralized finance', 'yield'],
-            'IPO': ['ipo', 'public offering', 'listing'],
-        }
-        text_lower = text.lower()
-        found = []
-        for tag, keywords in keyword_map.items():
-            for kw in keywords:
-                if kw in text_lower:
-                    found.append(tag)
-                    break
-        return found
+        """Extract topic keywords from text. Delegates to prompt_builder."""
+        return extract_topic_keywords(text)
 
     def _build_style_section(self, source_text: Optional[str] = None) -> str:
-        examples = self._load_style_examples(source_text=source_text, limit=5)
-        if not examples:
-            return "Write in a professional, engaging Hebrew style suitable for financial/tech content on social media."
-
-        examples_text = ""
-        for i, example in enumerate(examples, 1):
-            truncated = example[:800] + "..." if len(example) > 800 else example
-            examples_text += f"\n--- Example {i} ---\n{truncated}\n"
-
-        return f"""STYLE EXAMPLES (match this writing style):
-{examples_text}
-
-Match the tone, vocabulary, and sentence structure from the examples above."""
+        """Build style section for prompts. Delegates to prompt_builder."""
+        return build_style_section(source_text=source_text)
 
     def _build_glossary_str(self) -> str:
-        if not self.glossary:
-            return ""
-        return "\n".join(f"- {eng}: {heb}" for eng, heb in self.glossary.items())
+        """Build glossary string. Delegates to prompt_builder."""
+        return build_glossary_section(self.glossary)
 
     def _get_completion_params(self, system_prompt: str, user_content: str,
                                 temperature_offset: float = 0.0) -> dict:
-        params = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ]
-        }
+        """Build completion params with optional temperature offset."""
+        temp = None
         if self.base_temperature is not None:
-            params["temperature"] = min(self.base_temperature + temperature_offset, 2.0)
-        return params
+            temp = min(self.base_temperature + temperature_offset, 2.0)
+        return get_completion_params(self.model, system_prompt, user_content, temperature=temp)
 
     def validate_hebrew_output(self, text: str) -> bool:
-        if not text:
-            return False
-        hebrew_chars = sum(1 for c in text if '\u0590' <= c <= '\u05FF')
-        alpha_chars = sum(1 for c in text if c.isalpha())
-        if alpha_chars == 0:
-            return False
-        return (hebrew_chars / alpha_chars) >= 0.5
+        """Validate Hebrew output. Returns bool (wraps prompt_builder's tuple return)."""
+        is_valid, _ = _validate_hebrew_output(text)
+        return is_valid
 
     def generate_post(self, source_text: str, num_variants: int = 3,
                        angles: Optional[List[str]] = None) -> List[Dict]:

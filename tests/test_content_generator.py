@@ -226,12 +226,12 @@ class TestGenerateThread:
             glossary={}
         )
         result = gen.generate_thread("Bitcoin hits $100K", num_tweets=3)
-        assert len(result) >= 1
-        for t in result:
-            assert 'index' in t
+        assert len(result) == 3
+        for i, t in enumerate(result, 1):
+            assert t['index'] == i
             assert 'content' in t
-            assert 'char_count' in t
-            assert 'angle' in t
+            assert t['char_count'] == len(t['content'])
+            assert t['angle'] == 'educational'
 
     def test_generate_thread_empty_input(self, generator):
         assert generator.generate_thread("") == []
@@ -242,8 +242,8 @@ class TestGenerateThread:
         gen = ContentGenerator(openai_client=mock_openai_client_thread, model='test', glossary={})
         # Request 10, but should be clamped to 5 max
         result = gen.generate_thread("Test", num_tweets=10)
-        # The thread structure depends on GPT output, just verify it runs
-        assert len(result) >= 1
+        # GPT mock returns 3 tweets, but the request should have been clamped to 5
+        assert len(result) == 3  # Matches mock output (3 sections separated by ---)
 
     def test_generate_thread_api_error(self, mock_openai_client):
         from processor.content_generator import ContentGenerator
@@ -437,8 +437,8 @@ class TestAutoStyleLearning:
         assert example.is_active is True
 
         all_examples = get_all_examples(test_db)
-        assert len(all_examples) >= 1
-        assert any(ex.source_type == 'approved' for ex in all_examples)
+        assert len(all_examples) == 1
+        assert all_examples[0].source_type == 'approved'
 
     def test_short_content_not_added(self, test_db):
         """Content under 10 words should not be added."""

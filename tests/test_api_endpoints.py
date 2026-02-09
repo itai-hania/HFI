@@ -268,7 +268,7 @@ class TestGetTrendsStats:
 class TestGenerateSummary:
     """Test POST /api/trends/{trend_id}/generate-summary endpoint."""
 
-    @patch('processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.get_openai_client')
     def test_generate_summary_success(self, mock_openai, client, sample_trends, db_session):
         """Test successful summary generation."""
         # Mock OpenAI response
@@ -287,10 +287,11 @@ class TestGenerateSummary:
         data = response.json()
         assert data['trend_id'] == trend.id
         assert data['summary'] is not None
-        assert len(data['keywords']) > 0
+        assert isinstance(data['keywords'], list)
+        assert len(data['keywords']) >= 2  # Should extract keywords from trend title
         assert data['source_count'] >= 1
 
-    @patch('processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.get_openai_client')
     def test_generate_summary_already_exists(self, mock_openai, client, sample_trends):
         """Test generating summary for trend that already has one."""
         trend = sample_trends[0]  # Has summary
@@ -299,7 +300,7 @@ class TestGenerateSummary:
         assert response.status_code == 400
         assert 'already has a summary' in response.json()['detail']
 
-    @patch('processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.get_openai_client')
     def test_generate_summary_force_regenerate(self, mock_openai, client, sample_trends):
         """Test forcing summary regeneration."""
         mock_client = Mock()
@@ -328,7 +329,7 @@ class TestGenerateSummary:
 class TestGenerateSummariesBulk:
     """Test POST /api/trends/generate-summaries endpoint."""
 
-    @patch('processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.get_openai_client')
     def test_generate_summaries_bulk(self, mock_openai, client, sample_trends):
         """Test bulk summary generation."""
         mock_client = Mock()
@@ -348,7 +349,7 @@ class TestGenerateSummariesBulk:
         # Should process only 1 trend (the one without summary)
         assert data['success'] == 1
 
-    @patch('processor.summary_generator.OpenAI')
+    @patch('processor.summary_generator.get_openai_client')
     def test_generate_summaries_bulk_with_limit(self, mock_openai, client, db_session):
         """Test bulk generation with limit."""
         mock_client = Mock()

@@ -20,6 +20,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from common.models import StyleExample
+from common.openai_client import get_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def get_examples_by_tags(db: Session, tags: List[str], limit: int = 5) -> List[S
         if isinstance(example_tags, str):
             try:
                 example_tags = json.loads(example_tags)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 example_tags = []
 
         # Count matching tags
@@ -167,11 +168,10 @@ def get_diverse_examples(db: Session, limit: int = 5) -> List[StyleExample]:
     # Sort by word count
     sorted_examples = sorted(all_examples, key=lambda x: x.word_count)
 
-    # Select from different parts of the distribution
+    # Select from different parts of the distribution (uniform spacing)
     result = []
-    step = len(sorted_examples) / limit
     for i in range(limit):
-        idx = min(int(i * step), len(sorted_examples) - 1)
+        idx = i * len(sorted_examples) // limit
         if sorted_examples[idx] not in result:
             result.append(sorted_examples[idx])
 
@@ -250,7 +250,7 @@ def get_example_stats(db: Session) -> Dict:
         if isinstance(tags, str):
             try:
                 tags = json.loads(tags)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 tags = []
         all_topics.update(tags)
 
@@ -288,16 +288,10 @@ def extract_topic_tags(content: str, openai_client=None) -> List[str]:
         List of 2-5 topic tags
     """
     if not openai_client:
-        # Try to get from environment
         try:
-            from openai import OpenAI
-            api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                logger.warning("No OpenAI API key, using fallback tagging")
-                return _fallback_topic_tags(content)
-            openai_client = OpenAI(api_key=api_key)
-        except Exception as e:
-            logger.warning(f"Could not initialize OpenAI: {e}")
+            openai_client = get_openai_client()
+        except ValueError:
+            logger.warning("No OpenAI API key, using fallback tagging")
             return _fallback_topic_tags(content)
 
     # Predefined tag vocabulary

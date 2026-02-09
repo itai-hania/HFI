@@ -612,123 +612,44 @@ def create_tables(drop_existing: bool = False):
         logger.info("Creating database tables...")
         Base.metadata.create_all(bind=engine)
 
-        # Safe migration: add article_url column to trends if missing
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE trends ADD COLUMN article_url VARCHAR(1024)"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added article_url column to trends")
-            except Exception:
-                pass  # Column already exists
+        # Safe migrations: add columns if missing (SQLite raises OperationalError for duplicates)
+        import sqlite3
+        _text = __import__('sqlalchemy').text
 
-        # Safe migration: add media_paths column to tweets if missing
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE tweets ADD COLUMN media_paths TEXT"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added media_paths column to tweets")
-            except Exception:
-                pass  # Column already exists
+        migrations = [
+            ("trends", "article_url", "ALTER TABLE trends ADD COLUMN article_url VARCHAR(1024)"),
+            ("tweets", "media_paths", "ALTER TABLE tweets ADD COLUMN media_paths TEXT"),
+            ("trends", "summary", "ALTER TABLE trends ADD COLUMN summary TEXT"),
+            ("trends", "keywords", "ALTER TABLE trends ADD COLUMN keywords TEXT"),
+            ("trends", "source_count", "ALTER TABLE trends ADD COLUMN source_count INTEGER DEFAULT 1"),
+            ("trends", "related_trend_ids", "ALTER TABLE trends ADD COLUMN related_trend_ids TEXT"),
+            ("tweets", "content_type", "ALTER TABLE tweets ADD COLUMN content_type VARCHAR(20) DEFAULT 'translation'"),
+            ("tweets", "generation_metadata", "ALTER TABLE tweets ADD COLUMN generation_metadata TEXT"),
+        ]
 
-        # Safe migration: add summary fields to trends if missing
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE trends ADD COLUMN summary TEXT"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added summary column to trends")
-            except Exception:
-                pass  # Column already exists
-
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE trends ADD COLUMN keywords TEXT"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added keywords column to trends")
-            except Exception:
-                pass  # Column already exists
-
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE trends ADD COLUMN source_count INTEGER DEFAULT 1"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added source_count column to trends")
-            except Exception:
-                pass  # Column already exists
-
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE trends ADD COLUMN related_trend_ids TEXT"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added related_trend_ids column to trends")
-            except Exception:
-                pass  # Column already exists
-
-        # Safe migration: add content_type column to tweets if missing
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE tweets ADD COLUMN content_type VARCHAR(20) DEFAULT 'translation'"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added content_type column to tweets")
-            except Exception:
-                pass  # Column already exists
-
-        # Safe migration: add generation_metadata column to tweets if missing
-        with engine.connect() as conn:
-            try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "ALTER TABLE tweets ADD COLUMN generation_metadata TEXT"
-                    )
-                )
-                conn.commit()
-                logger.info("Migration: added generation_metadata column to tweets")
-            except Exception:
-                pass  # Column already exists
+        for table, column, sql in migrations:
+            with engine.connect() as conn:
+                try:
+                    conn.execute(_text(sql))
+                    conn.commit()
+                    logger.info(f"Migration: added {column} column to {table}")
+                except (sqlite3.OperationalError, Exception) as e:
+                    if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                        logger.debug(f"Migration skipped: {column} already exists in {table}")
+                    else:
+                        logger.warning(f"Migration failed for {table}.{column}: {e}")
 
         # Safe migration: convert style_examples.is_active from string '1'/'0' to boolean 1/0
         with engine.connect() as conn:
             try:
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "UPDATE style_examples SET is_active = 1 WHERE is_active = '1'"
-                    )
-                )
-                conn.execute(
-                    __import__('sqlalchemy').text(
-                        "UPDATE style_examples SET is_active = 0 WHERE is_active = '0'"
-                    )
-                )
+                conn.execute(_text("UPDATE style_examples SET is_active = 1 WHERE is_active = '1'"))
+                conn.execute(_text("UPDATE style_examples SET is_active = 0 WHERE is_active = '0'"))
                 conn.commit()
-            except Exception:
-                pass  # Table may not exist yet or already migrated
+            except (sqlite3.OperationalError, Exception) as e:
+                if "no such table" in str(e).lower():
+                    logger.debug("Migration skipped: style_examples table doesn't exist yet")
+                else:
+                    logger.warning(f"Migration failed for style_examples.is_active: {e}")
 
         logger.info(f"Database tables created successfully at: {DATABASE_URL}")
 

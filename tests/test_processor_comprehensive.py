@@ -416,11 +416,10 @@ class TestMediaDownloader:
             with patch('processor.processor.Path.exists', return_value=True):
                 result = downloader.download_media("https://example.com/video.m3u8")
 
-        assert mock_run.called
+        mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]
-        assert 'yt-dlp' in call_args[0]  # First arg is the binary path, check it contains 'yt-dlp'
-        assert '-f' in call_args
-        assert 'best' in call_args
+        assert 'yt-dlp' in call_args[0]
+        assert call_args[1:4] == ['-f', 'best', '--no-playlist']
 
     @patch('processor.processor.subprocess.run')
     def test_download_video_timeout(self, mock_run):

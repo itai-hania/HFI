@@ -22,13 +22,12 @@ from src.processor.processor import TranslationService, ProcessorConfig
 @pytest.fixture
 def mock_openai():
     """Mock OpenAI client for testing."""
-    with patch('src.processor.processor.OpenAI') as mock:
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.choices = [Mock(message=Mock(content="זוהי תרגום בעברית לדוגמה."))]
-        mock_client.chat.completions.create.return_value = mock_response
-        mock.return_value = mock_client
-        yield mock
+    mock_client = Mock()
+    mock_response = Mock()
+    mock_response.choices = [Mock(message=Mock(content="זוהי תרגום בעברית לדוגמה."))]
+    mock_client.chat.completions.create.return_value = mock_response
+    with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+        yield mock_client
 
 
 @pytest.fixture
@@ -64,9 +63,8 @@ class TestIsHebrew:
         """Test detection with mixed text (majority Hebrew)."""
         # Mostly Hebrew with some English terms
         mixed_text = "שוק ה-Bitcoin עלה היום ב-5% לפי המומחים"
-        # Should be True if Hebrew > 50%
-        result = translator.is_hebrew(mixed_text)
-        assert isinstance(result, bool)
+        # Should be True since Hebrew chars > 50% of alphabetic chars
+        assert translator.is_hebrew(mixed_text) is True
 
     def test_is_hebrew_with_empty_text(self, translator):
         """Test with empty string."""
@@ -104,8 +102,8 @@ class TestValidateHebrewOutput:
         # Text with >50% Hebrew characters
         mixed_text = "ביטקוין (Bitcoin) הגיע לשיא חדש של 100,000 דולר"
         is_valid, reason = translator.validate_hebrew_output(mixed_text)
-        # Should be valid if Hebrew > 50% of alphabetic chars
-        assert isinstance(is_valid, bool)
+        assert is_valid is True
+        assert reason == ""
 
 
 class TestExtractPreservables:
@@ -154,10 +152,8 @@ class TestTranslateThreadConsolidated:
 
         result = translator.translate_thread_consolidated(tweets)
 
-        assert result is not None
-        assert len(result) > 0
-        # Should have called OpenAI API
-        mock_openai.return_value.chat.completions.create.assert_called()
+        assert result == "זוהי תרגום בעברית לדוגמה."
+        mock_openai.chat.completions.create.assert_called_once()
 
     def test_translate_thread_consolidated_empty(self, translator):
         """Test with empty tweet list."""
@@ -240,8 +236,7 @@ class TestTranslateText:
     def test_translate_text_basic(self, translator, mock_openai):
         """Test basic text translation."""
         result = translator.translate_text("Hello world, this is a test")
-        assert result is not None
-        assert len(result) > 0
+        assert result == "זוהי תרגום בעברית לדוגמה."
 
     def test_translate_text_already_hebrew(self, translator):
         """Test that Hebrew text is not re-translated."""
@@ -268,7 +263,7 @@ class TestRTLSupport:
     def test_hebrew_output_structure(self, translator, mock_openai):
         """Test that Hebrew output has proper structure."""
         # Mock response with Hebrew
-        mock_openai.return_value.chat.completions.create.return_value.choices[0].message.content = \
+        mock_openai.chat.completions.create.return_value.choices[0].message.content = \
             "הביטקוין הגיע לשיא חדש. זה משמעותי כי..."
 
         tweets = [{'text': 'Bitcoin hits ATH', 'author_handle': '@crypto'}]
@@ -280,14 +275,109 @@ class TestRTLSupport:
 
     def test_preserves_numbers_and_symbols(self, translator, mock_openai):
         """Test that numbers and symbols are preserved."""
-        mock_openai.return_value.chat.completions.create.return_value.choices[0].message.content = \
+        mock_openai.chat.completions.create.return_value.choices[0].message.content = \
             "המחיר עלה ב-15% ל-$100,000"
 
         tweets = [{'text': 'Price up 15% to $100,000', 'author_handle': '@crypto'}]
         result = translator.translate_thread_consolidated(tweets)
 
-        # Numbers should be preserved
-        assert '15' in result or '100,000' in result or result  # Check result exists
+        assert result == "המחיר עלה ב-15% ל-$100,000"
+        assert '15' in result
+        assert '100,000' in result
+
+
+class TestParameterizedOpenAIResponses:
+    """Test translation with varied OpenAI mock responses."""
+
+    @pytest.fixture
+    def config(self):
+        os.environ['OPENAI_API_KEY'] = 'test-key'
+        os.environ['OPENAI_MODEL'] = 'gpt-4o'
+        return ProcessorConfig()
+
+    @pytest.mark.parametrize("response_text,should_be_valid", [
+        ("תרגום תקין לעברית עם מספיק תווים", True),
+        ("ביטקוין הגיע לשיא חדש של מאה אלף דולר", True),
+        ("This is pure English response", False),
+        ("", False),
+        ("12345 67890 !@#$%", False),
+        ("Mixed עברית with English but mostly אנגלית text here", False),
+        ("טקסט בעברית מלא עם Bitcoin ו-ETF ומונחים מקצועיים", True),
+    ])
+    def test_validate_hebrew_varied_outputs(self, config, response_text, should_be_valid):
+        """Parameterized test: validate_hebrew_output with varied response types."""
+        mock_client = Mock()
+        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+            translator = TranslationService(config)
+        is_valid, reason = translator.validate_hebrew_output(response_text)
+        assert is_valid is should_be_valid, f"Expected {should_be_valid} for '{response_text}', got {is_valid} (reason: {reason})"
+
+    @pytest.mark.parametrize("response_text,expected_retries", [
+        ("תרגום תקין בעברית עם מספיק תווים", 1),   # Valid on first try
+        ("English only response", 3),                  # Invalid, retries all 3
+    ])
+    def test_translate_retry_count(self, config, response_text, expected_retries):
+        """Test that translation retries the correct number of times."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content=response_text))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+            translator = TranslationService(config)
+        translator.client = mock_client
+
+        translator.translate_and_rewrite("Test text for translation")
+        assert mock_client.chat.completions.create.call_count == expected_retries
+
+    def test_translate_recovers_on_second_attempt(self, config):
+        """Test translation succeeds when first attempt fails validation."""
+        mock_client = Mock()
+        responses = [
+            Mock(choices=[Mock(message=Mock(content="English first attempt"))]),
+            Mock(choices=[Mock(message=Mock(content="תרגום תקין בניסיון שני בעברית"))]),
+        ]
+        mock_client.chat.completions.create.side_effect = responses
+
+        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+            translator = TranslationService(config)
+        translator.client = mock_client
+
+        result = translator.translate_and_rewrite("Test text")
+        assert "עברית" in result
+        assert mock_client.chat.completions.create.call_count == 2
+
+    def test_translate_api_exception_retries(self, config):
+        """Test that API exceptions trigger retries before raising."""
+        mock_client = Mock()
+        mock_client.chat.completions.create.side_effect = [
+            Exception("Rate limited"),
+            Exception("Rate limited"),
+            Exception("Rate limited"),
+        ]
+
+        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+            translator = TranslationService(config)
+        translator.client = mock_client
+
+        with pytest.raises(Exception, match="OpenAI translation error"):
+            translator.translate_and_rewrite("Test text")
+        assert mock_client.chat.completions.create.call_count == 3
+
+    def test_translate_empty_response_handled(self, config):
+        """Test that empty API response is handled gracefully."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="   "))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with patch('src.processor.processor.get_openai_client', return_value=mock_client):
+            translator = TranslationService(config)
+        translator.client = mock_client
+
+        result = translator.translate_and_rewrite("Test text")
+        # Should return the whitespace-stripped (empty) result after max retries
+        assert result == ""
 
 
 if __name__ == "__main__":

@@ -692,9 +692,9 @@ class TwitterScraper:
             
             if clicked > 0:
                 await asyncio.sleep(1.5)
-                
-        except Exception:
-            pass
+
+        except (TimeoutError, Exception) as e:
+            logger.debug(f"Could not expand thread replies: {e}")
 
 
     async def _expand_long_tweets(self):
@@ -716,17 +716,17 @@ class TwitterScraper:
                                 if text == "show more":
                                     show_more = candidate
                                     break
-                            except Exception:
+                            except (TimeoutError, Exception):
                                 continue
 
                     if show_more:
                         await show_more.scroll_into_view_if_needed(timeout=500)
                         await show_more.click(timeout=700)
                         await asyncio.sleep(random.uniform(0.3, 0.6))
-                except Exception:
+                except (TimeoutError, Exception):
                     continue
-        except Exception:
-            pass
+        except (TimeoutError, Exception) as e:
+            logger.debug(f"Could not expand long tweets: {e}")
 
     async def _collect_tweets_from_page(self) -> List[Dict]:
         """Run JS to extract tweets from DOM."""

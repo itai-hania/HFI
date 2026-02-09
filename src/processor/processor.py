@@ -68,6 +68,17 @@ sys.path.append(str(Path(__file__).parent.parent))
 from openai import OpenAI
 from sqlalchemy.orm import Session
 from common.models import SessionLocal, Tweet, TweetStatus, StyleExample, create_tables
+from common.openai_client import get_openai_client
+from processor.prompt_builder import (
+    KEEP_ENGLISH,
+    extract_topic_keywords,
+    build_glossary_section,
+    validate_hebrew_output,
+    build_style_section,
+    load_style_examples_from_db,
+    get_completion_params,
+    call_with_retry,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -111,7 +122,7 @@ class ProcessorConfig:
         self.glossary = self._load_glossary()
         self.style_examples = self._load_style()
 
-        self.openai_client = OpenAI(api_key=self.openai_api_key)
+        self.openai_client = get_openai_client()
 
         logger.info(f"Processor configured with:")
         logger.info(f"  - Model: {self.openai_model}")
@@ -152,127 +163,54 @@ class ProcessorConfig:
 class TranslationService:
     """Handles Hebrew translation using OpenAI GPT-4o with transcreation approach."""
 
-    # Tech terms to keep in English (not translate)
-    KEEP_ENGLISH = {
-        'API', 'ML', 'AI', 'GPT', 'LLM', 'NFT', 'DeFi', 'ETF', 'IPO', 'VC',
-        'CEO', 'CTO', 'CFO', 'COO', 'SaaS', 'B2B', 'B2C', 'ROI', 'KPI',
-        'FOMO', 'HODL', 'DCA', 'ATH', 'FUD', 'DAO', 'DEX', 'CEX',
-        'startup', 'fintech', 'blockchain', 'crypto', 'bitcoin', 'ethereum',
-        'tweet', 'thread', 'retweet', 'like', 'follower'
-    }
+    # Re-export for backward compatibility (tests reference translator.KEEP_ENGLISH)
+    KEEP_ENGLISH = KEEP_ENGLISH
+
+    # TTL cache for style examples (5 minutes)
+    _STYLE_CACHE_TTL = 300
 
     def __init__(self, config: ProcessorConfig):
         self.config = config
         self.client = config.openai_client
+        self._style_cache = {}  # key: frozenset(tags) -> (examples, timestamp)
 
-    def _extract_source_keywords(self, text: str) -> List[str]:
-        """Extract topic keywords from source text for tag matching."""
-        keyword_map = {
-            'fintech': ['fintech', 'financial technology', 'neobank', 'digital bank'],
-            'crypto': ['crypto', 'cryptocurrency', 'token', 'coin'],
-            'bitcoin': ['bitcoin', 'btc'],
-            'ethereum': ['ethereum', 'eth'],
-            'blockchain': ['blockchain', 'distributed ledger'],
-            'banking': ['bank', 'banking', 'deposit', 'loan', 'mortgage'],
-            'payments': ['payment', 'transfer', 'remittance', 'paypal', 'stripe'],
-            'investing': ['invest', 'portfolio', 'fund', 'asset', 'wealth'],
-            'trading': ['trading', 'trade', 'exchange', 'broker'],
-            'markets': ['market', 'stock', 'bond', 'equity', 'dow', 'nasdaq', 's&p'],
-            'regulation': ['regulat', 'compliance', 'sec', 'fed', 'central bank'],
-            'startups': ['startup', 'founder', 'seed', 'series a', 'venture'],
-            'AI': ['artificial intelligence', ' ai ', 'machine learning', 'llm', 'gpt'],
-            'technology': ['tech', 'software', 'platform', 'saas', 'cloud'],
-            'DeFi': ['defi', 'decentralized finance', 'yield', 'liquidity pool'],
-            'IPO': ['ipo', 'public offering', 'listing'],
-        }
-        text_lower = text.lower()
-        found = []
-        for tag, keywords in keyword_map.items():
-            for kw in keywords:
-                if kw in text_lower:
-                    found.append(tag)
-                    break
-        return found
-
-    def _load_db_style_examples(self, limit: int = 5, source_tags: Optional[List[str]] = None) -> List[str]:
+    def _cached_style_section(self, source_text: Optional[str] = None) -> str:
         """
-        Load style examples from database for few-shot prompting.
+        Build style section with TTL-cached DB examples.
 
-        Prioritizes examples matching source_tags if provided,
-        then fills remaining slots with diverse word count examples.
-        Fetches fresh from DB each time to pick up newly added examples.
-        Uses its own dedicated session to avoid interfering with caller's session.
+        Wraps prompt_builder.build_style_section with a 5-minute cache
+        to avoid querying DB on every translation call.
         """
-        import json as _json
-        from common.models import engine
-        from sqlalchemy.orm import Session as _Session
-        db = _Session(bind=engine, expire_on_commit=False)
-        try:
-            all_examples = (
-                db.query(StyleExample)
-                .filter(StyleExample.is_active == True)
-                .order_by(StyleExample.created_at.desc())
-                .all()
-            )
+        import time as _time
+        source_tags = extract_topic_keywords(source_text) if source_text else None
+        cache_key = frozenset(source_tags) if source_tags else frozenset()
+        cached = self._style_cache.get(cache_key)
+        if cached:
+            examples, ts = cached
+            if _time.time() - ts < self._STYLE_CACHE_TTL:
+                if examples:
+                    examples_text = ""
+                    for i, example in enumerate(examples, 1):
+                        truncated = example[:800] + "..." if len(example) > 800 else example
+                        examples_text += f"\n--- Example {i} ---\n{truncated}\n"
+                    return f"""STYLE EXAMPLES (match this writing style):
+{examples_text}
 
-            if not all_examples:
-                return []
+KEY STYLE REQUIREMENTS:
+- Match the tone, vocabulary, and sentence structure from the examples above
+- Use similar expressions and phrasing patterns
+- Maintain the same level of formality"""
+                else:
+                    return f"STYLE GUIDE:\n{self.config.style_examples}"
 
-            # Score examples by tag overlap if source_tags provided
-            if source_tags:
-                scored = []
-                for ex in all_examples:
-                    ex_tags = ex.topic_tags or []
-                    if isinstance(ex_tags, str):
-                        try:
-                            ex_tags = _json.loads(ex_tags)
-                        except Exception:
-                            ex_tags = []
-                    matches = sum(1 for t in source_tags if t.lower() in [et.lower() for et in ex_tags])
-                    scored.append((ex, matches))
-                # Sort by tag matches (desc), then word count diversity
-                scored.sort(key=lambda x: (-x[1], -x[0].word_count))
-                candidates = [ex for ex, _ in scored]
-            else:
-                candidates = all_examples
-
-            # Select diverse examples by word count from top candidates
-            pool = candidates[:limit * 3]
-            sorted_by_length = sorted(pool, key=lambda x: x.word_count)
-            if len(sorted_by_length) <= limit:
-                selected = sorted_by_length
-            else:
-                step = len(sorted_by_length) / limit
-                selected = [sorted_by_length[min(int(i * step), len(sorted_by_length) - 1)] for i in range(limit)]
-
-            result = [ex.content for ex in selected]
-            logger.info(f"Loaded {len(result)} style examples from database (tags={source_tags})")
-            return result
-
-        except Exception as e:
-            logger.warning(f"Could not load style examples from DB: {e}")
-            return []
-        finally:
-            db.close()
-
-    def _build_style_section(self, source_text: Optional[str] = None) -> str:
-        """
-        Build the style section for prompts, combining DB examples with config.
-
-        Uses few-shot examples from database if available, falls back to config/style.txt.
-        When source_text is provided, prioritizes examples matching its topic tags.
-        """
-        source_tags = self._extract_source_keywords(source_text) if source_text else None
-        db_examples = self._load_db_style_examples(limit=5, source_tags=source_tags)
+        db_examples = load_style_examples_from_db(limit=5, source_tags=source_tags)
+        self._style_cache[cache_key] = (db_examples, _time.time())
 
         if db_examples:
-            # Few-shot style section
             examples_text = ""
             for i, example in enumerate(db_examples, 1):
-                # Truncate long examples
                 truncated = example[:800] + "..." if len(example) > 800 else example
                 examples_text += f"\n--- Example {i} ---\n{truncated}\n"
-
             return f"""STYLE EXAMPLES (match this writing style):
 {examples_text}
 
@@ -281,30 +219,14 @@ KEY STYLE REQUIREMENTS:
 - Use similar expressions and phrasing patterns
 - Maintain the same level of formality"""
         else:
-            # Fallback to config file
             return f"STYLE GUIDE:\n{self.config.style_examples}"
 
     def _get_completion_params(self, system_prompt: str, user_content: str) -> dict:
-        """
-        Build API call parameters, conditionally including temperature.
-        
-        Some models (like gpt-5-nano) don't support custom temperature settings.
-        This method only includes temperature if it's explicitly configured.
-        """
-        params = {
-            "model": self.config.openai_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ]
-        }
-        
-        # Only add temperature if explicitly configured
-        if self.config.openai_temperature is not None:
-            params["temperature"] = self.config.openai_temperature
-            params["top_p"] = 0.9
-        
-        return params
+        """Build API call parameters, delegating to prompt_builder."""
+        return get_completion_params(
+            self.config.openai_model, system_prompt, user_content,
+            temperature=self.config.openai_temperature
+        )
 
     def is_hebrew(self, text: str) -> bool:
         """Check if text is already primarily Hebrew."""
@@ -330,30 +252,8 @@ KEY STYLE REQUIREMENTS:
         return False
 
     def validate_hebrew_output(self, text: str) -> Tuple[bool, str]:
-        """
-        Validate that output is primarily Hebrew.
-
-        Args:
-            text: Output text to validate
-
-        Returns:
-            Tuple of (is_valid, reason)
-        """
-        if not text:
-            return False, "Empty output"
-
-        hebrew_chars = sum(1 for c in text if '\u0590' <= c <= '\u05FF')
-        alpha_chars = sum(1 for c in text if c.isalpha())
-
-        if alpha_chars == 0:
-            return False, "No alphabetic characters"
-
-        ratio = hebrew_chars / alpha_chars
-
-        if ratio < 0.5:
-            return False, f"Hebrew ratio too low: {ratio:.1%}"
-
-        return True, ""
+        """Validate that output is primarily Hebrew. Delegates to prompt_builder."""
+        return validate_hebrew_output(text)
 
     def extract_preservables(self, text: str) -> Dict[str, List[str]]:
         """Extract URLs, @mentions, and hashtags that should be preserved exactly."""
@@ -392,16 +292,9 @@ KEY STYLE REQUIREMENTS:
         # Extract items to preserve
         preservables = self.extract_preservables(text)
 
-        # Build glossary string
-        glossary_str = "\n".join([
-            f"- {eng}: {heb}"
-            for eng, heb in self.config.glossary.items()
-        ])
+        glossary_str = build_glossary_section(self.config.glossary)
+        keep_english_str = ", ".join(sorted(KEEP_ENGLISH))
 
-        # Terms to keep in English
-        keep_english_str = ", ".join(sorted(self.KEEP_ENGLISH))
-
-        # System prompt with strict rules
         system_prompt = f"""You are an expert Hebrew financial content creator specializing in fintech and tech news.
 
 Your task is to TRANSCREATE (not just translate) English content into Hebrew.
@@ -429,7 +322,7 @@ CRITICAL RULES - FOLLOW EXACTLY:
 5. GLOSSARY (use these term translations):
 {glossary_str}
 
-6. {self._build_style_section(source_text=text)}
+6. {self._cached_style_section(source_text=text)}
 
 7. OUTPUT REQUIREMENTS:
    - Output ONLY Hebrew content
@@ -438,38 +331,21 @@ CRITICAL RULES - FOLLOW EXACTLY:
    - No explanations or metadata
    - At least 50% of letters must be Hebrew"""
 
-        for attempt in range(max_retries + 1):
-            try:
-                logger.info(f"Translating text (attempt {attempt + 1}): {text[:100]}...")
+        logger.info(f"Translating text: {text[:100]}...")
+        params = self._get_completion_params(
+            system_prompt,
+            f"Transcreate this to Hebrew:\n\n{text}"
+        )
 
-                params = self._get_completion_params(
-                    system_prompt,
-                    f"Transcreate this to Hebrew:\n\n{text}"
-                )
-                response = self.client.chat.completions.create(**params)
-
-                hebrew_text = response.choices[0].message.content.strip()
-
-                # Validate output
-                is_valid, reason = self.validate_hebrew_output(hebrew_text)
-
-                if is_valid:
-                    logger.info(f"Translation successful: {hebrew_text[:100]}...")
-                    return hebrew_text
-                else:
-                    logger.warning(f"Validation failed: {reason}")
-                    if attempt < max_retries:
-                        # Retry with explicit instruction
-                        system_prompt += f"\n\nPREVIOUS ATTEMPT FAILED: {reason}. Please ensure output is primarily in Hebrew."
-                    else:
-                        # Return anyway on last attempt
-                        logger.warning(f"Returning unvalidated result after {max_retries + 1} attempts")
-                        return hebrew_text
-
-            except Exception as e:
-                logger.error(f"Translation failed (attempt {attempt + 1}): {e}")
-                if attempt == max_retries:
-                    raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
+        try:
+            result = call_with_retry(
+                self.client, params, max_retries=max_retries,
+                validator_fn=validate_hebrew_output
+            )
+            logger.info(f"Translation successful: {result[:100]}...")
+            return result
+        except Exception as e:
+            raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
 
         return text  # Fallback to original
 
@@ -554,16 +430,9 @@ CRITICAL RULES - FOLLOW EXACTLY:
             all_preservables['mentions'].extend(preservables['mentions'])
             all_preservables['hashtags'].extend(preservables['hashtags'])
 
-        # Build glossary string
-        glossary_str = "\n".join([
-            f"- {eng}: {heb}"
-            for eng, heb in self.config.glossary.items()
-        ]) if self.config.glossary else "No specific terms"
+        glossary_str = build_glossary_section(self.config.glossary) or "No specific terms"
+        keep_english_str = ", ".join(sorted(KEEP_ENGLISH))
 
-        # Terms to keep in English
-        keep_english_str = ", ".join(sorted(self.KEEP_ENGLISH))
-
-        # Enhanced system prompt for narrative rewrite
         system_prompt = f"""You are an expert Hebrew financial content creator specializing in fintech and tech news.
 
 Your task is to TRANSCREATE (not just translate) an English Twitter THREAD into Hebrew.
@@ -592,7 +461,7 @@ OUTPUT REQUIREMENTS:
 3. GLOSSARY (use these translations):
 {glossary_str}
 
-4. {self._build_style_section(source_text=combined_text)}
+4. {self._cached_style_section(source_text=combined_text)}
 
 5. FORMAT:
    - Output ONLY Hebrew content
@@ -603,41 +472,25 @@ OUTPUT REQUIREMENTS:
 
 Remember: Create ONE unified Hebrew post that tells the complete story."""
 
-        for attempt in range(max_retries + 1):
-            try:
-                logger.info(f"Translating thread ({len(tweets)} tweets) as consolidated narrative (attempt {attempt + 1})")
+        logger.info(f"Translating thread ({len(tweets)} tweets) as consolidated narrative")
 
-                # Prepare user message
-                user_message = f"""Original thread ({len(tweets)} tweets):
+        user_message = f"""Original thread ({len(tweets)} tweets):
 
 {combined_text}
 
 Transcreate this entire thread into ONE flowing Hebrew post."""
 
-                response = self.client.chat.completions.create(
-                    **self._get_completion_params(system_prompt, user_message)
-                )
+        params = self._get_completion_params(system_prompt, user_message)
 
-                hebrew_text = response.choices[0].message.content.strip()
-
-                # Validate output
-                is_valid, reason = self.validate_hebrew_output(hebrew_text)
-
-                if is_valid:
-                    logger.info(f"Thread translation successful: {hebrew_text[:100]}...")
-                    return hebrew_text
-                else:
-                    logger.warning(f"Validation failed: {reason}")
-                    if attempt < max_retries:
-                        system_prompt += f"\n\nPREVIOUS ATTEMPT FAILED: {reason}. Ensure output is primarily Hebrew."
-                    else:
-                        logger.warning(f"Returning unvalidated result after {max_retries + 1} attempts")
-                        return hebrew_text
-
-            except Exception as e:
-                logger.error(f"Thread translation failed (attempt {attempt + 1}): {e}")
-                if attempt == max_retries:
-                    raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
+        try:
+            result = call_with_retry(
+                self.client, params, max_retries=max_retries,
+                validator_fn=validate_hebrew_output
+            )
+            logger.info(f"Thread translation successful: {result[:100]}...")
+            return result
+        except Exception as e:
+            raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
 
         return combined_text  # Fallback
 
@@ -687,21 +540,11 @@ Transcreate this entire thread into ONE flowing Hebrew post."""
                 context_texts.append(f"{idx+1}. {tweet_text}")
                 continue
 
-            # Build context string from previous tweets
             context_str = "\n".join(context_texts) if context_texts else "This is the first tweet in the thread."
-
-            # Extract preservables
             preservables = self.extract_preservables(tweet_text)
+            glossary_str = build_glossary_section(self.config.glossary) or "No specific terms"
+            keep_english_str = ", ".join(sorted(KEEP_ENGLISH))
 
-            # Build glossary
-            glossary_str = "\n".join([
-                f"- {eng}: {heb}"
-                for eng, heb in self.config.glossary.items()
-            ]) if self.config.glossary else "No specific terms"
-
-            keep_english_str = ", ".join(sorted(self.KEEP_ENGLISH))
-
-            # Context-aware system prompt
             system_prompt = f"""You are an expert Hebrew financial content creator.
 
 You are translating tweet {idx+1}/{len(tweets)} from a Twitter thread.
@@ -724,46 +567,26 @@ OUTPUT REQUIREMENTS:
 2. PRESERVE: URLs={', '.join(preservables['urls']) or 'none'}, @mentions={', '.join(preservables['mentions']) or 'none'}, #hashtags={', '.join(preservables['hashtags']) or 'none'}
 3. GLOSSARY:
 {glossary_str}
-4. {self._build_style_section(source_text=tweet_text)}
+4. {self._cached_style_section(source_text=tweet_text)}
 5. Output ONLY Hebrew content (at least 50% Hebrew characters)
 
 Transcreate this tweet to Hebrew:"""
 
-            for attempt in range(max_retries + 1):
-                try:
-                    logger.info(f"Translating tweet {idx+1}/{len(tweets)} (attempt {attempt + 1})")
+            params = self._get_completion_params(system_prompt, tweet_text)
 
-                    response = self.client.chat.completions.create(
-                        **self._get_completion_params(system_prompt, tweet_text)
-                    )
-
-                    hebrew_text = response.choices[0].message.content.strip()
-
-                    # Validate output
-                    is_valid, reason = self.validate_hebrew_output(hebrew_text)
-
-                    if is_valid:
-                        logger.info(f"Tweet {idx+1} translated: {hebrew_text[:80]}...")
-                        results.append(hebrew_text)
-                        # Add to context for next tweets
-                        context_texts.append(f"{idx+1}. {tweet_text}")
-                        break
-                    else:
-                        logger.warning(f"Tweet {idx+1} validation failed: {reason}")
-                        if attempt < max_retries:
-                            system_prompt += f"\n\nPREVIOUS ATTEMPT FAILED: {reason}. Ensure Hebrew output."
-                        else:
-                            logger.warning(f"Using unvalidated result for tweet {idx+1}")
-                            results.append(hebrew_text)
-                            context_texts.append(f"{idx+1}. {tweet_text}")
-
-                except Exception as e:
-                    logger.error(f"Tweet {idx+1} translation failed (attempt {attempt + 1}): {e}")
-                    if attempt == max_retries:
-                        logger.error(f"Failed to translate tweet {idx+1} after {max_retries + 1} attempts")
-                        results.append(tweet_text)  # Fallback to original
-                        context_texts.append(f"{idx+1}. {tweet_text}")
-                        break
+            try:
+                logger.info(f"Translating tweet {idx+1}/{len(tweets)}")
+                hebrew_text = call_with_retry(
+                    self.client, params, max_retries=max_retries,
+                    validator_fn=validate_hebrew_output
+                )
+                logger.info(f"Tweet {idx+1} translated: {hebrew_text[:80]}...")
+                results.append(hebrew_text)
+                context_texts.append(f"{idx+1}. {tweet_text}")
+            except Exception as e:
+                logger.error(f"Failed to translate tweet {idx+1} after {max_retries + 1} attempts: {e}")
+                results.append(tweet_text)  # Fallback to original
+                context_texts.append(f"{idx+1}. {tweet_text}")
 
         logger.info(f"Thread separate translation complete: {len(results)} tweets translated")
         return results
@@ -940,7 +763,7 @@ class MediaDownloader:
                 '--no-warnings',
                 video_url,
                 '-o', str(output_path)
-            ], check=True, capture_output=True, timeout=300)  # 5 minute timeout
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=300)  # 5 minute timeout
 
             if output_path.exists():
                 logger.info(f"Video downloaded successfully: {output_path}")
