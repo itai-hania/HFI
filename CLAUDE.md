@@ -13,19 +13,20 @@
 
 ---
 
-## Current Status (as of 2026-01-27)
+## Current Status (as of 2026-02-09)
 
-### Completion: ~92% (Beta Phase)
+### Completion: ~95% (Beta Phase)
 
 **Working Components:**
 - ✅ X Scraper service (Playwright-based X scraper with thread support)
 - ✅ News Scraper service (Multi-source RSS feeds with smart ranking)
-- ✅ Processor service (GPT-4o translation + media downloads)
-- ✅ Dashboard (Streamlit human review interface with trend discovery UI)
+- ✅ Processor service (GPT-4o translation + media downloads + content generation)
+- ✅ Dashboard (Streamlit modular UI with trend discovery, content generation, style learning)
 - ✅ Database models (SQLAlchemy + SQLite)
 - ✅ Docker containers + Compose file
 - ✅ Kubernetes manifests (ready for deployment)
-- ✅ Comprehensive testing (100% pass rate - 202/202 tests)
+- ✅ Comprehensive testing (100% pass rate - 338/338 tests)
+- ✅ Code quality refactor (7 phases — prompt extraction, perf, security, packaging, dashboard split, tests)
 
 **Pending:**
 - ⏳ Publisher service (auto-posting to X)
@@ -68,12 +69,25 @@ HFI/
 │   │   ├── news_scraper.py  # NewsScraper class (RSS feeds + ranking)
 │   │   ├── main.py
 │   │   └── Dockerfile
-│   ├── processor/           # Translation + downloads
-│   │   ├── processor.py     # ContentProcessor
+│   ├── processor/           # Translation + downloads + generation
+│   │   ├── processor.py     # ContentProcessor + TranslationService
+│   │   ├── content_generator.py  # ContentGenerator (post/thread generation)
+│   │   ├── prompt_builder.py     # Shared prompt utilities
+│   │   ├── style_manager.py      # Style example management
 │   │   ├── main.py
 │   │   └── Dockerfile
-│   └── dashboard/           # Streamlit UI
-│       ├── app.py
+│   └── dashboard/           # Streamlit UI (modular)
+│       ├── app.py           # ~63 lines — thin router
+│       ├── styles.py        # CSS constant
+│       ├── db_helpers.py    # DB helper functions
+│       ├── auth.py          # Authentication gate
+│       ├── lazy_loaders.py  # Lazy import helpers
+│       ├── navigation.py    # Sidebar/navigation
+│       ├── helpers.py       # Pure helper functions
+│       ├── views/           # Page modules (NOT pages/ — avoids Streamlit multipage)
+│       │   ├── home.py      # Home page
+│       │   ├── content.py   # Content page (Acquire, Queue, Translation, Generate)
+│       │   └── settings.py  # Settings page
 │       └── Dockerfile
 ├── config/
 │   ├── glossary.json        # EN→HE term translations
@@ -126,20 +140,33 @@ HFI/
 
 ### When Helping with Translation/Processing
 - **`src/processor/processor.py`** - Translation + media download
+- **`src/processor/content_generator.py`** - Hebrew content generation from English sources
+- **`src/processor/prompt_builder.py`** - Shared prompt utilities (glossary, style, validation)
 - **`src/processor/style_manager.py`** - Style example management (DB-backed, cached)
 - **Key Classes:**
   - `TranslationService` - GPT-4o API wrapper with style matching
   - `ContentProcessor` - Orchestrates translation + downloads
+  - `ContentGenerator` - Generates Hebrew posts/threads from source material
   - `StyleManager` - Manages style examples from DB with topic tag matching
 - **Dependencies:** openai, yt-dlp, requests
 
 ### When Helping with Dashboard
-- **`src/dashboard/app.py`** - Streamlit interface
+- **`src/dashboard/app.py`** - Thin router (~63 lines): page config, CSS, auth, navigation, page routing
+- **`src/dashboard/views/`** - Page modules (named `views/` not `pages/` to avoid Streamlit multipage auto-detection)
+  - `home.py` - Home page (stats, trends, threads overview)
+  - `content.py` - Content page (Acquire, Queue, Thread Translation, Generate tabs)
+  - `settings.py` - Settings page (glossary, style learning, danger zone)
+- **`src/dashboard/db_helpers.py`** - DB helper functions (get_db, get_stats, CRUD)
+- **`src/dashboard/helpers.py`** - Pure helper functions (badge classes, media parsing)
+- **`src/dashboard/styles.py`** - CSS constant
+- **`src/dashboard/navigation.py`** - Sidebar navigation
 - **Features:**
   - Tweet review, inline editing, approval workflow
   - One-click trend discovery (Fetch All Trends button)
   - Thread scraping UI (paste URL → scrape → consolidate/separate)
+  - Content generation (paste source → pick mode/angle → generate variants)
   - Ranked article display (numbered #1-#10 with source badges)
+  - Style learning system (DB-backed examples with topic tags)
   - Status filtering (pending/processed/approved/published/failed)
 
 ### When Helping with Database/Models
@@ -313,18 +340,22 @@ pytest tests/test_dashboard.py -v
 pytest --cov=src tests/
 ```
 
-**Current Status:** 202/202 tests passing (100%)
+**Current Status:** 338/338 tests passing (100%)
 
 **Test Files:**
 - `tests/test_models.py` - Database models
 - `tests/test_scraper.py` - X scraper functionality
+- `tests/test_scraper_page.py` - Scraper page mock tests
 - `tests/test_processor.py` - Translation + downloads
 - `tests/test_processor_comprehensive.py` - Processor config, translation, batch processing
+- `tests/test_content_generator.py` - Content generation engine
+- `tests/test_prompt_builder.py` - Shared prompt builder utilities
 - `tests/test_dashboard.py` - Dashboard database operations
+- `tests/test_dashboard_helpers.py` - Pure dashboard helper functions
 - `tests/test_api_endpoints.py` - FastAPI trend/summary endpoints
 - `tests/test_summary_generator.py` - Summary generation logic
 - `tests/test_thread_media.py` - Thread media downloads
-- `tests/test_thread_translation.py` - Thread translation logic
+- `tests/test_thread_translation.py` - Thread translation logic (parameterized)
 - Dashboard UI tested manually (Streamlit apps)
 
 ---
@@ -442,7 +473,24 @@ Before declaring a dashboard feature complete:
 
 ## Recent Updates & Changes
 
-### 2026-02-05 (Latest)
+### 2026-02-09 (Latest)
+- ✅ **Code quality refactor — all 7 phases complete** (338/338 tests)
+  - Phase 1: Quick fixes (log paths, float index, subprocess, 22 exception handlers)
+  - Phase 2: Performance (shared OpenAI client, TTL cache, yield_per pagination)
+  - Phase 3: Security (XSS hardening, dashboard auth gate)
+  - Phase 4: PromptBuilder extraction (`src/processor/prompt_builder.py`) — shared utilities for TranslationService + ContentGenerator
+  - Phase 5: Python packaging (`pyproject.toml` + `pip install -e .`, removed all sys.path hacks)
+  - Phase 6: Dashboard split (app.py 3004→63 lines, modular `views/` structure)
+  - Phase 7: Test improvements (parameterized tests, mock pages, dashboard helpers extraction)
+
+### 2026-02-06
+- ✅ **Content Generation Engine** (`src/processor/content_generator.py`)
+  - ContentGenerator class with generate_post() and generate_thread()
+  - Tweet model: added `content_type` + `generation_metadata` columns
+  - Dashboard "Generate" tab (paste source → pick mode/angle → generate variants → approve/save)
+  - Auto-style learning: approved tweets auto-added to style_examples DB
+
+### 2026-02-05
 - ✅ **Implemented Style Learning (SPEC v2)** (`src/processor/style_manager.py`)
   - DB-backed style examples with `style_examples` table
   - Topic tag extraction and matching for context-aware translation
@@ -455,10 +503,6 @@ Before declaring a dashboard feature complete:
   - Tag-based filtering
   - X thread preview for style examples
   - "Load More" pagination
-- ✅ **Fixed all tests** (202/202 passing, 100%)
-  - Fixed 22 pre-existing test failures across API, dashboard, and processor tests
-  - Fixed module identity issues between `src.common.models` and `common.models`
-  - Fixed ProcessorConfig, TranslationService, and batch processing test assertions
 
 ### 2026-01-27
 - ✅ **Added multi-source news scraper** (`src/scraper/news_scraper.py`)
@@ -509,7 +553,7 @@ Before declaring a dashboard feature complete:
 - yt-dlp occasionally fails on certain video formats → Fallback to error status
 
 ### Dashboard
-- No authentication → Should not be exposed publicly without adding auth
+- Optional auth gate via `DASHBOARD_PASSWORD` env var (added in Phase 3)
 - Auto-refresh can be slow with large datasets → Pagination planned
 - **Module caching:** Streamlit caches imports; restart required after code changes
 - Session state can persist old data; use browser refresh if issues occur
@@ -524,10 +568,10 @@ Before declaring a dashboard feature complete:
    ```python
    "Financial Times": "https://www.ft.com/rss/markets"
    ```
-3. Update `src/dashboard/app.py`:
+3. Update `src/dashboard/views/content.py`:
    - Add to `source_map` with appropriate `TrendSource` enum
-   - Add CSS badge class
-   - Update `get_source_badge_class()` mapping
+   - Update `src/dashboard/helpers.py` `get_source_badge_class()` mapping
+   - Add CSS badge class in `src/dashboard/styles.py`
 4. Update `src/common/models.py`:
    - Add `FINANCIAL_TIMES = "Financial Times"` to `TrendSource` enum
 5. Test in browser using MCP tools
@@ -673,6 +717,6 @@ When helping:
 
 ---
 
-**Last Updated:** 2026-02-05
-**Version:** 1.3
+**Last Updated:** 2026-02-09
+**Version:** 1.4
 **Maintained by:** HFI Project Team
