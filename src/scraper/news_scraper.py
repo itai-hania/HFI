@@ -214,9 +214,9 @@ class NewsScraper:
                     keyword_sources[kw] = set()
                 keyword_sources[kw].add(source)
 
-        # Score each article
+        # Score each article (using title + description keywords)
         for article in articles:
-            keywords = self._extract_keywords(article.get('title', ''))
+            keywords = self._extract_article_keywords(article)
             score = 0
 
             # Base score from keyword cross-source overlap
@@ -235,6 +235,17 @@ class NewsScraper:
             if article.get('category') == 'Finance':
                 economy_count = sum(1 for kw in keywords if kw in self.GENERAL_ECONOMY_KEYWORDS)
                 score -= economy_count * 10
+
+            # Recency bonus: fresher articles score higher
+            discovered_at = article.get('discovered_at')
+            if discovered_at:
+                age_hours = (datetime.utcnow() - discovered_at).total_seconds() / 3600
+                if age_hours <= 6:
+                    score += 20
+                elif age_hours <= 24:
+                    score += 10
+                elif age_hours > 72:
+                    score -= 5
 
             article['score'] = score
 
@@ -287,6 +298,19 @@ class NewsScraper:
         """Extract significant words from an article title."""
         words = re.findall(r"[A-Za-z0-9']+", title.lower())
         return [w for w in words if w not in STOPWORDS and len(w) > 2]
+
+    @staticmethod
+    def _extract_article_keywords(article: Dict) -> List[str]:
+        """Extract keywords from both title (2x weight) and description.
+
+        Title keywords appear twice to give them higher weight in scoring.
+        Description keywords add once for additional context.
+        """
+        title = article.get('title', '')
+        desc = article.get('description', '')
+        title_kws = NewsScraper._extract_keywords(title)
+        desc_kws = NewsScraper._extract_keywords(desc)
+        return title_kws + title_kws + desc_kws
 
     def _clean_html(self, text: str) -> str:
         """Remove basic HTML tags from descriptions."""

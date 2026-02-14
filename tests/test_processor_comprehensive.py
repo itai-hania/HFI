@@ -352,7 +352,7 @@ class TestMediaDownloader:
         downloader = MediaDownloader()
 
         with patch.object(downloader, 'media_dir', temp_media_dir):
-            result = downloader.download_media("https://example.com/image.jpg")
+            result = downloader.download_media("https://pbs.twimg.com/media/image.jpg")
 
         assert result is not None
         assert Path(result).exists()
@@ -372,7 +372,7 @@ class TestMediaDownloader:
 
         for fmt in formats:
             with patch.object(downloader, 'media_dir', temp_media_dir):
-                result = downloader.download_media(f"https://example.com/image{fmt}")
+                result = downloader.download_media(f"https://pbs.twimg.com/media/image{fmt}")
 
             assert result is not None
             assert Path(result).suffix == fmt
@@ -383,7 +383,7 @@ class TestMediaDownloader:
         mock_get.side_effect = Exception("Network error")
 
         downloader = MediaDownloader()
-        result = downloader.download_media("https://example.com/image.jpg")
+        result = downloader.download_media("https://pbs.twimg.com/media/image.jpg")
 
         # Should return None on error, not raise
         assert result is None
@@ -395,7 +395,7 @@ class TestMediaDownloader:
         mock_get.side_effect = requests.HTTPError("404 Not Found")
 
         downloader = MediaDownloader()
-        result = downloader.download_media("https://example.com/notfound.jpg")
+        result = downloader.download_media("https://pbs.twimg.com/media/notfound.jpg")
 
         assert result is None
 
@@ -410,7 +410,7 @@ class TestMediaDownloader:
         with patch.object(downloader, 'media_dir', temp_media_dir):
             # Create a fake output file
             with patch('processor.processor.Path.exists', return_value=True):
-                result = downloader.download_media("https://example.com/video.m3u8")
+                result = downloader.download_media("https://video.twimg.com/amplify_video/video.m3u8")
 
         mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]
@@ -423,7 +423,7 @@ class TestMediaDownloader:
         mock_run.side_effect = subprocess.TimeoutExpired('yt-dlp', 300)
 
         downloader = MediaDownloader()
-        result = downloader.download_media("https://example.com/video.m3u8")
+        result = downloader.download_media("https://video.twimg.com/amplify_video/video.m3u8")
 
         assert result is None
 
@@ -435,7 +435,7 @@ class TestMediaDownloader:
         )
 
         downloader = MediaDownloader()
-        result = downloader.download_media("https://example.com/video.m3u8")
+        result = downloader.download_media("https://video.twimg.com/amplify_video/video.m3u8")
 
         assert result is None
 
@@ -450,8 +450,8 @@ class TestMediaDownloader:
             mock_get.return_value = mock_response
 
             with patch.object(downloader, 'media_dir', temp_media_dir):
-                result1 = downloader.download_media("https://example.com/image1.jpg")
-                result2 = downloader.download_media("https://example.com/image2.jpg")
+                result1 = downloader.download_media("https://pbs.twimg.com/media/image1.jpg")
+                result2 = downloader.download_media("https://pbs.twimg.com/media/image2.jpg")
 
             # Filenames should be different
             assert result1 != result2
@@ -461,12 +461,12 @@ class TestMediaDownloader:
         downloader = MediaDownloader()
 
         # Video URLs
-        assert '.m3u8' in "https://example.com/stream.m3u8".lower()
-        assert 'video' in "https://example.com/video/file".lower()
+        assert '.m3u8' in "https://video.twimg.com/stream.m3u8".lower()
+        assert 'video' in "https://video.twimg.com/amplify_video/video/file".lower()
 
         # Image URLs
-        assert '.jpg' in "https://example.com/image.jpg".lower()
-        assert '.png' in "https://example.com/image.png".lower()
+        assert '.jpg' in "https://pbs.twimg.com/media/image.jpg".lower()
+        assert '.png' in "https://pbs.twimg.com/media/image.png".lower()
 
 
 # ==================== TweetProcessor Tests ====================
@@ -530,7 +530,7 @@ class TestTweetProcessor:
         tweet = Tweet(
             source_url="https://x.com/test/status/456",
             original_text="Tweet with image",
-            media_url="https://example.com/image.jpg",
+            media_url="https://pbs.twimg.com/media/image.jpg",
             status=TweetStatus.PENDING
         )
         test_db.add(tweet)
@@ -594,7 +594,7 @@ class TestTweetProcessor:
         tweet = Tweet(
             source_url="https://x.com/test/status/999",
             original_text="Tweet with broken media",
-            media_url="https://example.com/broken.jpg",
+            media_url="https://pbs.twimg.com/media/broken.jpg",
             status=TweetStatus.PENDING
         )
         test_db.add(tweet)
@@ -712,7 +712,7 @@ class TestProcessorIntegration:
         tweet = Tweet(
             source_url="https://x.com/test/status/integration",
             original_text="Full integration test tweet about Fintech and AI",
-            media_url="https://example.com/test.jpg",
+            media_url="https://pbs.twimg.com/media/test.jpg",
             trend_topic="FinTech Innovation",
             status=TweetStatus.PENDING
         )

@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from common.models import Tweet, Trend, Thread, StyleExample
 from dashboard.lazy_loaders import get_style_manager
+from dashboard.validators import validate_x_url
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +49,28 @@ def render_settings(db):
             "Glossary (JSON)",
             json.dumps(glossary_data, indent=2, ensure_ascii=False),
             height=200,
-            key="glossary_editor"
+            key="glossary_editor",
+            max_chars=50000
         )
         if st.button("Save Glossary", key="save_glossary", use_container_width=True):
             try:
-                json.loads(edited_glossary)  # validate JSON
-                glossary_path.parent.mkdir(parents=True, exist_ok=True)
-                glossary_path.write_text(edited_glossary, encoding='utf-8')
-                st.success("Glossary saved!")
+                parsed = json.loads(edited_glossary)
+                # Validate structure: must be dict[str, str]
+                if not isinstance(parsed, dict):
+                    st.error("Glossary must be a JSON object (not array).")
+                elif not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
+                    st.error("Glossary values must all be strings.")
+                elif len(edited_glossary.encode('utf-8')) > 1_000_000:
+                    st.error("Glossary too large (max 1MB).")
+                else:
+                    # Backup current glossary before overwriting
+                    if glossary_path.exists():
+                        backup_path = glossary_path.with_suffix('.json.bak')
+                        import shutil
+                        shutil.copy2(glossary_path, backup_path)
+                    glossary_path.parent.mkdir(parents=True, exist_ok=True)
+                    glossary_path.write_text(edited_glossary, encoding='utf-8')
+                    st.success("Glossary saved!")
             except json.JSONDecodeError:
                 st.error("Invalid JSON. Please fix and try again.")
 
@@ -110,39 +125,45 @@ def render_settings(db):
             "Thread URL",
             placeholder="https://x.com/user/status/123...",
             key="style_import_url",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            max_chars=500
         )
         if st.button("Fetch Thread", key="import_x_thread", use_container_width=True, disabled=not thread_url_import):
-            with st.spinner("Fetching thread..."):
-                try:
-                    from scraper.scraper import TwitterScraper
+            valid, err = validate_x_url(thread_url_import)
+            if not valid:
+                st.error(err)
+            elif valid:
+                with st.spinner("Fetching thread..."):
+                    try:
+                        from scraper.scraper import TwitterScraper
 
-                    async def fetch_for_style():
-                        scraper = TwitterScraper()
-                        try:
-                            await scraper.ensure_logged_in()
-                            return await scraper.fetch_raw_thread(thread_url_import, author_only=True)
-                        finally:
-                            await scraper.close()
+                        async def fetch_for_style():
+                            scraper = TwitterScraper()
+                            try:
+                                await scraper.ensure_logged_in()
+                                return await scraper.fetch_raw_thread(thread_url_import, author_only=True)
+                            finally:
+                                await scraper.close()
 
-                    result = asyncio.run(fetch_for_style())
-                    tweets_data = result.get('tweets', [])
+                        result = asyncio.run(fetch_for_style())
+                        tweets_data = result.get('tweets', [])
 
-                    if tweets_data:
-                        all_text = "\n\n".join([t.get('text', '') for t in tweets_data if t.get('text')])
+                        if tweets_data:
+                            all_text = "\n\n".join([t.get('text', '') for t in tweets_data if t.get('text')])
 
-                        if sm and sm.is_hebrew_content(all_text, min_ratio=0.5):
-                            tags = sm.extract_topic_tags(all_text)
-                            st.session_state.style_import_preview = all_text
-                            st.session_state.style_import_tags = tags
-                            st.session_state.style_import_tweet_count = len(tweets_data)
-                            st.rerun()
+                            if sm and sm.is_hebrew_content(all_text, min_ratio=0.5):
+                                tags = sm.extract_topic_tags(all_text)
+                                st.session_state.style_import_preview = all_text
+                                st.session_state.style_import_tags = tags
+                                st.session_state.style_import_tweet_count = len(tweets_data)
+                                st.rerun()
+                            else:
+                                st.warning("Thread doesn't contain enough Hebrew content (need >50%)")
                         else:
-                            st.warning("Thread doesn't contain enough Hebrew content (need >50%)")
-                    else:
-                        st.warning("No tweets found in thread")
-                except Exception as e:
-                    st.error(f"Import failed: {str(e)[:100]}")
+                            st.warning("No tweets found in thread")
+                    except Exception as e:
+                        logger.error(f"Style import failed: {e}")
+                        st.error("Import failed. Check server logs for details.")
 
         # Preview fetched thread before saving
         if st.session_state.get('style_import_preview'):
@@ -215,7 +236,8 @@ def render_settings(db):
         placeholder="הקלד כאן טקסט עברי לדוגמה...",
         height=100,
         key="manual_style_input",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        max_chars=10000
     )
     if manual_content and sm and sm.is_hebrew_content(manual_content, min_ratio=0.5):
         manual_auto_tags = sm.extract_topic_tags(manual_content)
@@ -352,6 +374,40 @@ def render_settings(db):
                 st.rerun()
         elif len(examples) > 0 and filtered_count > len(examples):
             st.caption(f"Showing {len(examples)} of {filtered_count} examples")
+
+    st.markdown("---")
+
+    # ---- Autopilot Defaults ----
+    st.markdown("### Autopilot Defaults")
+    st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Configure defaults for the two-phase autopilot pipeline.</p>', unsafe_allow_html=True)
+
+    ap_col1, ap_col2, ap_col3 = st.columns(3)
+    with ap_col1:
+        ap_top_n = st.slider(
+            "Trends to auto-select",
+            min_value=1, max_value=5,
+            value=st.session_state.get('autopilot_top_n', 3),
+            key="ap_top_n_slider",
+        )
+        st.session_state.autopilot_top_n = ap_top_n
+    with ap_col2:
+        angle_options = ['news', 'educational', 'opinion']
+        current_angle = st.session_state.get('autopilot_angle', 'news')
+        ap_angle = st.selectbox(
+            "Default content angle",
+            angle_options,
+            index=angle_options.index(current_angle) if current_angle in angle_options else 0,
+            key="ap_angle_select",
+        )
+        st.session_state.autopilot_angle = ap_angle
+    with ap_col3:
+        ap_summarize = st.checkbox(
+            "Auto-summarize",
+            value=st.session_state.get('autopilot_auto_summarize', True),
+            key="ap_summarize_check",
+            help="Generate AI summaries during Phase A",
+        )
+        st.session_state.autopilot_auto_summarize = ap_summarize
 
     st.markdown("---")
 

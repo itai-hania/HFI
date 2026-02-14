@@ -264,6 +264,51 @@ def get_example_stats(db: Session) -> Dict:
     }
 
 
+def record_feedback(db: Session, example_id: int, approved: bool) -> bool:
+    """Record approval/rejection feedback on a style example.
+
+    Args:
+        db: Database session
+        example_id: ID of the style example
+        approved: True for approval, False for rejection
+
+    Returns:
+        True if feedback recorded, False if example not found
+    """
+    example = db.query(StyleExample).filter(StyleExample.id == example_id).first()
+    if not example:
+        return False
+
+    if approved:
+        example.approval_count = (example.approval_count or 0) + 1
+    else:
+        example.rejection_count = (example.rejection_count or 0) + 1
+
+    db.commit()
+    logger.info(f"Recorded {'approval' if approved else 'rejection'} for style example {example_id}")
+    return True
+
+
+def find_examples_by_tag_overlap(db: Session, tags: List[str], limit: int = 5) -> List[StyleExample]:
+    """Find style examples with overlapping topic tags for feedback propagation."""
+    if not tags:
+        return []
+    all_examples = get_all_examples(db)
+    matched = []
+    for ex in all_examples:
+        ex_tags = ex.topic_tags or []
+        if isinstance(ex_tags, str):
+            try:
+                ex_tags = json.loads(ex_tags)
+            except (json.JSONDecodeError, ValueError):
+                ex_tags = []
+        overlap = sum(1 for t in tags if t.lower() in [et.lower() for et in ex_tags])
+        if overlap > 0:
+            matched.append((ex, overlap))
+    matched.sort(key=lambda x: -x[1])
+    return [ex for ex, _ in matched[:limit]]
+
+
 def export_to_json(db: Session) -> str:
     """Export all active style examples to JSON."""
     examples = get_all_examples(db)

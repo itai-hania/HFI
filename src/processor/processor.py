@@ -61,6 +61,7 @@ try:
 except ImportError:
     HAS_LANGDETECT = False
 
+from urllib.parse import urlparse
 from openai import OpenAI
 from sqlalchemy.orm import Session
 from common.models import SessionLocal, Tweet, TweetStatus, StyleExample, create_tables
@@ -69,6 +70,7 @@ from processor.prompt_builder import (
     KEEP_ENGLISH,
     extract_topic_keywords,
     build_glossary_section,
+    build_relevant_glossary_section,
     validate_hebrew_output,
     build_style_section,
     load_style_examples_from_db,
@@ -288,7 +290,7 @@ KEY STYLE REQUIREMENTS:
         # Extract items to preserve
         preservables = self.extract_preservables(text)
 
-        glossary_str = build_glossary_section(self.config.glossary)
+        glossary_str = build_relevant_glossary_section(self.config.glossary, text)
         keep_english_str = ", ".join(sorted(KEEP_ENGLISH))
 
         system_prompt = f"""You are an expert Hebrew financial content creator specializing in fintech and tech news.
@@ -426,7 +428,8 @@ CRITICAL RULES - FOLLOW EXACTLY:
             all_preservables['mentions'].extend(preservables['mentions'])
             all_preservables['hashtags'].extend(preservables['hashtags'])
 
-        glossary_str = build_glossary_section(self.config.glossary) or "No specific terms"
+        combined_text = " ".join(texts)
+        glossary_str = build_relevant_glossary_section(self.config.glossary, combined_text) or "No specific terms"
         keep_english_str = ", ".join(sorted(KEEP_ENGLISH))
 
         system_prompt = f"""You are an expert Hebrew financial content creator specializing in fintech and tech news.
@@ -538,7 +541,7 @@ Transcreate this entire thread into ONE flowing Hebrew post."""
 
             context_str = "\n".join(context_texts) if context_texts else "This is the first tweet in the thread."
             preservables = self.extract_preservables(tweet_text)
-            glossary_str = build_glossary_section(self.config.glossary) or "No specific terms"
+            glossary_str = build_relevant_glossary_section(self.config.glossary, tweet_text) or "No specific terms"
             keep_english_str = ", ".join(sorted(KEEP_ENGLISH))
 
             system_prompt = f"""You are an expert Hebrew financial content creator.
@@ -591,6 +594,19 @@ Transcreate this tweet to Hebrew:"""
 class MediaDownloader:
     """Handles downloading media files from URLs (videos and images)."""
 
+    # Allowed domains for media downloads
+    ALLOWED_MEDIA_DOMAINS = {
+        'twimg.com', 'video.twimg.com', 'pbs.twimg.com', 'abs.twimg.com',
+        'twitter.com', 'x.com',
+    }
+
+    # Allowed image extensions
+    ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+
+    # Size limits
+    MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+    MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
+
     def __init__(self):
         self.media_dir = MEDIA_DIR
         # Create subdirectories for organized storage
@@ -598,6 +614,18 @@ class MediaDownloader:
         self.videos_dir = self.media_dir / "videos"
         self.images_dir.mkdir(parents=True, exist_ok=True)
         self.videos_dir.mkdir(parents=True, exist_ok=True)
+
+    def _is_allowed_domain(self, url: str) -> bool:
+        """Check if URL domain is in the allow list."""
+        try:
+            parsed = urlparse(url)
+            hostname = (parsed.hostname or '').lower()
+            for domain in self.ALLOWED_MEDIA_DOMAINS:
+                if hostname == domain or hostname.endswith('.' + domain):
+                    return True
+            return False
+        except Exception:
+            return False
 
     def _find_yt_dlp(self) -> Optional[str]:
         """
@@ -662,6 +690,10 @@ class MediaDownloader:
         if not media_url:
             return None
 
+        if not self._is_allowed_domain(media_url):
+            logger.warning(f"Media download blocked — domain not allowed: {media_url[:100]}")
+            return None
+
         try:
             # Determine media type from URL
             url_lower = media_url.lower()
@@ -720,6 +752,11 @@ class MediaDownloader:
         Returns:
             Local file path if successful, None if failed
         """
+        # Domain whitelist check before passing to yt-dlp subprocess
+        if not self._is_allowed_domain(video_url):
+            logger.warning(f"Video download blocked — domain not allowed: {video_url[:100]}")
+            return None
+
         # Check if this is an X video thumbnail URL
         if "amplify_video_thumb" in video_url:
             video_id = self._extract_video_id_from_thumbnail(video_url)
@@ -790,6 +827,11 @@ class MediaDownloader:
         Returns:
             Local file path if successful, None if failed
         """
+        # Domain whitelist check
+        if not self._is_allowed_domain(image_url):
+            logger.warning(f"Image download blocked — domain not allowed: {image_url[:100]}")
+            return None
+
         # Detect file extension from URL
         extension = 'jpg'
         if '.png' in image_url.lower():
@@ -800,6 +842,11 @@ class MediaDownloader:
             extension = 'gif'
         elif '.webp' in image_url.lower():
             extension = 'webp'
+
+        # Extension whitelist check
+        if extension not in self.ALLOWED_IMAGE_EXTENSIONS:
+            logger.warning(f"Image extension not allowed: {extension}")
+            return None
 
         # Generate unique filename
         url_hash = hashlib.md5(image_url.encode()).hexdigest()[:10]
@@ -817,9 +864,22 @@ class MediaDownloader:
             response = requests.get(image_url, headers=headers, timeout=30, stream=True)
             response.raise_for_status()
 
-            # Save to file
+            # Check Content-Length before downloading
+            content_length = response.headers.get('Content-Length')
+            if content_length and int(content_length) > self.MAX_IMAGE_SIZE:
+                logger.warning(f"Image too large ({int(content_length)} bytes > {self.MAX_IMAGE_SIZE}): {image_url[:100]}")
+                return None
+
+            # Save to file with size limit enforcement
+            downloaded = 0
             with open(output_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
+                    downloaded += len(chunk)
+                    if downloaded > self.MAX_IMAGE_SIZE:
+                        logger.warning(f"Image exceeded size limit during download: {image_url[:100]}")
+                        f.close()
+                        output_path.unlink(missing_ok=True)
+                        return None
                     f.write(chunk)
 
             logger.info(f"Image downloaded successfully: {output_path}")

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from common.models import Trend
-from api.dependencies import get_db
+from api.dependencies import get_db, require_api_key
 from api.schemas import (
     SummaryGenerateRequest,
     SummaryGenerateResponse,
@@ -20,7 +20,7 @@ from api.schemas import (
 )
 from processor.summary_generator import SummaryGenerator
 
-router = APIRouter(prefix="/api/trends", tags=["summaries"])
+router = APIRouter(prefix="/api/trends", tags=["summaries"], dependencies=[Depends(require_api_key)])
 
 
 def get_summary_generator() -> SummaryGenerator:

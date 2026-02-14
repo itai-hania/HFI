@@ -60,7 +60,7 @@ else:
     data_dir.mkdir(parents=True, exist_ok=True)
     DATABASE_URL = f'sqlite:///{data_dir}/hfi.db'
 
-logger.info(f"Database configured: {DATABASE_URL}")
+logger.info(f"Database configured: {DATABASE_URL.split('://')[0]}://***")
 
 # ==================== SQLAlchemy Setup ====================
 
@@ -245,6 +245,19 @@ class Tweet(Base):
         comment="Error message if processing failed"
     )
 
+    # Pipeline tracking
+    pipeline_batch_id = Column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="Groups tweets from same autopilot pipeline run"
+    )
+    scheduled_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When this tweet is scheduled for publishing"
+    )
+
     # Timestamps
     created_at = Column(
         DateTime(timezone=True),
@@ -287,6 +300,8 @@ class Tweet(Base):
             'media_paths': self.media_paths,
             'content_type': self.content_type,
             'generation_metadata': self.generation_metadata,
+            'pipeline_batch_id': self.pipeline_batch_id,
+            'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
             'trend_topic': self.trend_topic,
             'status': self.status.value,
             'error_message': self.error_message,
@@ -567,6 +582,20 @@ class StyleExample(Base):
         comment="Soft delete: True = active, False = deleted"
     )
 
+    approval_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Number of times similar content was approved"
+    )
+
+    rejection_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Number of times similar content was rejected/skipped"
+    )
+
     def __repr__(self):
         return (
             f"<StyleExample(id={self.id}, source={self.source_type}, "
@@ -584,6 +613,8 @@ class StyleExample(Base):
             'word_count': self.word_count,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'is_active': self.is_active,
+            'approval_count': self.approval_count,
+            'rejection_count': self.rejection_count,
         }
 
 
@@ -625,6 +656,10 @@ def create_tables(drop_existing: bool = False):
             ("trends", "related_trend_ids", "ALTER TABLE trends ADD COLUMN related_trend_ids TEXT"),
             ("tweets", "content_type", "ALTER TABLE tweets ADD COLUMN content_type VARCHAR(20) DEFAULT 'translation'"),
             ("tweets", "generation_metadata", "ALTER TABLE tweets ADD COLUMN generation_metadata TEXT"),
+            ("tweets", "pipeline_batch_id", "ALTER TABLE tweets ADD COLUMN pipeline_batch_id VARCHAR(64)"),
+            ("tweets", "scheduled_at", "ALTER TABLE tweets ADD COLUMN scheduled_at DATETIME"),
+            ("style_examples", "approval_count", "ALTER TABLE style_examples ADD COLUMN approval_count INTEGER DEFAULT 0"),
+            ("style_examples", "rejection_count", "ALTER TABLE style_examples ADD COLUMN rejection_count INTEGER DEFAULT 0"),
         ]
 
         for table, column, sql in migrations:
@@ -651,7 +686,7 @@ def create_tables(drop_existing: bool = False):
                 else:
                     logger.warning(f"Migration failed for style_examples.is_active: {e}")
 
-        logger.info(f"Database tables created successfully at: {DATABASE_URL}")
+        logger.info("Database tables created successfully")
 
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
@@ -724,7 +759,7 @@ def init_db():
         ...     init_db()
         ...     print("Database ready!")
     """
-    logger.info(f"Initializing database: {DATABASE_URL}")
+    logger.info(f"Initializing database: {DATABASE_URL.split('://')[0]}://***")
     create_tables()
     logger.info("Database initialization complete")
 
@@ -878,7 +913,7 @@ def health_check() -> dict:
 
             return {
                 'status': 'healthy',
-                'database_url': DATABASE_URL.split('?')[0],  # Hide sensitive params
+                'database_url': f"{DATABASE_URL.split('://')[0]}://***",
                 'tweet_count': tweet_count,
                 'trend_count': trend_count,
                 'status_breakdown': status_counts,

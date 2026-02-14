@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from common.models import Trend, TrendSource
-from api.dependencies import get_db
+from api.dependencies import get_db, require_api_key
 from api.schemas import TrendResponse, TrendListResponse
 
-router = APIRouter(prefix="/api/trends", tags=["trends"])
+router = APIRouter(prefix="/api/trends", tags=["trends"], dependencies=[Depends(require_api_key)])
 
 
 @router.get("", response_model=TrendListResponse)

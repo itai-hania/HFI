@@ -4,6 +4,7 @@ import time
 from common.models import Tweet, Trend, TweetStatus
 from dashboard.db_helpers import get_stats, delete_trend
 from dashboard.helpers import get_source_badge_class
+from dashboard.validators import validate_safe_url
 
 
 def render_home(db):
@@ -30,6 +31,55 @@ def render_home(db):
         st.markdown(f'<div class="stat-card stat-published"><div class="stat-value">{stats["published"]}</div><div class="stat-label">Published</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- Ready to Publish Queue ---
+    approved_tweets = db.query(Tweet).filter(
+        Tweet.status == TweetStatus.APPROVED
+    ).order_by(Tweet.updated_at.desc()).limit(10).all()
+
+    if approved_tweets:
+        if 'home_publish_expanded' not in st.session_state:
+            st.session_state.home_publish_expanded = True
+
+        publish_expanded = st.checkbox(
+            f"Ready to Publish ({len(approved_tweets)})",
+            value=st.session_state.home_publish_expanded,
+            key="publish_section_toggle"
+        )
+        st.session_state.home_publish_expanded = publish_expanded
+
+        if publish_expanded:
+            for tweet in approved_tweets:
+                preview = html.escape((tweet.hebrew_draft or '')[:80])
+                if len(tweet.hebrew_draft or '') > 80:
+                    preview += '...'
+                trend_title = html.escape(tweet.trend_topic or 'Unknown')
+                updated = tweet.updated_at.strftime('%Y-%m-%d %H:%M') if tweet.updated_at else ''
+                batch_label = ''
+                if tweet.pipeline_batch_id:
+                    batch_label = f'<span style="background: rgba(25, 154, 245, 0.1); color: var(--accent-primary); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.6rem; margin-left: 0.5rem;">pipeline</span>'
+
+                with st.container():
+                    pub_col1, pub_col2 = st.columns([5, 1])
+                    with pub_col1:
+                        st.markdown(f"""
+                            <div style="padding: 0.4rem 0;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-primary);">{trend_title}</span>
+                                    {batch_label}
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--text-secondary); direction: rtl; text-align: right; margin-top: 0.25rem;">{preview}</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.15rem;">Approved {updated}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    with pub_col2:
+                        if st.button("Edit", key=f"pub_edit_{tweet.id}", use_container_width=True):
+                            st.session_state.selected_item = tweet.id
+                            st.session_state.current_view = 'content'
+                            st.rerun()
+                    st.markdown("<hr style='margin: 0.25rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================================================
     # PHASE 4: Full-width rows with collapsible sections (using session state)
@@ -76,7 +126,7 @@ def render_home(db):
                     card_col1, card_col2, card_col_gen, card_col3, card_col4 = st.columns([4, 1, 1, 1, 0.5])
                     with card_col1:
                         # Title with rank
-                        if trend.article_url:
+                        if trend.article_url and validate_safe_url(trend.article_url)[0]:
                             st.markdown(f"**#{idx + 1}** [{safe_title}]({html.escape(trend.article_url)})")
                         else:
                             st.markdown(f"**#{idx + 1}** {safe_title}")
@@ -127,7 +177,7 @@ def render_home(db):
                         # Use columns inside expander for organized layout
                         detail_col1, detail_col2 = st.columns(2)
                         with detail_col1:
-                            if trend.article_url:
+                            if trend.article_url and validate_safe_url(trend.article_url)[0]:
                                 st.markdown(f"**🔗 Source:** [{html.escape(source_val)}]({html.escape(trend.article_url)})")
                             if trend.discovered_at:
                                 st.markdown(f"**📅 Discovered:** {trend.discovered_at.strftime('%Y-%m-%d %H:%M')}")

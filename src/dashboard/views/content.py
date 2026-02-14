@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 from common.models import Tweet, Trend, Thread, TrendSource, TweetStatus, StyleExample
 from dashboard.db_helpers import get_stats, get_tweets, update_tweet, delete_tweet
 from dashboard.helpers import get_source_badge_class, parse_media_info, format_status_str
-from dashboard.lazy_loaders import get_style_manager, get_summary_generator
+from dashboard.lazy_loaders import get_style_manager, get_summary_generator, get_auto_pipeline
+from dashboard.validators import validate_x_url
+
+# Cooldown constants (seconds)
+_SCRAPE_COOLDOWN = 30
+_FETCH_ALL_COOLDOWN = 60
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +68,8 @@ def _render_acquire_section(db):
         "Thread URL",
         placeholder="https://x.com/user/status/1234567890",
         key="scrape_url",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        max_chars=500
     )
 
     col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
@@ -79,7 +85,13 @@ def _render_acquire_section(db):
         if st.button("Scrape Thread", type="primary", use_container_width=True):
             if not url:
                 st.warning("Enter a URL first")
+            elif not validate_x_url(url)[0]:
+                st.error(validate_x_url(url)[1])
+            elif time.time() - st.session_state.get('last_scrape_time', 0) < _SCRAPE_COOLDOWN:
+                remaining = int(_SCRAPE_COOLDOWN - (time.time() - st.session_state.get('last_scrape_time', 0)))
+                st.warning(f"Please wait {remaining}s before scraping again.")
             else:
+                st.session_state.last_scrape_time = time.time()
                 with st.spinner("Scraping..."):
                     try:
                         from scraper.scraper import TwitterScraper
@@ -237,94 +249,290 @@ def _render_acquire_section(db):
                         st.rerun()
 
                     except Exception as e:
-                        st.error(f"Scrape failed: {str(e)[:100]}")
+                        logger.error(f"Scrape failed: {e}")
+                        st.error("Scrape failed. Check server logs for details.")
 
     st.markdown("---")
 
-    # ---- Fetch All Trends ----
-    st.markdown("### Discover Trends")
+    # ---- Autopilot Pipeline ----
+    st.markdown("### Autopilot Pipeline")
+    st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Two-phase workflow: discover trends, confirm relevance, then generate Hebrew posts.</p>', unsafe_allow_html=True)
 
-    fcol1, fcol2, fcol3 = st.columns([2, 1, 1])
-    with fcol1:
-        st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles with weighted sampling: 70% finance + 30% tech, ranked by keyword overlap.</p>', unsafe_allow_html=True)
-    with fcol2:
-        auto_summarize = st.checkbox("Auto-summarize", value=True, key="auto_gen_summary", help="Generate AI summaries automatically when fetching trends")
-        st.session_state.auto_generate_summaries = auto_summarize
-    with fcol3:
-        fetch_all = st.button("Fetch All Trends", type="primary", use_container_width=True, key="fetch_all_trends")
+    # Initialize pipeline session state
+    if 'pipeline_phase' not in st.session_state:
+        st.session_state.pipeline_phase = 'idle'
+    if 'pipeline_candidates' not in st.session_state:
+        st.session_state.pipeline_candidates = []
+    if 'pipeline_results' not in st.session_state:
+        st.session_state.pipeline_results = []
 
-    # Generate Summaries button for existing trends without summaries
-    trends_without_summary = db.query(Trend).filter(Trend.summary == None).count()
-    if trends_without_summary > 0:
-        gcol1, gcol2 = st.columns([3, 1])
-        with gcol1:
-            st.markdown(f'<p style="color: var(--text-muted); font-size: 0.8rem;">{trends_without_summary} trends need AI summaries</p>', unsafe_allow_html=True)
-        with gcol2:
-            if st.button("Generate Summaries", key="gen_summaries_btn", use_container_width=True):
-                generator = get_summary_generator()
-                if generator:
-                    with st.spinner(f"Generating summaries for {trends_without_summary} trends..."):
-                        stats = generator.backfill_summaries(db, limit=20)
-                        st.success(f"Generated {stats['success']} summaries ({stats['failed']} failed)")
-                        time.sleep(0.5)
-                        st.rerun()
-                else:
-                    st.error("Could not initialize summary generator. Check OPENAI_API_KEY.")
+    # Read autopilot defaults from session state
+    ap_top_n = st.session_state.get('autopilot_top_n', 3)
+    ap_angle = st.session_state.get('autopilot_angle', 'news')
+    ap_auto_summarize = st.session_state.get('autopilot_auto_summarize', True)
 
-    if fetch_all:
-        with st.spinner("Fetching from all sources..."):
-            try:
-                from scraper.news_scraper import NewsScraper
-                scraper = NewsScraper()
-                # Use weighted sampling: 70% finance, 30% tech
-                # Fetch 10 per source to account for deduplication and filtering
-                ranked_news = scraper.get_latest_news(limit_per_source=10, total_limit=10, finance_weight=0.7)
-
-                # Save to DB with article_url
-                source_map = {
-                    'Yahoo Finance': TrendSource.YAHOO_FINANCE,
-                    'WSJ': TrendSource.WSJ,
-                    'TechCrunch': TrendSource.TECHCRUNCH,
-                    'Bloomberg': TrendSource.BLOOMBERG,
-                    'MarketWatch': TrendSource.MARKETWATCH,
-                }
-                saved = 0
-                new_trend_ids = []
-                for article in ranked_news:
-                    if not db.query(Trend).filter_by(title=article['title']).first():
-                        new_trend = Trend(
-                            title=article['title'],
-                            description=article.get('description', '')[:500],
-                            source=source_map.get(article['source'], TrendSource.MANUAL),
-                            article_url=article.get('url', ''),
+    # ---- Phase A: Fetch & Analyze ----
+    if st.session_state.pipeline_phase == 'idle':
+        if st.button("Fetch & Analyze", type="primary", use_container_width=False, key="pipeline_fetch"):
+            pipeline = get_auto_pipeline()
+            if not pipeline:
+                st.error("Could not initialize pipeline. Check OPENAI_API_KEY.")
+            else:
+                with st.spinner("Fetching & ranking articles..."):
+                    try:
+                        candidates = pipeline.fetch_and_rank(
+                            db, top_n=ap_top_n,
+                            auto_summarize=ap_auto_summarize,
                         )
-                        db.add(new_trend)
-                        db.flush()  # Get the ID
-                        new_trend_ids.append(new_trend.id)
-                        saved += 1
+                        if candidates:
+                            st.session_state.pipeline_candidates = candidates
+                            st.session_state.pipeline_phase = 'candidates'
+                            st.rerun()
+                        else:
+                            st.info("No new candidates found. All top trends are already in your queue.")
+                    except Exception as e:
+                        logger.error(f"Pipeline failed: {e}")
+                        st.error("Pipeline failed. Check server logs for details.")
+
+    # ---- Phase A UI: Candidate selection ----
+    elif st.session_state.pipeline_phase == 'candidates':
+        candidates = st.session_state.pipeline_candidates
+        st.markdown(f"#### Select Trends to Generate ({len(candidates)} candidates)")
+
+        selections = {}
+        for idx, cand in enumerate(candidates):
+            safe_title = html.escape(cand.get('title', ''))
+            safe_summary = html.escape(cand.get('summary', '') or cand.get('description', ''))[:200]
+            badge_cls = get_source_badge_class(cand.get('source', ''))
+            safe_source = html.escape(cand.get('source', ''))
+            cat_emoji = "💰" if cand.get('category') == 'Finance' else "💻"
+            url = cand.get('url', '')
+
+            with st.container():
+                sel_col, info_col = st.columns([0.3, 5])
+                with sel_col:
+                    checked = st.checkbox("", value=True, key=f"pipe_sel_{idx}", label_visibility="collapsed")
+                    selections[idx] = checked
+                with info_col:
+                    title_html = f'<a href="{html.escape(url)}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-weight: 500;">{safe_title}</a>' if url else f'<span style="font-weight: 500;">{safe_title}</span>'
+                    st.markdown(f"""
+                        <div style="padding: 0.5rem 0;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">#{idx+1}</span>
+                                <span>{cat_emoji}</span>
+                                {title_html}
+                                <span class="status-badge {badge_cls}" style="font-size: 0.65rem;">{safe_source}</span>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.3rem; line-height: 1.4;">{safe_summary}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                st.markdown("<hr style='margin: 0.25rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
+
+        gen_col1, gen_col2, gen_col3 = st.columns([2, 1, 1])
+        with gen_col1:
+            selected_count = sum(1 for v in selections.values() if v)
+            st.markdown(f"**{selected_count}** trend{'s' if selected_count != 1 else ''} selected")
+        with gen_col2:
+            if st.button("Generate Hebrew", type="primary", use_container_width=True, key="pipeline_generate", disabled=selected_count == 0):
+                confirmed_ids = [candidates[i]['trend_id'] for i, sel in selections.items() if sel]
+                pipeline = get_auto_pipeline()
+                if pipeline:
+                    with st.spinner(f"Generating Hebrew posts for {len(confirmed_ids)} trends..."):
+                        try:
+                            results = pipeline.generate_for_confirmed(
+                                db, confirmed_ids, angle=ap_angle, num_variants=1,
+                            )
+                            st.session_state.pipeline_results = results
+                            st.session_state.pipeline_phase = 'review'
+                            st.rerun()
+                        except Exception as e:
+                            logger.error(f"Generation failed: {e}")
+                            st.error("Generation failed. Check server logs for details.")
+        with gen_col3:
+            if st.button("Cancel", use_container_width=True, key="pipeline_cancel_a"):
+                st.session_state.pipeline_phase = 'idle'
+                st.session_state.pipeline_candidates = []
+                st.rerun()
+
+    # ---- Phase B UI: Review generated posts ----
+    elif st.session_state.pipeline_phase == 'review':
+        results = st.session_state.pipeline_results
+        st.markdown(f"#### Review Generated Posts ({len(results)})")
+
+        for idx, res in enumerate(results):
+            safe_title = html.escape(res.get('trend_title', ''))
+            variants = res.get('variants', [])
+            best = variants[0] if variants else {}
+            hebrew_text = best.get('content', '')
+            tweet_id = res.get('tweet_id')
+
+            st.markdown(f"**{safe_title}**")
+
+            edited = st.text_area(
+                f"Hebrew post {idx+1}",
+                value=hebrew_text,
+                height=120,
+                key=f"pipe_review_{idx}",
+                label_visibility="collapsed",
+            )
+
+            char_count = len(edited) if edited else 0
+            over = char_count > 280
+            st.markdown(
+                f"<div style='text-align:right; font-size:0.75rem; color: {'var(--accent-danger)' if over else 'var(--text-muted)'};'>"
+                f"{char_count}/280</div>",
+                unsafe_allow_html=True,
+            )
+
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                if st.button("Approve", key=f"pipe_approve_{idx}", use_container_width=True, type="primary"):
+                    if tweet_id:
+                        tweet = db.query(Tweet).filter_by(id=tweet_id).first()
+                        if tweet:
+                            tweet.hebrew_draft = edited
+                            tweet.status = TweetStatus.APPROVED
+                            db.commit()
+                            if edited and len(edited.strip()) > 30:
+                                _auto_learn_style(db, edited.strip())
+                            st.success(f"Approved: {safe_title}")
+                            time.sleep(0.5)
+                            st.rerun()
+            with btn_col2:
+                if st.button("Skip", key=f"pipe_skip_{idx}", use_container_width=True):
+                    if tweet_id:
+                        tweet = db.query(Tweet).filter_by(id=tweet_id).first()
+                        if tweet:
+                            # Record negative feedback for style learning
+                            from processor.prompt_builder import extract_topic_keywords
+                            skip_tags = extract_topic_keywords(res.get('trend_title', ''))
+                            _record_style_feedback(db, skip_tags, approved=False)
+                            db.delete(tweet)
+                            db.commit()
+                    st.info(f"Skipped: {safe_title}")
+                    time.sleep(0.3)
+                    st.rerun()
+
+            st.markdown("<hr style='margin: 0.5rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
+
+        done_col1, done_col2, done_col3 = st.columns(3)
+        with done_col1:
+            if st.button("Approve All", type="primary", use_container_width=True, key="pipe_approve_all"):
+                for idx, res in enumerate(results):
+                    tweet_id = res.get('tweet_id')
+                    if tweet_id:
+                        tweet = db.query(Tweet).filter_by(id=tweet_id).first()
+                        if tweet and tweet.status != TweetStatus.APPROVED:
+                            edited_key = f"pipe_review_{idx}"
+                            edited_text = st.session_state.get(edited_key, tweet.hebrew_draft)
+                            tweet.hebrew_draft = edited_text
+                            tweet.status = TweetStatus.APPROVED
+                            if edited_text and len(edited_text.strip()) > 30:
+                                _auto_learn_style(db, edited_text.strip())
                 db.commit()
-
-                st.session_state.ranked_articles = ranked_news
-                st.session_state.new_trend_ids = new_trend_ids
-                st.success(f"Fetched & ranked top {len(ranked_news)} articles, saved {saved} new trends")
-
-                # Auto-generate summaries for new trends
-                if new_trend_ids and st.session_state.get('auto_generate_summaries', True):
-                    generator = get_summary_generator()
-                    if generator:
-                        with st.spinner(f"Generating AI summaries for {len(new_trend_ids)} trends..."):
-                            success_count = 0
-                            for trend_id in new_trend_ids:
-                                if generator.process_trend(db, trend_id):
-                                    success_count += 1
-                            st.success(f"Generated {success_count} AI summaries")
-
-                # Auto-navigate to Home tab after fetch completes
-                st.session_state.current_view = 'home'
+                st.success(f"Approved all {len(results)} posts!")
+                st.session_state.pipeline_phase = 'idle'
+                st.session_state.pipeline_candidates = []
+                st.session_state.pipeline_results = []
                 time.sleep(0.5)
                 st.rerun()
-            except Exception as e:
-                st.error(f"Failed: {str(e)[:150]}")
+        with done_col2:
+            if st.button("Back to Candidates", use_container_width=True, key="pipe_back"):
+                st.session_state.pipeline_phase = 'candidates'
+                st.session_state.pipeline_results = []
+                st.rerun()
+        with done_col3:
+            if st.button("Done", use_container_width=True, key="pipe_done"):
+                st.session_state.pipeline_phase = 'idle'
+                st.session_state.pipeline_candidates = []
+                st.session_state.pipeline_results = []
+                st.rerun()
+
+    st.markdown("---")
+
+    # ---- Fetch All Trends (Manual) ----
+    with st.expander("Manual Trend Fetching", expanded=False):
+        fcol1, fcol2, fcol3 = st.columns([2, 1, 1])
+        with fcol1:
+            st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Fetch articles with weighted sampling: 70% finance + 30% tech, ranked by keyword overlap.</p>', unsafe_allow_html=True)
+        with fcol2:
+            auto_summarize = st.checkbox("Auto-summarize", value=True, key="auto_gen_summary", help="Generate AI summaries automatically when fetching trends")
+            st.session_state.auto_generate_summaries = auto_summarize
+        with fcol3:
+            fetch_all = st.button("Fetch All Trends", type="primary", use_container_width=True, key="fetch_all_trends")
+
+        # Generate Summaries button for existing trends without summaries
+        trends_without_summary = db.query(Trend).filter(Trend.summary == None).count()
+        if trends_without_summary > 0:
+            gcol1, gcol2 = st.columns([3, 1])
+            with gcol1:
+                st.markdown(f'<p style="color: var(--text-muted); font-size: 0.8rem;">{trends_without_summary} trends need AI summaries</p>', unsafe_allow_html=True)
+            with gcol2:
+                if st.button("Generate Summaries", key="gen_summaries_btn", use_container_width=True):
+                    generator = get_summary_generator()
+                    if generator:
+                        with st.spinner(f"Generating summaries for {trends_without_summary} trends..."):
+                            stats = generator.backfill_summaries(db, limit=20)
+                            st.success(f"Generated {stats['success']} summaries ({stats['failed']} failed)")
+                            time.sleep(0.5)
+                            st.rerun()
+                    else:
+                        st.error("Could not initialize summary generator. Check OPENAI_API_KEY.")
+
+        if fetch_all and time.time() - st.session_state.get('last_fetch_all_time', 0) < _FETCH_ALL_COOLDOWN:
+            remaining = int(_FETCH_ALL_COOLDOWN - (time.time() - st.session_state.get('last_fetch_all_time', 0)))
+            st.warning(f"Please wait {remaining}s before fetching again.")
+        elif fetch_all:
+            st.session_state.last_fetch_all_time = time.time()
+            with st.spinner("Fetching from all sources..."):
+                try:
+                    from scraper.news_scraper import NewsScraper
+                    scraper = NewsScraper()
+                    ranked_news = scraper.get_latest_news(limit_per_source=10, total_limit=10, finance_weight=0.7)
+
+                    source_map = {
+                        'Yahoo Finance': TrendSource.YAHOO_FINANCE,
+                        'WSJ': TrendSource.WSJ,
+                        'TechCrunch': TrendSource.TECHCRUNCH,
+                        'Bloomberg': TrendSource.BLOOMBERG,
+                        'MarketWatch': TrendSource.MARKETWATCH,
+                    }
+                    saved = 0
+                    new_trend_ids = []
+                    for article in ranked_news:
+                        if not db.query(Trend).filter_by(title=article['title']).first():
+                            new_trend = Trend(
+                                title=article['title'],
+                                description=article.get('description', '')[:500],
+                                source=source_map.get(article['source'], TrendSource.MANUAL),
+                                article_url=article.get('url', ''),
+                            )
+                            db.add(new_trend)
+                            db.flush()
+                            new_trend_ids.append(new_trend.id)
+                            saved += 1
+                    db.commit()
+
+                    st.session_state.ranked_articles = ranked_news
+                    st.session_state.new_trend_ids = new_trend_ids
+                    st.success(f"Fetched & ranked top {len(ranked_news)} articles, saved {saved} new trends")
+
+                    if new_trend_ids and st.session_state.get('auto_generate_summaries', True):
+                        generator = get_summary_generator()
+                        if generator:
+                            with st.spinner(f"Generating AI summaries for {len(new_trend_ids)} trends..."):
+                                success_count = 0
+                                for trend_id in new_trend_ids:
+                                    if generator.process_trend(db, trend_id):
+                                        success_count += 1
+                                st.success(f"Generated {success_count} AI summaries")
+
+                    st.session_state.current_view = 'home'
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    logger.error(f"Fetch trends failed: {e}")
+                    st.error("Fetch failed. Check server logs for details.")
 
     # ---- Show Ranked Articles ----
     ranked = st.session_state.get('ranked_articles', None)
@@ -414,7 +622,7 @@ def _render_acquire_section(db):
     st.markdown("### Add Manual Trend")
     mcol1, mcol2 = st.columns([3, 1])
     with mcol1:
-        manual = st.text_input("Trend Title", key="manual_trend", label_visibility="collapsed", placeholder="Enter trend topic...")
+        manual = st.text_input("Trend Title", key="manual_trend", label_visibility="collapsed", placeholder="Enter trend topic...", max_chars=256)
     with mcol2:
         if st.button("Add Trend", key="add_manual_trend", disabled=not manual, use_container_width=True):
             db.add(Trend(title=manual, source=TrendSource.MANUAL))
@@ -493,45 +701,51 @@ def _render_thread_translation(db):
             placeholder="https://x.com/user/status/1234567890",
             key="thread_trans_url",
             label_visibility="collapsed",
-            value=st.session_state.thread_url
+            value=st.session_state.thread_url,
+            max_chars=500
         )
     with col2:
         fetch_btn = st.button("Fetch Thread", type="primary", use_container_width=True, key="fetch_thread_btn")
 
     # Fetch thread when button clicked
     if fetch_btn and thread_url:
-        with st.spinner("Fetching thread..."):
-            try:
-                from scraper.scraper import TwitterScraper
+        valid, err = validate_x_url(thread_url)
+        if not valid:
+            st.error(err)
+        elif valid:
+            with st.spinner("Fetching thread..."):
+                try:
+                    from scraper.scraper import TwitterScraper
 
-                async def fetch():
-                    scraper = TwitterScraper()
-                    try:
-                        await scraper.ensure_logged_in()
-                        return await scraper.fetch_raw_thread(thread_url, author_only=True)
-                    finally:
-                        await scraper.close()
+                    async def fetch():
+                        scraper = TwitterScraper()
+                        try:
+                            await scraper.ensure_logged_in()
+                            return await scraper.fetch_raw_thread(thread_url, author_only=True)
+                        finally:
+                            await scraper.close()
 
-                result = asyncio.run(fetch())
-                tweets_data = result.get('tweets', [])
+                    result = asyncio.run(fetch())
+                    tweets_data = result.get('tweets', [])
 
-                if tweets_data:
-                    st.session_state.thread_data = {
-                        'tweets': tweets_data,
-                        'author_handle': result.get('author_handle', ''),
-                        'author_name': result.get('author_name', ''),
-                        'url': thread_url
-                    }
-                    st.session_state.thread_url = thread_url
-                    st.session_state.thread_translations = None  # Reset translations
-                    st.success(f"Fetched {len(tweets_data)} tweets from thread")
-                    time.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.warning("No tweets found in thread")
+                    if tweets_data:
+                        st.session_state.thread_data = {
+                            'tweets': tweets_data,
+                            'author_handle': result.get('author_handle', ''),
+                            'author_name': result.get('author_name', ''),
+                            'url': thread_url
+                        }
+                        st.session_state.thread_url = thread_url
+                        st.session_state.thread_translations = None
+                        st.success(f"Fetched {len(tweets_data)} tweets from thread")
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.warning("No tweets found in thread")
 
-            except Exception as e:
-                st.error(f"Failed to fetch thread: {str(e)[:100]}")
+                except Exception as e:
+                    logger.error(f"Failed to fetch thread: {e}")
+                    st.error("Failed to fetch thread. Check server logs for details.")
 
     # Display thread if fetched
     if st.session_state.thread_data:
@@ -584,7 +798,8 @@ def _render_thread_translation(db):
                     st.rerun()
 
                 except Exception as e:
-                    st.error(f"Translation failed: {str(e)[:100]}")
+                    logger.error(f"Translation failed: {e}")
+                    st.error("Translation failed. Check server logs for details.")
 
         # Side-by-side display
         st.markdown("---")
@@ -701,7 +916,8 @@ def _render_thread_translation(db):
                         st.rerun()
 
                     except Exception as e:
-                        st.error(f"Failed to add to queue: {str(e)[:80]}")
+                        logger.error(f"Failed to add to queue: {e}")
+                        st.error("Failed to add to queue. Check server logs for details.")
 
             with action_col2:
                 # Copy Hebrew text button
@@ -756,7 +972,8 @@ def _render_generate_section(db):
         value=prefill,
         height=150,
         key="gen_source_text",
-        placeholder="Paste English article text, tweet, or news snippet here..."
+        placeholder="Paste English article text, tweet, or news snippet here...",
+        max_chars=10000
     )
 
     # Clear prefill after displaying
@@ -813,7 +1030,8 @@ def _render_generate_section(db):
 
                 st.rerun()
             except Exception as e:
-                st.error(f"Generation failed: {str(e)[:200]}")
+                logger.error(f"Generation failed: {e}")
+                st.error("Generation failed. Check server logs for details.")
 
     # ---- Display generated post variants ----
     if st.session_state.get('gen_mode_result') == 'post' and 'gen_variants' in st.session_state:
@@ -1067,9 +1285,24 @@ def _auto_learn_style(db, hebrew_text: str, source_url: str = None):
             source_url=source_url,
             topic_tags=tags
         )
+        # Record positive feedback on related style examples
+        _record_style_feedback(db, tags, approved=True)
         logger.info(f"Auto-learned style from approved content ({word_count} words)")
     except Exception as e:
         logger.warning(f"Auto-style learning failed: {e}")
+
+
+def _record_style_feedback(db, tags: list, approved: bool):
+    """Propagate approval/rejection feedback to matching style examples."""
+    try:
+        sm = get_style_manager()
+        if not sm or not tags:
+            return
+        matching = sm.find_examples_by_tag_overlap(db, tags, limit=3)
+        for ex in matching:
+            sm.record_feedback(db, ex.id, approved)
+    except Exception as e:
+        logger.warning(f"Style feedback recording failed: {e}")
 
 
 def render_editor(db, tweet_id):
@@ -1094,8 +1327,8 @@ def render_editor(db, tweet_id):
     with col2:
         st.markdown(f"""
             <div style="text-align: center; padding: 0.5rem;">
-                <span style="font-weight: 600; font-size: 1rem; color: var(--text-primary);">{tweet.trend_topic or 'Unknown'}</span>
-                <span class="status-badge status-{status_str.lower()}" style="margin-left: 0.75rem;">{status_str}</span>
+                <span style="font-weight: 600; font-size: 1rem; color: var(--text-primary);">{html.escape(tweet.trend_topic or 'Unknown')}</span>
+                <span class="status-badge status-{html.escape(status_str.lower())}" style="margin-left: 0.75rem;">{html.escape(status_str)}</span>
             </div>
         """, unsafe_allow_html=True)
 
@@ -1224,7 +1457,8 @@ def render_editor(db, tweet_id):
                     else:
                         st.error("Empty translation")
                 except Exception as e:
-                    st.error(str(e)[:50])
+                    logger.error(f"Editor translation failed: {e}")
+                    st.error("Translation failed. Check server logs.")
             time.sleep(0.5)
             st.rerun()
 
@@ -1256,13 +1490,20 @@ def render_editor(db, tweet_id):
         st.error(f"Error: {tweet.error_message}")
 
 
+_MAX_BATCH_SIZE = 20
+
+
 def run_batch_translate(db):
-    """Run batch translation"""
-    pending = db.query(Tweet).filter(Tweet.status == TweetStatus.PENDING).all()
+    """Run batch translation (max 20 per batch)."""
+    all_pending = db.query(Tweet).filter(Tweet.status == TweetStatus.PENDING).count()
+    pending = db.query(Tweet).filter(Tweet.status == TweetStatus.PENDING).limit(_MAX_BATCH_SIZE).all()
 
     if not pending:
         st.info("No pending items to translate")
         return
+
+    if all_pending > _MAX_BATCH_SIZE:
+        st.warning(f"{all_pending} pending items — translating first {_MAX_BATCH_SIZE}. Run again for more.")
 
     progress = st.progress(0)
     status_text = st.empty()
@@ -1299,4 +1540,5 @@ def run_batch_translate(db):
         st.rerun()
 
     except Exception as e:
-        st.error(f"Error: {str(e)[:100]}")
+        logger.error(f"Batch translation error: {e}")
+        st.error("Translation error. Check server logs for details.")

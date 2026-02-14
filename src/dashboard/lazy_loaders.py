@@ -21,3 +21,13 @@ def get_summary_generator():
     except Exception as e:
         logger.warning(f"Could not initialize SummaryGenerator: {e}")
         return None
+
+
+def get_auto_pipeline():
+    """Lazy load AutoPipeline with shared sub-components."""
+    try:
+        from processor.auto_pipeline import AutoPipeline
+        return AutoPipeline()
+    except Exception as e:
+        logger.warning(f"Could not initialize AutoPipeline: {e}")
+        return None
