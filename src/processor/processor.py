@@ -619,7 +619,11 @@ class MediaDownloader:
         """Check if URL domain is in the allow list."""
         try:
             parsed = urlparse(url)
+            if parsed.scheme.lower() != 'https':
+                return False
             hostname = (parsed.hostname or '').lower()
+            if not hostname:
+                return False
             for domain in self.ALLOWED_MEDIA_DOMAINS:
                 if hostname == domain or hostname.endswith('.' + domain):
                     return True
@@ -794,11 +798,19 @@ class MediaDownloader:
                 '-f', 'best',
                 '--no-playlist',
                 '--no-warnings',
+                '--max-filesize', f'{self.MAX_VIDEO_SIZE // (1024 * 1024)}M',
                 video_url,
                 '-o', str(output_path)
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=300)  # 5 minute timeout
 
             if output_path.exists():
+                file_size = output_path.stat().st_size
+                if file_size > self.MAX_VIDEO_SIZE:
+                    logger.warning(
+                        f"Video exceeded size limit after download ({file_size} bytes > {self.MAX_VIDEO_SIZE}): {video_url[:100]}"
+                    )
+                    output_path.unlink(missing_ok=True)
+                    return None
                 logger.info(f"Video downloaded successfully: {output_path}")
                 return str(output_path)
             else:
@@ -856,6 +868,7 @@ class MediaDownloader:
 
         logger.info(f"Downloading image from {image_url}")
 
+        response = None
         try:
             # Download with timeout and user agent
             headers = {
@@ -866,14 +879,23 @@ class MediaDownloader:
 
             # Check Content-Length before downloading
             content_length = response.headers.get('Content-Length')
-            if content_length and int(content_length) > self.MAX_IMAGE_SIZE:
-                logger.warning(f"Image too large ({int(content_length)} bytes > {self.MAX_IMAGE_SIZE}): {image_url[:100]}")
-                return None
+            if content_length:
+                try:
+                    content_length_int = int(content_length)
+                    if content_length_int > self.MAX_IMAGE_SIZE:
+                        logger.warning(
+                            f"Image too large ({content_length_int} bytes > {self.MAX_IMAGE_SIZE}): {image_url[:100]}"
+                        )
+                        return None
+                except ValueError:
+                    logger.debug(f"Ignoring non-integer Content-Length value: {content_length!r}")
 
             # Save to file with size limit enforcement
             downloaded = 0
             with open(output_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
+                    if not chunk:
+                        continue
                     downloaded += len(chunk)
                     if downloaded > self.MAX_IMAGE_SIZE:
                         logger.warning(f"Image exceeded size limit during download: {image_url[:100]}")
@@ -891,6 +913,9 @@ class MediaDownloader:
         except Exception as e:
             logger.error(f"Unexpected error downloading image: {e}")
             return None
+        finally:
+            if response is not None:
+                response.close()
 
     def download_thread_media(self, thread_data: Dict) -> List[Dict[str, str]]:
         """
@@ -1011,33 +1036,55 @@ class TweetProcessor:
         processed_count = 0
 
         try:
-            # Query all pending tweets
-            pending_tweets = db.query(Tweet).filter(Tweet.status == TweetStatus.PENDING).all()
+            batch_size_raw = os.getenv("PROCESSOR_BATCH_SIZE", "50")
+            try:
+                batch_size = max(1, int(batch_size_raw))
+            except ValueError:
+                logger.warning(f"Invalid PROCESSOR_BATCH_SIZE={batch_size_raw!r}; using 50")
+                batch_size = 50
 
-            if not pending_tweets:
+            total_seen = 0
+
+            while True:
+                pending_tweets = (
+                    db.query(Tweet)
+                    .filter(Tweet.status == TweetStatus.PENDING)
+                    .order_by(Tweet.id.asc())
+                    .limit(batch_size)
+                    .all()
+                )
+
+                if not pending_tweets:
+                    break
+
+                total_seen += len(pending_tweets)
+                logger.info(f"Processing batch of {len(pending_tweets)} pending tweets (batch size={batch_size})")
+
+                for tweet in pending_tweets:
+                    try:
+                        success = self._process_single_tweet(db, tweet)
+                        if success:
+                            processed_count += 1
+                            logger.info(f"Successfully processed tweet {tweet.id}")
+                        else:
+                            logger.warning(f"Failed to process tweet {tweet.id}")
+
+                    except Exception as e:
+                        logger.error(f"Error processing tweet {tweet.id}: {e}")
+                        # Mark as failed
+                        tweet.status = TweetStatus.FAILED
+                        tweet.error_message = str(e)
+                        tweet.updated_at = datetime.utcnow()
+                        db.commit()
+
+                # Prevent session memory growth in long-running batches.
+                db.expunge_all()
+
+            if total_seen == 0:
                 logger.info("No pending tweets to process")
                 return 0
 
-            logger.info(f"Found {len(pending_tweets)} pending tweets to process")
-
-            for tweet in pending_tweets:
-                try:
-                    success = self._process_single_tweet(db, tweet)
-                    if success:
-                        processed_count += 1
-                        logger.info(f"Successfully processed tweet {tweet.id}")
-                    else:
-                        logger.warning(f"Failed to process tweet {tweet.id}")
-
-                except Exception as e:
-                    logger.error(f"Error processing tweet {tweet.id}: {e}")
-                    # Mark as failed
-                    tweet.status = TweetStatus.FAILED
-                    tweet.error_message = str(e)
-                    tweet.updated_at = datetime.utcnow()
-                    db.commit()
-
-            logger.info(f"Batch complete: {processed_count}/{len(pending_tweets)} tweets processed")
+            logger.info(f"Batch complete: {processed_count}/{total_seen} tweets processed")
             return processed_count
 
         except Exception as e:

@@ -8,7 +8,7 @@ Last Updated: 2026-02-01
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 
 from common.models import Trend
@@ -37,7 +37,7 @@ def get_summary_generator() -> SummaryGenerator:
 @router.post("/{trend_id}/generate-summary", response_model=SummaryGenerateResponse)
 def generate_summary(
     trend_id: int,
-    request: SummaryGenerateRequest = SummaryGenerateRequest(),
+    request: SummaryGenerateRequest = Body(default_factory=SummaryGenerateRequest),
     db: Session = Depends(get_db),
     generator: SummaryGenerator = Depends(get_summary_generator)
 ):
@@ -94,8 +94,7 @@ def _backfill_summaries_task(limit: Optional[int], db_session):
 
 @router.post("/generate-summaries", response_model=BulkSummaryGenerateResponse)
 def generate_summaries_bulk(
-    limit: Optional[int] = None,
-    background_tasks: BackgroundTasks = None,
+    limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
     generator: SummaryGenerator = Depends(get_summary_generator)
 ):

@@ -5,6 +5,7 @@ import time
 import asyncio
 import logging
 from pathlib import Path
+from sqlalchemy import cast, String, func
 from common.models import Tweet, Trend, Thread, StyleExample
 from dashboard.lazy_loaders import get_style_manager
 from dashboard.validators import validate_x_url
@@ -295,19 +296,14 @@ def render_settings(db):
         query = db.query(StyleExample).filter(StyleExample.is_active == True).order_by(StyleExample.created_at.desc())
 
         if selected_tag != "All":
-            all_active = query.all()
-            filtered = []
-            for ex in all_active:
-                ex_tags = ex.topic_tags or []
-                if isinstance(ex_tags, str):
-                    try:
-                        ex_tags = json.loads(ex_tags)
-                    except (json.JSONDecodeError, ValueError):
-                        ex_tags = []
-                if selected_tag.lower() in [t.lower() for t in ex_tags]:
-                    filtered.append(ex)
-            examples = filtered[:display_limit]
-            filtered_count = len(filtered)
+            # JSON array string match (case-insensitive), e.g. ["fintech","ai"].
+            normalized_tag = selected_tag.lower()
+            tag_pattern = f'%"{normalized_tag}"%'
+            filtered_query = query.filter(
+                func.lower(cast(StyleExample.topic_tags, String)).like(tag_pattern)
+            )
+            filtered_count = filtered_query.count()
+            examples = filtered_query.limit(display_limit).all()
         else:
             examples = query.limit(display_limit).all()
             filtered_count = example_count

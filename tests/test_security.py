@@ -53,6 +53,15 @@ class TestAuth:
             os.environ.pop('DASHBOARD_PASSWORD', None)
             assert _get_password() == ""
 
+    def test_production_blocks_without_password(self):
+        """Production must fail closed when DASHBOARD_PASSWORD is missing."""
+        from dashboard.auth import check_auth
+        with patch.dict(os.environ, {'ENVIRONMENT': 'production'}, clear=True):
+            with patch('dashboard.auth.st') as mock_st:
+                mock_st.session_state = SessionStateDict({})
+                assert check_auth() is False
+                assert mock_st.error.called
+
     def test_brute_force_lockout_constants(self):
         """Verify brute force protection constants are set."""
         from dashboard.auth import MAX_ATTEMPTS, LOCKOUT_WINDOW
@@ -192,6 +201,12 @@ class TestURLValidation:
         valid, err = validate_x_url("ftp://x.com/user/status/123")
         assert valid is False
 
+    def test_reject_plain_http_for_x(self):
+        from dashboard.validators import validate_x_url
+        valid, err = validate_x_url("http://x.com/user/status/123")
+        assert valid is False
+        assert "HTTPS" in err
+
     def test_media_domain_allowed(self):
         from dashboard.validators import validate_media_domain
         valid, err = validate_media_domain("https://pbs.twimg.com/media/test.jpg")
@@ -207,6 +222,12 @@ class TestURLValidation:
         valid, err = validate_media_domain("https://evil.com/malware.exe")
         assert valid is False
         assert "not allowed" in err
+
+    def test_safe_url_rejects_http(self):
+        from dashboard.validators import validate_safe_url
+        valid, err = validate_safe_url("http://example.com/article")
+        assert valid is False
+        assert "HTTPS" in err
 
 
 # ==================== Rate Limiter Tests ====================
@@ -391,6 +412,15 @@ class TestAPISecurity:
             os.environ.pop('API_SECRET_KEY', None)
             # Should not raise
             require_api_key(x_api_key=None)
+
+    def test_api_key_missing_secret_blocks_in_production(self):
+        """In production, missing API_SECRET_KEY must fail closed."""
+        from api.dependencies import require_api_key
+        from fastapi import HTTPException
+        with patch.dict(os.environ, {'ENVIRONMENT': 'production'}, clear=True):
+            with pytest.raises(HTTPException) as exc_info:
+                require_api_key(x_api_key=None)
+            assert exc_info.value.status_code == 503
 
     def test_production_docs_disabled(self):
         """Docs should be disabled in production."""

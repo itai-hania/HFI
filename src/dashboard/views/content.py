@@ -9,7 +9,7 @@ from common.models import Tweet, Trend, Thread, TrendSource, TweetStatus, StyleE
 from dashboard.db_helpers import get_stats, get_tweets, update_tweet, delete_tweet
 from dashboard.helpers import get_source_badge_class, parse_media_info, format_status_str
 from dashboard.lazy_loaders import get_style_manager, get_summary_generator, get_auto_pipeline
-from dashboard.validators import validate_x_url
+from dashboard.validators import validate_x_url, validate_safe_url
 
 # Cooldown constants (seconds)
 _SCRAPE_COOLDOWN = 30
@@ -307,6 +307,7 @@ def _render_acquire_section(db):
             safe_source = html.escape(cand.get('source', ''))
             cat_emoji = "💰" if cand.get('category') == 'Finance' else "💻"
             url = cand.get('url', '')
+            url_valid = bool(url) and validate_safe_url(url)[0]
 
             with st.container():
                 sel_col, info_col = st.columns([0.3, 5])
@@ -314,7 +315,10 @@ def _render_acquire_section(db):
                     checked = st.checkbox("", value=True, key=f"pipe_sel_{idx}", label_visibility="collapsed")
                     selections[idx] = checked
                 with info_col:
-                    title_html = f'<a href="{html.escape(url)}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-weight: 500;">{safe_title}</a>' if url else f'<span style="font-weight: 500;">{safe_title}</span>'
+                    title_html = (
+                        f'<a href="{html.escape(url)}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-weight: 500;">{safe_title}</a>'
+                        if url_valid else f'<span style="font-weight: 500;">{safe_title}</span>'
+                    )
                     st.markdown(f"""
                         <div style="padding: 0.5rem 0;">
                             <div style="display: flex; align-items: center; gap: 0.5rem;">
@@ -552,14 +556,19 @@ def _render_acquire_section(db):
         _trend_by_title = {t.title: t for t in db.query(Trend).filter(Trend.title.in_(_ranked_titles)).all()} if _ranked_titles else {}
 
         for idx, art in enumerate(ranked, 1):
-            art_url = html.escape(art.get('url', '') or '')
+            raw_art_url = art.get('url', '') or ''
+            art_url = html.escape(raw_art_url)
             art_title = html.escape(art.get('title', '') or '')
             art_desc = html.escape((art.get('description', '') or '')[:120])
             art_source = html.escape(art.get('source', '') or '')
             art_category = art.get('category', 'Unknown')
             badge_cls = get_source_badge_class(art.get('source', ''))
             category_emoji = "💰" if art_category == "Finance" else "💻"
-            title_html = f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>' if art.get('url') else f'<span style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">{art_title}</span>'
+            title_html = (
+                f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>'
+                if raw_art_url and validate_safe_url(raw_art_url)[0]
+                else f'<span style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">{art_title}</span>'
+            )
 
             # Check if this trend has a summary in DB (pre-fetched)
             db_trend = _trend_by_title.get(art.get('title', ''))
@@ -590,7 +599,12 @@ def _render_acquire_section(db):
                 badge_cls = get_source_badge_class(source_val)
                 # HTML-escape user content
                 safe_title = html.escape(trend.title or '')
-                link_html = f'<a href="{html.escape(trend.article_url or "")}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">{safe_title}</a>' if trend.article_url else f'<span style="color: var(--text-primary);">{safe_title}</span>'
+                raw_trend_url = trend.article_url or ""
+                link_html = (
+                    f'<a href="{html.escape(raw_trend_url)}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">{safe_title}</a>'
+                    if raw_trend_url and validate_safe_url(raw_trend_url)[0]
+                    else f'<span style="color: var(--text-primary);">{safe_title}</span>'
+                )
 
                 # Show AI summary if available (escaped)
                 if trend.summary:
@@ -1324,8 +1338,8 @@ def render_editor(db, tweet_id):
         """, unsafe_allow_html=True)
 
     with col3:
-        if tweet.source_url and tweet.source_url.startswith('http'):
-            st.markdown(f"[View on X]({tweet.source_url})")
+        if tweet.source_url and validate_safe_url(tweet.source_url)[0]:
+            st.markdown(f"[View on X]({html.escape(tweet.source_url)})")
 
     st.markdown("---")
 
@@ -1475,7 +1489,7 @@ def render_editor(db, tweet_id):
 
     # Error display
     if tweet.status == TweetStatus.FAILED and tweet.error_message:
-        st.error(f"Error: {tweet.error_message}")
+        st.error("Processing failed for this item. Check server logs for details.")
 
 
 _MAX_BATCH_SIZE = 20

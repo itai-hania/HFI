@@ -95,8 +95,18 @@ def render_home(db):
     trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(15).all()
     trends_count = len(trends)
 
-    # Pre-fetch queued titles to avoid N+1 queries in the loop
-    queued_titles = {row[0] for row in db.query(Tweet.trend_topic).filter(Tweet.trend_topic.isnot(None)).all()}
+    # Pre-fetch queued titles only for trends currently displayed.
+    trend_titles = [t.title for t in trends if t.title]
+    if trend_titles:
+        queued_titles = {
+            row[0]
+            for row in db.query(Tweet.trend_topic).filter(
+                Tweet.trend_topic.isnot(None),
+                Tweet.trend_topic.in_(trend_titles),
+            ).all()
+        }
+    else:
+        queued_titles = set()
 
     # Collapsible section using checkbox styled as header
     trends_expanded = st.checkbox(
@@ -273,8 +283,8 @@ def render_home(db):
                         # Action buttons
                         btn1, btn2, btn3, btn4 = st.columns(4)
                         with btn1:
-                            if tweet.source_url and tweet.source_url.startswith('http'):
-                                st.markdown(f'[🔗 View Source]({tweet.source_url})')
+                            if tweet.source_url and validate_safe_url(tweet.source_url)[0]:
+                                st.markdown(f'[🔗 View Source]({html.escape(tweet.source_url)})')
                         with btn2:
                             if st.button("✏️ Edit", key=f"home_edit_{tweet.id}"):
                                 st.session_state.selected_item = tweet.id

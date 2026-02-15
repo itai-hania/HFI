@@ -67,11 +67,20 @@ def health_check():
     from common.models import health_check as db_health_check
 
     db_health = db_health_check()
+    db_status = db_health.get('status', 'unhealthy')
 
-    return {
-        "status": "healthy" if db_health['status'] == 'healthy' else "unhealthy",
-        "database": db_health,
+    response = {
+        "status": "healthy" if db_status == 'healthy' else "unhealthy",
+        "database": {"status": db_status},
     }
+
+    if db_status == 'healthy':
+        response["database"].update({
+            "tweet_count": db_health.get("tweet_count", 0),
+            "trend_count": db_health.get("trend_count", 0),
+        })
+
+    return response
 
 
 if __name__ == "__main__":

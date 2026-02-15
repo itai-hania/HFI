@@ -14,6 +14,11 @@ LOCKOUT_WINDOW = 120
 SESSION_EXPIRY = 4 * 60 * 60
 
 
+def _is_production() -> bool:
+    """Check if app is running in production mode."""
+    return os.getenv('ENVIRONMENT', '').strip().lower() in {'production', 'prod'}
+
+
 def _get_password() -> str:
     """Get dashboard password from environment. Required for security."""
     password = os.getenv('DASHBOARD_PASSWORD')
@@ -68,8 +73,14 @@ def check_auth() -> bool:
     """
     password = _get_password()
     if not password:
-        # No password set — allow access but warn
-        logger.warning("DASHBOARD_PASSWORD not set — auth disabled. Set it before deploying.")
+        if _is_production():
+            # Fail closed in production: never run public dashboard without auth.
+            logger.error("DASHBOARD_PASSWORD missing in production; refusing dashboard access")
+            st.error("Dashboard authentication is not configured. Set DASHBOARD_PASSWORD.")
+            return False
+
+        # Dev-mode fallback only.
+        logger.warning("DASHBOARD_PASSWORD not set — auth disabled in non-production mode.")
         return True
 
     if 'authenticated' not in st.session_state:

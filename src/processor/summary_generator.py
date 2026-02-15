@@ -15,14 +15,17 @@ Last Updated: 2026-02-01
 
 import os
 import re
+import json
 import logging
 import sys
+from datetime import timedelta
 from typing import Optional, List, Dict, Set
 
 from openai import OpenAI
 from sqlalchemy.orm import Session
 from common.models import Trend, get_db
 from common.openai_client import get_openai_client
+from processor.prompt_builder import get_completion_params, call_with_retry
 
 # Configure logging
 logging.basicConfig(
@@ -99,17 +102,15 @@ Be concise and informative."""
 
             logger.info(f"Generating summary for: {title[:60]}...")
 
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a FinTech industry analyst who writes concise, informative summaries."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=100,
-                temperature=0.7
+            params = get_completion_params(
+                self.model,
+                "You are a FinTech industry analyst who writes concise, informative summaries.",
+                prompt,
+                temperature=0.7,
             )
+            params["max_tokens"] = 100
 
-            summary = response.choices[0].message.content.strip()
+            summary = call_with_retry(self.client, params, max_retries=1)
             logger.info(f"Generated summary: {summary[:60]}...")
 
             return summary
@@ -154,7 +155,43 @@ Be concise and informative."""
         logger.debug(f"Extracted keywords from '{title}': {unique_keywords}")
         return unique_keywords
 
-    def calculate_source_count(self, db: Session, trend: Trend) -> int:
+    @staticmethod
+    def _keywords_set(raw_keywords) -> Set[str]:
+        """Normalize keyword payload from DB into a lowercase set."""
+        if not raw_keywords:
+            return set()
+
+        keywords = raw_keywords
+        if isinstance(raw_keywords, str):
+            try:
+                parsed = json.loads(raw_keywords)
+                keywords = parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, ValueError):
+                keywords = []
+
+        if not isinstance(keywords, list):
+            return set()
+
+        return {str(k).strip().lower() for k in keywords if str(k).strip()}
+
+    def _get_candidate_rows(self, db: Session, trend: Trend):
+        """Fetch candidate trends in a bounded window for overlap checks."""
+        query = db.query(Trend.id, Trend.source, Trend.keywords).filter(
+            Trend.id != trend.id,
+            Trend.keywords.isnot(None),
+        )
+
+        if trend.discovered_at:
+            window_start = trend.discovered_at - timedelta(days=7)
+            window_end = trend.discovered_at + timedelta(days=7)
+            query = query.filter(
+                Trend.discovered_at >= window_start,
+                Trend.discovered_at <= window_end,
+            )
+
+        return query.all()
+
+    def calculate_source_count(self, db: Session, trend: Trend, candidate_rows=None) -> int:
         """
         Calculate how many different sources mention similar trends.
 
@@ -167,29 +204,29 @@ Be concise and informative."""
         Returns:
             Number of unique sources mentioning this trend
         """
-        if not trend.keywords:
+        trend_keywords = self._keywords_set(trend.keywords)
+        if not trend_keywords:
             return 1
 
-        # Find trends with overlapping keywords
-        all_trends = db.query(Trend).all()
-        related_sources = {trend.source.value}
+        rows = candidate_rows if candidate_rows is not None else self._get_candidate_rows(db, trend)
+        source_name = trend.source.value if hasattr(trend.source, 'value') else str(trend.source)
+        related_sources = {source_name}
 
-        for other in all_trends:
-            if other.id == trend.id or not other.keywords:
+        for other_id, other_source, other_keywords in rows:
+            if other_id == trend.id:
                 continue
 
             # Calculate keyword overlap
-            trend_keywords = set(trend.keywords)
-            other_keywords = set(other.keywords)
+            other_keywords = self._keywords_set(other_keywords)
             overlap = trend_keywords & other_keywords
 
             # If 2+ keywords match, consider it the same story
             if len(overlap) >= 2:
-                related_sources.add(other.source.value)
+                related_sources.add(other_source.value if hasattr(other_source, 'value') else str(other_source))
 
         return len(related_sources)
 
-    def find_related_trends(self, db: Session, trend: Trend, min_overlap: int = 2) -> List[int]:
+    def find_related_trends(self, db: Session, trend: Trend, min_overlap: int = 2, candidate_rows=None) -> List[int]:
         """
         Find related trends by keyword overlap.
 
@@ -201,28 +238,19 @@ Be concise and informative."""
         Returns:
             List of related trend IDs
         """
-        if not trend.keywords:
+        trend_keywords = self._keywords_set(trend.keywords)
+        if not trend_keywords:
             return []
 
         related_ids = []
-        trend_keywords = set(trend.keywords)
 
-        # Query trends from similar time period (within 7 days)
-        all_trends = db.query(Trend).filter(
-            Trend.id != trend.id,
-            Trend.discovered_at >= trend.discovered_at - __import__('datetime').timedelta(days=7),
-            Trend.discovered_at <= trend.discovered_at + __import__('datetime').timedelta(days=7)
-        ).all()
-
-        for other in all_trends:
-            if not other.keywords:
-                continue
-
-            other_keywords = set(other.keywords)
+        rows = candidate_rows if candidate_rows is not None else self._get_candidate_rows(db, trend)
+        for other_id, _, other_keywords_raw in rows:
+            other_keywords = self._keywords_set(other_keywords_raw)
             overlap = trend_keywords & other_keywords
 
             if len(overlap) >= min_overlap:
-                related_ids.append(other.id)
+                related_ids.append(other_id)
 
         logger.debug(f"Found {len(related_ids)} related trends for trend {trend.id}")
         return related_ids
@@ -255,11 +283,12 @@ Be concise and informative."""
             if not trend.keywords:
                 trend.keywords = self.extract_keywords(trend.title)
 
-            # Calculate source count
-            trend.source_count = self.calculate_source_count(db, trend)
-
-            # Find related trends
-            trend.related_trend_ids = self.find_related_trends(db, trend)
+            # Reuse a single candidate query for both computations.
+            candidate_rows = self._get_candidate_rows(db, trend)
+            trend.source_count = self.calculate_source_count(db, trend, candidate_rows=candidate_rows)
+            trend.related_trend_ids = self.find_related_trends(
+                db, trend, candidate_rows=candidate_rows
+            )
 
             db.commit()
             logger.info(f"✓ Processed trend {trend_id} successfully")
@@ -283,21 +312,34 @@ Be concise and informative."""
         """
         stats = {'success': 0, 'failed': 0, 'skipped': 0}
 
-        # Find trends without summaries
-        query = db.query(Trend).filter(Trend.summary == None)
+        remaining = limit if limit and limit > 0 else None
+        processed_ids: set[int] = set()
+        batch_size = 50
 
-        if limit:
-            query = query.limit(limit)
+        while True:
+            batch_limit = batch_size if remaining is None else min(batch_size, remaining)
+            query = db.query(Trend.id).filter(Trend.summary == None).order_by(Trend.id.asc())
+            if processed_ids:
+                query = query.filter(~Trend.id.in_(processed_ids))
 
-        trends = query.all()
+            trend_ids = [row[0] for row in query.limit(batch_limit).all()]
 
-        logger.info(f"Backfilling summaries for {len(trends)} trends")
+            if not trend_ids:
+                break
 
-        for trend in trends:
-            if self.process_trend(db, trend.id):
-                stats['success'] += 1
-            else:
-                stats['failed'] += 1
+            logger.info(f"Backfill batch: processing {len(trend_ids)} trends")
+
+            for trend_id in trend_ids:
+                processed_ids.add(trend_id)
+                if self.process_trend(db, trend_id):
+                    stats['success'] += 1
+                else:
+                    stats['failed'] += 1
+
+            if remaining is not None:
+                remaining -= len(trend_ids)
+                if remaining <= 0:
+                    break
 
         logger.info(f"Backfill complete: {stats}")
         return stats

@@ -30,7 +30,7 @@ def validate_x_url(url: str) -> tuple[bool, str]:
     except Exception:
         return False, "Invalid URL format"
 
-    if parsed.scheme not in ('https', 'http'):
+    if parsed.scheme.lower() != 'https':
         return False, "URL must use HTTPS"
 
     if not parsed.hostname:
@@ -38,6 +38,10 @@ def validate_x_url(url: str) -> tuple[bool, str]:
 
     if parsed.hostname.lower() not in _X_DOMAINS:
         return False, f"URL must be from x.com or twitter.com (got {parsed.hostname})"
+
+    path = (parsed.path or "").lower()
+    if "/status/" not in path:
+        return False, "URL must point to a tweet/thread status URL"
 
     return True, ""
 
@@ -61,8 +65,11 @@ def validate_safe_url(url: str) -> tuple[bool, str]:
     if parsed.scheme.lower() in _DANGEROUS_SCHEMES:
         return False, f"Dangerous URL scheme: {parsed.scheme}"
 
-    if not parsed.scheme or parsed.scheme.lower() not in ('https', 'http'):
-        return False, "URL must use HTTPS or HTTP"
+    if parsed.scheme.lower() != 'https':
+        return False, "URL must use HTTPS"
+
+    if not parsed.hostname:
+        return False, "Invalid URL: no hostname"
 
     return True, ""
 
@@ -79,6 +86,9 @@ def validate_media_domain(url: str) -> tuple[bool, str]:
         parsed = urlparse(url)
     except Exception:
         return False, "Invalid URL format"
+
+    if parsed.scheme.lower() != 'https':
+        return False, "Media URL must use HTTPS"
 
     if not parsed.hostname:
         return False, "Invalid URL: no hostname"

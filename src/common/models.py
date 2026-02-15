@@ -66,22 +66,42 @@ logger.info(f"Database configured: {DATABASE_URL.split('://')[0]}://***")
 
 Base = declarative_base()
 
-# Engine configuration optimized for SQLite
-# - check_same_thread: False allows multiple threads (safe with proper session management)
-# - connect_args: SQLite-specific optimizations
-# - pool_pre_ping: Verify connections before using them
-# - echo: Set to True for SQL debugging (disabled in production)
-engine = create_engine(
-    DATABASE_URL,
-    echo=False,  # Set to True for SQL query debugging
-    connect_args={
-        "check_same_thread": False,  # Allow multi-threaded access
-        "timeout": 30,  # 30 second timeout for locks
-    },
-    pool_pre_ping=True,  # Verify connection health
-    # For SQLite, use StaticPool to maintain single connection in memory databases
-    poolclass=StaticPool if DATABASE_URL == 'sqlite:///:memory:' else None,
-)
+IS_SQLITE = DATABASE_URL.startswith("sqlite:")
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read integer env var safely with fallback."""
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(f"Invalid integer for {name}={raw!r}, using default {default}")
+        return default
+
+
+# Engine configuration:
+# - SQLite: keep thread/timeout tuning and in-memory StaticPool support.
+# - Non-SQLite (cloud DBs): avoid SQLite-only args and use pooled connections.
+engine_kwargs = {
+    "echo": False,
+    "pool_pre_ping": True,
+}
+
+if IS_SQLITE:
+    engine_kwargs["connect_args"] = {
+        "check_same_thread": False,
+        "timeout": 30,
+    }
+    if DATABASE_URL == "sqlite:///:memory:":
+        engine_kwargs["poolclass"] = StaticPool
+else:
+    engine_kwargs["pool_size"] = _env_int("DB_POOL_SIZE", 5)
+    engine_kwargs["max_overflow"] = _env_int("DB_MAX_OVERFLOW", 10)
+    engine_kwargs["pool_recycle"] = _env_int("DB_POOL_RECYCLE", 1800)
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 
 # Enable SQLite WAL mode for better concurrent access
 @event.listens_for(Engine, "connect")
@@ -94,6 +114,10 @@ def set_sqlite_pragma(dbapi_conn, connection_record):
     - Synchronous: NORMAL is safe for most cases (faster than FULL)
     - Cache size: 10MB cache for better performance
     """
+    # Apply SQLite-only PRAGMAs only when using sqlite connections.
+    if dbapi_conn.__class__.__module__.split(".", 1)[0] != "sqlite3":
+        return
+
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")  # Better concurrency
     cursor.execute("PRAGMA foreign_keys=ON")  # Enable foreign keys
