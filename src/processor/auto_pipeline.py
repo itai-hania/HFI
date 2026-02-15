@@ -126,11 +126,13 @@ class AutoPipeline:
             finance_weight=finance_weight,
         )
 
-        # 2. Save new trends to DB
+        # 2. Save new trends to DB (batch-fetch existing titles first)
+        _article_titles = [a['title'] for a in ranked_news]
+        _existing_titles = {t.title for t in db.query(Trend.title).filter(Trend.title.in_(_article_titles)).all()}
+
         new_trend_ids = []
         for article in ranked_news:
-            existing = db.query(Trend).filter_by(title=article['title']).first()
-            if existing:
+            if article['title'] in _existing_titles:
                 continue
             trend = Trend(
                 title=article['title'],
@@ -141,6 +143,7 @@ class AutoPipeline:
             db.add(trend)
             db.flush()
             new_trend_ids.append(trend.id)
+            _existing_titles.add(article['title'])
         db.commit()
 
         logger.info(f"AutoPipeline Phase A: fetched {len(ranked_news)} articles, saved {len(new_trend_ids)} new trends")
@@ -152,11 +155,14 @@ class AutoPipeline:
             ).all()
         }
 
+        # Batch-fetch all trends by title in one query
+        _trend_by_title = {t.title: t for t in db.query(Trend).filter(Trend.title.in_(_article_titles)).all()}
+
         all_candidates = []
         for article in ranked_news:
             if article['title'] in queued_titles:
                 continue
-            trend_row = db.query(Trend).filter_by(title=article['title']).first()
+            trend_row = _trend_by_title.get(article['title'])
             if not trend_row:
                 continue
             all_candidates.append({
@@ -174,10 +180,10 @@ class AutoPipeline:
         # Enforce topic diversity before cutting to top_n
         candidates = self._diversify_candidates(all_candidates, top_n)
 
-        # 4. Optionally summarize
+        # 4. Optionally summarize (reuse already-fetched trend objects)
         if auto_summarize:
             for cand in candidates:
-                trend_row = db.query(Trend).filter_by(id=cand['trend_id']).first()
+                trend_row = _trend_by_title.get(cand['title'])
                 if trend_row and not trend_row.summary:
                     try:
                         self.summary_generator.process_trend(db, trend_row.id)

@@ -13,20 +13,22 @@
 
 ---
 
-## Current Status (as of 2026-02-09)
+## Current Status (as of 2026-02-15)
 
 ### Completion: ~95% (Beta Phase)
 
 **Working Components:**
 - ✅ X Scraper service (Playwright-based X scraper with thread support)
-- ✅ News Scraper service (Multi-source RSS feeds with smart ranking)
+- ✅ News Scraper service (Multi-source RSS feeds with parallel fetching + smart ranking)
 - ✅ Processor service (GPT-4o translation + media downloads + content generation)
 - ✅ Dashboard (Streamlit modular UI with trend discovery, content generation, style learning)
 - ✅ Database models (SQLAlchemy + SQLite)
 - ✅ Docker containers + Compose file
 - ✅ Kubernetes manifests (ready for deployment)
-- ✅ Comprehensive testing (100% pass rate - 338/338 tests)
+- ✅ Comprehensive testing (100% pass rate - 468/468 tests)
 - ✅ Code quality refactor (7 phases — prompt extraction, perf, security, packaging, dashboard split, tests)
+- ✅ Security hardening (auth, rate limiting, input validation, XSS, CORS)
+- ✅ Performance optimization (query consolidation, parallel feeds, caching, N+1 fixes)
 
 **Pending:**
 - ⏳ Publisher service (auto-posting to X)
@@ -340,7 +342,7 @@ pytest tests/test_dashboard.py -v
 pytest --cov=src tests/
 ```
 
-**Current Status:** 338/338 tests passing (100%)
+**Current Status:** 468/468 tests passing (100%)
 
 **Test Files:**
 - `tests/test_models.py` - Database models
@@ -473,7 +475,27 @@ Before declaring a dashboard feature complete:
 
 ## Recent Updates & Changes
 
-### 2026-02-09 (Latest)
+### 2026-02-15 (Latest)
+- ✅ **Performance optimization for public deployment** (468/468 tests)
+  - Database: Collapsed `get_stats()` from 6 queries to 1 (GROUP BY + conditional aggregation) with 5s TTL cache
+  - Database: Gated `create_tables()` behind session flag (was running 12 ALTER TABLE attempts per rerun)
+  - Database: Fixed N+1 queries in home page trends loop, ranked articles, auto_pipeline (pre-fetch into sets/dicts)
+  - Database: `health_check()` consolidated from 7 queries to 2
+  - Database: API trends stats replaced per-source loop with single GROUP BY
+  - Network: RSS feeds fetched in parallel via ThreadPoolExecutor with 10s timeout
+  - Network: Deduplication pre-computes keyword sets (was O(n^2) re-extraction)
+  - Network: HTML regex compiled once as class attribute
+  - Dashboard: Removed 20+ unnecessary `time.sleep()` calls before `st.rerun()`
+  - Dashboard: Lazy loaders now cache singleton instances
+  - Dashboard: Batch translate commits every 5 tweets instead of every 1
+  - Dashboard: X threads filtered in SQL (LIKE) instead of loading 50 + Python filter
+  - Dashboard: Settings duplicate count queries eliminated
+  - API: SummaryGenerator cached as singleton
+
+### 2026-02-14
+- ✅ **Security hardening** (48 new tests in test_security.py)
+
+### 2026-02-09
 - ✅ **Code quality refactor — all 7 phases complete** (338/338 tests)
   - Phase 1: Quick fixes (log paths, float index, subprocess, 22 exception handlers)
   - Phase 2: Performance (shared OpenAI client, TTL cache, yield_per pagination)
@@ -717,6 +739,6 @@ When helping:
 
 ---
 
-**Last Updated:** 2026-02-09
-**Version:** 1.4
+**Last Updated:** 2026-02-15
+**Version:** 1.5
 **Maintained by:** HFI Project Team

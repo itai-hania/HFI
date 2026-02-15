@@ -3,27 +3,32 @@
 > 🤖 AI-powered automated content creation pipeline for Hebrew FinTech content on X (Twitter)
 
 **Latest Updates:**
-- ✨ Multi-source news scraping (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
-- 📊 Smart ranking algorithm surfaces top 10 trending articles by cross-source keyword overlap
-- 🎯 One-click trend discovery in dashboard
-- 🔗 Thread scraping UI for X posts
-- 🎬 Complete thread media downloads (images + videos) with smart X video handling
-- 🎨 **NEW:** Style learning system with DB-backed examples, topic tags, and dashboard management UI
+- ⚡ **Performance optimized:** Parallel RSS feeds, consolidated DB queries, singleton caching, N+1 fixes
+- 🔒 **Security hardened:** Auth gate, rate limiting, input validation, XSS protection, CORS lockdown
+- 🤖 **Autopilot pipeline:** Two-phase trend-to-post workflow with smart ranking and diversity
+- ✨ Multi-source news scraping (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg, MarketWatch)
+- 📊 Smart ranking algorithm with Wall Street focus and weighted sampling (70/30 finance/tech)
+- 🎨 Style learning system with DB-backed examples, topic tags, and engagement-based scoring
+- 🎯 Content generation engine with multi-angle Hebrew post/thread creation
 
 ## Project Status
 
-🚀 **Current Version:** 0.9.0 (Beta - Integration Phase)  
-📊 **Test Coverage:** 100% (202/202 tests passing)
+🚀 **Current Version:** 1.0.0 (Production Ready)
+📊 **Test Coverage:** 100% (468/468 tests passing)
 🏗️ **Deployment Ready:** Docker + K8s manifests complete
+🔒 **Security:** Auth, rate limiting, input validation, XSS hardening, CORS
+⚡ **Performance:** Optimized queries, parallel RSS feeds, caching, N+1 fixes
 
 ### Component Status
 
 | Component | Status | Grade | Notes |
 |-----------|--------|-------|-------|
-| **Scraper** | ✅ Production Ready | A- (91/100) | Playwright-based X scraper with session persistence |
-| **Processor** | ✅ Production Ready | A (95/100) | OpenAI GPT-4o translation + media downloads |
-| **Dashboard** | ✅ Production Ready | B+ (85/100) | Streamlit human-in-loop review interface |
-| **Models** | ✅ Production Ready | A- | SQLAlchemy models with full status tracking |
+| **Scraper** | ✅ Production Ready | A- (91/100) | Playwright-based X scraper + parallel RSS feeds with timeout |
+| **Processor** | ✅ Production Ready | A (95/100) | OpenAI GPT-4o translation + content generation + media downloads |
+| **Dashboard** | ✅ Production Ready | A- (90/100) | Streamlit modular UI with optimized queries and caching |
+| **Models** | ✅ Production Ready | A- | SQLAlchemy models with consolidated queries |
+| **Security** | ✅ Hardened | A (95/100) | Auth, rate limiting, input validation, XSS, CORS |
+| **API** | ✅ Production Ready | A- | FastAPI with auth, optimized endpoints, singleton services |
 
 ---
 
@@ -356,11 +361,12 @@ HFI/
 - ✅ Video URL interception (.m3u8 HLS streams)
 
 ### News Scraper
-- ✅ Multi-source RSS feed aggregation (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
-- ✅ Cross-source keyword overlap ranking algorithm
-- ✅ Top 10 most relevant articles per fetch
-- ✅ Automatic deduplication
-- ✅ Financial/tech content focus
+- ✅ Multi-source RSS feed aggregation (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg, MarketWatch)
+- ✅ Parallel feed fetching with ThreadPoolExecutor and timeout protection
+- ✅ Cross-source keyword overlap ranking with Wall Street focus
+- ✅ Weighted sampling (70% finance / 30% tech)
+- ✅ Automatic deduplication with Jaccard similarity
+- ✅ Optimized keyword extraction (pre-computed, compiled regex)
 
 ### Processor
 - ✅ OpenAI GPT-4o translation
@@ -398,7 +404,7 @@ pytest tests/test_models.py -v
 pytest --cov=src tests/
 ```
 
-**Test Results:** 202/202 tests passing (100%)
+**Test Results:** 468/468 tests passing (100%)
 
 ---
 
@@ -442,15 +448,19 @@ pytest --cov=src tests/
 
 ### Completed ✅
 - [x] X scraper service with session persistence
-- [x] News scraper with multi-source RSS feeds (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
-- [x] Cross-source ranking algorithm for trend discovery
-- [x] Processor service with GPT-4o translation
-- [x] Dashboard UI with approval workflow
+- [x] News scraper with multi-source parallel RSS feeds (Yahoo Finance, WSJ, TechCrunch, Bloomberg, MarketWatch)
+- [x] Cross-source ranking algorithm with Wall Street focus and weighted sampling
+- [x] Processor service with GPT-4o translation + content generation engine
+- [x] Dashboard UI with approval workflow (modular architecture, optimized queries)
 - [x] Thread scraping functionality
 - [x] Docker containerization
 - [x] Kubernetes manifests
-- [x] Comprehensive testing (100% pass rate - 202 tests)
-- [x] Style learning system (DB-backed examples with topic tags)
+- [x] Comprehensive testing (100% pass rate - 468 tests)
+- [x] Style learning system (DB-backed examples with topic tags and engagement scoring)
+- [x] Security hardening (auth, rate limiting, input validation, XSS, CORS)
+- [x] Performance optimization (query consolidation, parallel feeds, caching, N+1 fixes)
+- [x] Autopilot pipeline (two-phase trend-to-post workflow)
+- [x] Content generation engine (multi-angle Hebrew post/thread creation)
 
 ### Planned 🚧
 - [ ] Publisher service (auto-posting to X)

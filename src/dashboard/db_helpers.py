@@ -1,7 +1,10 @@
+import time as _time
 import streamlit as st
 from datetime import datetime, timezone
-from sqlalchemy import func
+from sqlalchemy import func, case
 from common.models import get_db_session, Tweet, Trend, TweetStatus
+
+_STATS_TTL = 5  # seconds
 
 
 def get_db():
@@ -11,14 +14,30 @@ def get_db():
 
 
 def get_stats(db):
-    return {
-        'total': db.query(func.count(Tweet.id)).scalar() or 0,
-        'pending': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PENDING).scalar() or 0,
-        'processed': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PROCESSED).scalar() or 0,
-        'approved': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.APPROVED).scalar() or 0,
-        'published': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.PUBLISHED).scalar() or 0,
-        'failed': db.query(func.count(Tweet.id)).filter(Tweet.status == TweetStatus.FAILED).scalar() or 0,
+    cached = st.session_state.get('_stats_cache')
+    if cached and (_time.time() - cached['_ts']) < _STATS_TTL:
+        return cached
+
+    row = db.query(
+        func.count(Tweet.id),
+        func.sum(case((Tweet.status == TweetStatus.PENDING, 1), else_=0)),
+        func.sum(case((Tweet.status == TweetStatus.PROCESSED, 1), else_=0)),
+        func.sum(case((Tweet.status == TweetStatus.APPROVED, 1), else_=0)),
+        func.sum(case((Tweet.status == TweetStatus.PUBLISHED, 1), else_=0)),
+        func.sum(case((Tweet.status == TweetStatus.FAILED, 1), else_=0)),
+    ).one()
+
+    stats = {
+        'total': row[0] or 0,
+        'pending': int(row[1] or 0),
+        'processed': int(row[2] or 0),
+        'approved': int(row[3] or 0),
+        'published': int(row[4] or 0),
+        'failed': int(row[5] or 0),
+        '_ts': _time.time(),
     }
+    st.session_state['_stats_cache'] = stats
+    return stats
 
 
 def get_tweets(db, status_filter='all', limit=50):

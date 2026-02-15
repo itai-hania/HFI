@@ -120,20 +120,24 @@ def get_trends_stats(db: Session = Depends(get_db)):
         - without_summaries: Number of trends needing summaries
         - by_source: Breakdown by source platform
     """
-    total = db.query(Trend).count()
-    with_summaries = db.query(Trend).filter(Trend.summary != None).count()
-    without_summaries = total - with_summaries
+    from sqlalchemy import func, case
 
-    # Count by source
-    by_source = {}
-    for source in TrendSource:
-        count = db.query(Trend).filter(Trend.source == source).count()
-        if count > 0:
-            by_source[source.value] = count
+    # Single query for total, with_summaries, and per-source counts
+    row = db.query(
+        func.count(Trend.id),
+        func.sum(case((Trend.summary != None, 1), else_=0)),
+    ).one()
+
+    total = row[0] or 0
+    with_summaries = int(row[1] or 0)
+
+    # Count by source in a single GROUP BY query
+    source_rows = db.query(Trend.source, func.count(Trend.id)).group_by(Trend.source).all()
+    by_source = {src.value if hasattr(src, 'value') else str(src): cnt for src, cnt in source_rows if cnt > 0}
 
     return {
         "total": total,
         "with_summaries": with_summaries,
-        "without_summaries": without_summaries,
+        "without_summaries": total - with_summaries,
         "by_source": by_source
     }

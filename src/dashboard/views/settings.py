@@ -190,7 +190,6 @@ def render_settings(db):
                     st.session_state.pop('style_import_preview', None)
                     st.session_state.pop('style_import_tags', None)
                     st.session_state.pop('style_import_tweet_count', None)
-                    time.sleep(0.5)
                     st.rerun()
             with pcol2:
                 if st.button("Cancel", key="cancel_x_import", use_container_width=True):
@@ -224,7 +223,6 @@ def render_settings(db):
                     ) if sm else None
                     if example:
                         st.success(f"Added file as style example (tags: {', '.join(final_tags[:3])})")
-                        time.sleep(0.5)
                         st.rerun()
             else:
                 st.warning("File doesn't contain enough Hebrew content (need >50%)")
@@ -257,7 +255,6 @@ def render_settings(db):
                 )
                 if example:
                     st.success(f"Added manual example (tags: {', '.join(final_tags[:3])})")
-                    time.sleep(0.5)
                     st.rerun()
             else:
                 st.warning("Text doesn't contain enough Hebrew (need >50%)")
@@ -442,20 +439,18 @@ def render_settings(db):
 
         st.markdown("---")
 
-        # ---- Data Export ----
+        # ---- Data Export (reuse counts from top of render_settings) ----
         st.markdown("### Data Export")
-        tweet_count = db.query(Tweet).count()
-        tweets_data = []
-        for t in db.query(Tweet).yield_per(100):
-            tweets_data.append({"id": t.id, "text": t.original_text, "hebrew": t.hebrew_draft, "status": t.status.value})
-        tweets_export = json.dumps(tweets_data, indent=2, ensure_ascii=False)
+        tweets_export = json.dumps(
+            [{"id": t.id, "text": t.original_text, "hebrew": t.hebrew_draft, "status": t.status.value}
+             for t in db.query(Tweet).yield_per(100)],
+            indent=2, ensure_ascii=False)
         st.download_button(f"Export Tweets (JSON) ({tweet_count})", tweets_export, "tweets.json", mime="application/json", use_container_width=True)
 
-        trend_count = db.query(Trend).count()
-        trends_data = []
-        for t in db.query(Trend).yield_per(100):
-            trends_data.append({"title": t.title, "source": t.source.value, "description": t.description})
-        trends_export = json.dumps(trends_data, indent=2, ensure_ascii=False)
+        trends_export = json.dumps(
+            [{"title": t.title, "source": t.source.value, "description": t.description}
+             for t in db.query(Trend).yield_per(100)],
+            indent=2, ensure_ascii=False)
         st.download_button(f"Export Trends (JSON) ({trend_count})", trends_export, "trends.json", mime="application/json", use_container_width=True)
 
     st.markdown("---")
@@ -472,19 +467,16 @@ def render_settings(db):
                 db.query(Tweet).delete()
                 db.commit()
                 st.success("Deleted all tweets")
-                time.sleep(1)
                 st.rerun()
         with dcol2:
             if st.button("Delete All Threads", use_container_width=True, disabled=not confirm):
                 db.query(Thread).delete()
                 db.commit()
                 st.success("Deleted all threads")
-                time.sleep(1)
                 st.rerun()
         with dcol3:
             if st.button("Delete All Trends", use_container_width=True, disabled=not confirm):
                 db.query(Trend).delete()
                 db.commit()
                 st.success("Deleted all trends")
-                time.sleep(1)
                 st.rerun()

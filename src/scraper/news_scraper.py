@@ -15,6 +15,7 @@ import feedparser
 import logging
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -60,6 +61,9 @@ class NewsScraper:
 
     FINANCE_SOURCES = ["Yahoo Finance", "WSJ", "Bloomberg", "MarketWatch"]
     TECH_SOURCES = ["TechCrunch"]
+
+    _HTML_RE = re.compile('<.*?>')
+    _FEED_TIMEOUT = 10  # seconds per feed
 
     # Keywords that indicate Wall Street / stock market focus (boost these)
     WALL_STREET_KEYWORDS = {
@@ -133,59 +137,56 @@ class NewsScraper:
         logger.info(f"Final mix: {len(finance_final)} finance + {len(tech_final)} tech = {len(combined)} total")
         return combined[:total_limit]
 
+    def _fetch_single_feed(self, source_name: str, limit_per_source: int, category: str) -> List[Dict]:
+        """Fetch articles from a single RSS feed (called in parallel)."""
+        feed_url = self.FEEDS.get(source_name)
+        if not feed_url:
+            return []
+
+        try:
+            logger.info(f"Fetching {category} news from {source_name}...")
+            import requests
+            resp = requests.get(feed_url, timeout=self._FEED_TIMEOUT, headers={'User-Agent': 'HFI/1.0'})
+            feed = feedparser.parse(resp.content)
+
+            if feed.bozo:
+                logger.warning(f"Potential issue parsing {source_name}: {feed.bozo_exception}")
+
+            articles = []
+            for entry in feed.entries[:limit_per_source]:
+                articles.append({
+                    "title": entry.title,
+                    "description": self._clean_html(entry.get('summary', '') or entry.get('description', '')),
+                    "source": source_name,
+                    "url": entry.link,
+                    "discovered_at": datetime.utcnow(),
+                    "category": category
+                })
+
+            logger.info(f"Retrieved {len(articles)} {category} articles from {source_name}")
+            return articles
+
+        except Exception as e:
+            logger.error(f"Error fetching {source_name}: {str(e)}")
+            return []
+
     def _fetch_by_category(self, sources: List[str], limit_per_source: int, category: str) -> List[Dict]:
-        """
-        Fetch articles from sources in a specific category.
+        """Fetch articles from sources in parallel with timeout."""
+        valid_sources = [s for s in sources if s in self.FEEDS]
+        if not valid_sources:
+            return []
 
-        Args:
-            sources: List of source names to fetch from
-            limit_per_source: Max articles per source
-            category: Category label (Finance/Tech)
-
-        Returns:
-            List of article dicts with category label
-        """
         articles = []
-
-        for source_name in sources:
-            if source_name not in self.FEEDS:
-                logger.warning(f"Source {source_name} not found in FEEDS")
-                continue
-
-            feed_url = self.FEEDS[source_name]
-
-            try:
-                logger.info(f"Fetching {category} news from {source_name}...")
-                feed = feedparser.parse(feed_url)
-
-                if feed.bozo:
-                    logger.warning(f"Potential issue parsing {source_name}: {feed.bozo_exception}")
-
-                count = 0
-                for entry in feed.entries:
-                    if count >= limit_per_source:
-                        break
-
-                    published_at = datetime.utcnow()
-                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                        published_at = datetime.fromtimestamp(time.mktime(entry.published_parsed))
-
-                    article = {
-                        "title": entry.title,
-                        "description": self._clean_html(entry.get('summary', '') or entry.get('description', '')),
-                        "source": source_name,
-                        "url": entry.link,
-                        "discovered_at": datetime.utcnow(),
-                        "category": category
-                    }
-
-                    articles.append(article)
-                    count += 1
-
-                logger.info(f"Retrieved {count} {category} articles from {source_name}")
-
-            except Exception as e:
-                logger.error(f"Error fetching {source_name}: {str(e)}")
+        with ThreadPoolExecutor(max_workers=len(valid_sources)) as executor:
+            futures = {
+                executor.submit(self._fetch_single_feed, src, limit_per_source, category): src
+                for src in valid_sources
+            }
+            for future in as_completed(futures, timeout=self._FEED_TIMEOUT + 5):
+                try:
+                    articles.extend(future.result())
+                except Exception as e:
+                    logger.error(f"Feed fetch failed for {futures[future]}: {e}")
 
         return articles
 
@@ -259,36 +260,31 @@ class NewsScraper:
         """
         Remove duplicate articles based on title similarity.
 
-        If multiple articles have >60% keyword overlap, keep only the highest scored one.
-        This prevents the same story from multiple sources dominating the feed.
+        Pre-computes keywords once per article to avoid O(n^2) re-extraction.
         """
+        # Pre-compute keyword sets for all articles
+        article_keywords = [set(self._extract_keywords(a.get('title', ''))) for a in articles]
+
         unique_articles = []
-        seen_clusters = []
+        unique_kw_sets = []
 
-        for article in articles:
-            keywords = set(self._extract_keywords(article.get('title', '')))
+        for i, article in enumerate(articles):
+            keywords = article_keywords[i]
 
-            # Check if this article is similar to any we've already kept
             is_duplicate = False
-            for seen_article in unique_articles:
-                seen_keywords = set(self._extract_keywords(seen_article.get('title', '')))
-
-                # Calculate Jaccard similarity (intersection / union)
-                if len(keywords) == 0 or len(seen_keywords) == 0:
+            for seen_keywords in unique_kw_sets:
+                if not keywords or not seen_keywords:
                     continue
 
                 intersection = len(keywords & seen_keywords)
                 union = len(keywords | seen_keywords)
-                similarity = intersection / union if union > 0 else 0
-
-                # If >60% similar, it's a duplicate
-                if similarity > 0.6:
+                if union > 0 and intersection / union > 0.6:
                     is_duplicate = True
-                    logger.info(f"Duplicate detected: '{article['title'][:60]}...' (similar to existing)")
                     break
 
             if not is_duplicate:
                 unique_articles.append(article)
+                unique_kw_sets.append(keywords)
 
         logger.info(f"Deduplication: {len(articles)} → {len(unique_articles)} articles")
         return unique_articles
@@ -314,8 +310,7 @@ class NewsScraper:
 
     def _clean_html(self, text: str) -> str:
         """Remove basic HTML tags from descriptions."""
-        clean = re.compile('<.*?>')
-        return re.sub(clean, '', text).strip()
+        return self._HTML_RE.sub('', text).strip()
 
 
 if __name__ == "__main__":

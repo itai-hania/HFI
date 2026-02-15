@@ -902,14 +902,21 @@ def health_check() -> dict:
     """
     try:
         with get_db() as db:
-            tweet_count = db.query(Tweet).count()
-            trend_count = db.query(Trend).count()
+            from sqlalchemy import func, case
 
-            # Count tweets by status
-            status_counts = {}
-            for status in TweetStatus:
-                count = db.query(Tweet).filter(Tweet.status == status).count()
-                status_counts[status.value] = count
+            trend_count = db.query(func.count(Trend.id)).scalar() or 0
+
+            # Single query for all tweet counts using conditional aggregation
+            row = db.query(
+                func.count(Tweet.id),
+                *[func.sum(case((Tweet.status == status, 1), else_=0)) for status in TweetStatus]
+            ).one()
+
+            tweet_count = row[0] or 0
+            status_counts = {
+                status.value: int(row[i + 1] or 0)
+                for i, status in enumerate(TweetStatus)
+            }
 
             return {
                 'status': 'healthy',

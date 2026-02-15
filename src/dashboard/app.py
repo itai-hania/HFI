@@ -34,7 +34,9 @@ from dashboard.views.settings import render_settings
 
 
 def main():
-    create_tables()
+    if '_tables_created' not in st.session_state:
+        create_tables()
+        st.session_state._tables_created = True
 
     if not check_auth():
         return

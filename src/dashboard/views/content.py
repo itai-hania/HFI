@@ -83,10 +83,11 @@ def _render_acquire_section(db):
         download_media = st.checkbox("Download media", value=False, help="Download images and videos from thread")
     with col5:
         if st.button("Scrape Thread", type="primary", use_container_width=True):
+            _url_valid, _url_err = validate_x_url(url) if url else (False, "")
             if not url:
                 st.warning("Enter a URL first")
-            elif not validate_x_url(url)[0]:
-                st.error(validate_x_url(url)[1])
+            elif not _url_valid:
+                st.error(_url_err)
             elif time.time() - st.session_state.get('last_scrape_time', 0) < _SCRAPE_COOLDOWN:
                 remaining = int(_SCRAPE_COOLDOWN - (time.time() - st.session_state.get('last_scrape_time', 0)))
                 st.warning(f"Please wait {remaining}s before scraping again.")
@@ -245,7 +246,6 @@ def _render_acquire_section(db):
                             progress.progress(100, "Done!")
                             st.success(f"Saved thread with {len(tweets_data)} tweets")
 
-                        time.sleep(1)
                         st.rerun()
 
                     except Exception as e:
@@ -396,7 +396,6 @@ def _render_acquire_section(db):
                             if edited and len(edited.strip()) > 30:
                                 _auto_learn_style(db, edited.strip())
                             st.success(f"Approved: {safe_title}")
-                            time.sleep(0.5)
                             st.rerun()
             with btn_col2:
                 if st.button("Skip", key=f"pipe_skip_{idx}", use_container_width=True):
@@ -410,7 +409,6 @@ def _render_acquire_section(db):
                             db.delete(tweet)
                             db.commit()
                     st.info(f"Skipped: {safe_title}")
-                    time.sleep(0.3)
                     st.rerun()
 
             st.markdown("<hr style='margin: 0.5rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
@@ -434,7 +432,6 @@ def _render_acquire_section(db):
                 st.session_state.pipeline_phase = 'idle'
                 st.session_state.pipeline_candidates = []
                 st.session_state.pipeline_results = []
-                time.sleep(0.5)
                 st.rerun()
         with done_col2:
             if st.button("Back to Candidates", use_container_width=True, key="pipe_back"):
@@ -474,7 +471,6 @@ def _render_acquire_section(db):
                         with st.spinner(f"Generating summaries for {trends_without_summary} trends..."):
                             stats = generator.backfill_summaries(db, limit=20)
                             st.success(f"Generated {stats['success']} summaries ({stats['failed']} failed)")
-                            time.sleep(0.5)
                             st.rerun()
                     else:
                         st.error("Could not initialize summary generator. Check OPENAI_API_KEY.")
@@ -499,8 +495,9 @@ def _render_acquire_section(db):
                     }
                     saved = 0
                     new_trend_ids = []
+                    _existing_titles = {t.title for t in db.query(Trend.title).filter(Trend.title.in_([a['title'] for a in ranked_news])).all()}
                     for article in ranked_news:
-                        if not db.query(Trend).filter_by(title=article['title']).first():
+                        if article['title'] not in _existing_titles:
                             new_trend = Trend(
                                 title=article['title'],
                                 description=article.get('description', '')[:500],
@@ -528,7 +525,6 @@ def _render_acquire_section(db):
                                 st.success(f"Generated {success_count} AI summaries")
 
                     st.session_state.current_view = 'home'
-                    time.sleep(0.5)
                     st.rerun()
                 except Exception as e:
                     logger.error(f"Fetch trends failed: {e}")
@@ -551,6 +547,10 @@ def _render_acquire_section(db):
             </div>
         """, unsafe_allow_html=True)
 
+        # Pre-fetch all matching trends to avoid N+1 queries
+        _ranked_titles = [a.get('title', '') for a in ranked]
+        _trend_by_title = {t.title: t for t in db.query(Trend).filter(Trend.title.in_(_ranked_titles)).all()} if _ranked_titles else {}
+
         for idx, art in enumerate(ranked, 1):
             art_url = html.escape(art.get('url', '') or '')
             art_title = html.escape(art.get('title', '') or '')
@@ -561,8 +561,8 @@ def _render_acquire_section(db):
             category_emoji = "💰" if art_category == "Finance" else "💻"
             title_html = f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>' if art.get('url') else f'<span style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">{art_title}</span>'
 
-            # Check if this trend has a summary in DB
-            db_trend = db.query(Trend).filter_by(title=art.get('title', '')).first()
+            # Check if this trend has a summary in DB (pre-fetched)
+            db_trend = _trend_by_title.get(art.get('title', ''))
             if db_trend and db_trend.summary:
                 safe_summary = html.escape(db_trend.summary[:180])
                 summary_html = f'<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem; line-height: 1.4; background: rgba(25, 154, 245, 0.05); padding: 0.5rem; border-radius: 6px; border-left: 2px solid var(--accent-primary);">{safe_summary}{"..." if len(db_trend.summary) > 180 else ""}</div>'
@@ -628,7 +628,6 @@ def _render_acquire_section(db):
             db.add(Trend(title=manual, source=TrendSource.MANUAL))
             db.commit()
             st.success(f"Added: {manual}")
-            time.sleep(0.5)
             st.rerun()
 
 
@@ -649,7 +648,6 @@ def _render_queue_section(db):
             db.commit()
             if count > 0:
                 st.success(f"Approved {count}")
-                time.sleep(0.5)
                 st.rerun()
     with col3:
         status_filter = st.selectbox(
@@ -738,7 +736,6 @@ def _render_thread_translation(db):
                         st.session_state.thread_url = thread_url
                         st.session_state.thread_translations = None
                         st.success(f"Fetched {len(tweets_data)} tweets from thread")
-                        time.sleep(0.5)
                         st.rerun()
                     else:
                         st.warning("No tweets found in thread")
@@ -794,7 +791,6 @@ def _render_thread_translation(db):
                         }
 
                     st.success("Translation complete!")
-                    time.sleep(0.5)
                     st.rerun()
 
                 except Exception as e:
@@ -912,7 +908,6 @@ def _render_thread_translation(db):
                             db.commit()
                             st.success(f"Added {saved} tweets to queue!")
 
-                        time.sleep(0.5)
                         st.rerun()
 
                     except Exception as e:
@@ -1093,7 +1088,6 @@ def _render_generate_section(db):
                         if edited and len(edited.strip()) > 30:
                             _auto_learn_style(db, edited.strip())
                         st.success(f"Variant {i+1} approved and saved!")
-                        time.sleep(0.5)
                         st.rerun()
 
                 with col_save_draft:
@@ -1116,7 +1110,6 @@ def _render_generate_section(db):
                         db.add(new_tweet)
                         db.commit()
                         st.success(f"Variant {i+1} saved as draft!")
-                        time.sleep(0.5)
                         st.rerun()
 
                 st.divider()
@@ -1179,7 +1172,6 @@ def _render_generate_section(db):
                 if combined and len(combined.strip()) > 30:
                     _auto_learn_style(db, combined.strip())
                 st.success("Thread approved and saved!")
-                time.sleep(0.5)
                 st.rerun()
 
         with col_draft_thread:
@@ -1202,7 +1194,6 @@ def _render_generate_section(db):
                 db.add(new_tweet)
                 db.commit()
                 st.success("Thread saved as draft!")
-                time.sleep(0.5)
                 st.rerun()
 
         with col_clear_thread:
@@ -1440,7 +1431,6 @@ def render_editor(db, tweet_id):
         if st.button("Save", key="ed_save", use_container_width=True, type="primary"):
             update_tweet(db, tweet.id, hebrew_draft=hebrew)
             st.success("Saved!")
-            time.sleep(0.5)
             st.rerun()
 
     with col2:
@@ -1459,7 +1449,6 @@ def render_editor(db, tweet_id):
                 except Exception as e:
                     logger.error(f"Editor translation failed: {e}")
                     st.error("Translation failed. Check server logs.")
-            time.sleep(0.5)
             st.rerun()
 
     with col3:
@@ -1470,7 +1459,6 @@ def render_editor(db, tweet_id):
                 if hebrew and len(hebrew.strip()) > 30:
                     _auto_learn_style(db, hebrew.strip(), tweet.source_url)
                 st.success("Approved!")
-                time.sleep(0.5)
                 st.session_state.selected_item = None
                 st.rerun()
 
@@ -1514,6 +1502,7 @@ def run_batch_translate(db):
         translator = TranslationService(config)
 
         success = 0
+        _BATCH_COMMIT_SIZE = 5
         for idx, tweet in enumerate(pending):
             status_text.text(f"Translating {idx + 1}/{len(pending)}...")
             progress.progress((idx + 1) / len(pending))
@@ -1531,12 +1520,14 @@ def run_batch_translate(db):
                 tweet.status = TweetStatus.FAILED
                 tweet.error_message = str(e)[:500]
 
-            db.commit()
+            if (idx + 1) % _BATCH_COMMIT_SIZE == 0:
+                db.commit()
+
+        db.commit()  # final commit for remaining items
 
         progress.empty()
         status_text.empty()
         st.success(f"Translated {success}/{len(pending)} items")
-        time.sleep(1)
         st.rerun()
 
     except Exception as e:

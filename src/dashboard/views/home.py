@@ -95,6 +95,9 @@ def render_home(db):
     trends = db.query(Trend).order_by(Trend.discovered_at.desc()).limit(15).all()
     trends_count = len(trends)
 
+    # Pre-fetch queued titles to avoid N+1 queries in the loop
+    queued_titles = {row[0] for row in db.query(Tweet.trend_topic).filter(Tweet.trend_topic.isnot(None)).all()}
+
     # Collapsible section using checkbox styled as header
     trends_expanded = st.checkbox(
         f"📰 Discovered Trends ({trends_count})",
@@ -110,8 +113,8 @@ def render_home(db):
                 badge_cls = get_source_badge_class(source_val)
                 safe_title = html.escape(trend.title or '')
 
-                # Check if already in queue
-                in_queue = db.query(Tweet).filter(Tweet.trend_topic == trend.title).first() is not None
+                # Check if already in queue (uses pre-fetched set)
+                in_queue = trend.title in queued_titles
 
                 # Summary (more room now - full width)
                 summary_text = ''
@@ -164,7 +167,6 @@ def render_home(db):
                                 db.add(new_tweet)
                                 db.commit()
                                 st.success(f"Added to queue!")
-                                time.sleep(0.5)
                                 st.rerun()
                     with card_col4:
                         # Delete button (trash icon)
@@ -198,13 +200,12 @@ def render_home(db):
     st.markdown("<br>", unsafe_allow_html=True)
 
     # --- Section 2: Processed Threads (Full Width) ---
-    # Only show actual X/Twitter threads (not trend articles added to queue)
-    all_tweets = db.query(Tweet).filter(
-        Tweet.status.in_([TweetStatus.PROCESSED, TweetStatus.APPROVED, TweetStatus.PUBLISHED, TweetStatus.PENDING])
-    ).order_by(Tweet.updated_at.desc()).limit(50).all()
-
-    # Filter to only X/Twitter threads
-    x_threads = [t for t in all_tweets if t.source_url and ('x.com/' in t.source_url or 'twitter.com/' in t.source_url)]
+    # Only show actual X/Twitter threads (filter in SQL instead of loading 50 + filtering in Python)
+    from sqlalchemy import or_
+    x_threads = db.query(Tweet).filter(
+        Tweet.status.in_([TweetStatus.PROCESSED, TweetStatus.APPROVED, TweetStatus.PUBLISHED, TweetStatus.PENDING]),
+        or_(Tweet.source_url.like('%x.com/%'), Tweet.source_url.like('%twitter.com/%'))
+    ).order_by(Tweet.updated_at.desc()).limit(10).all()
     threads_count = len(x_threads)
 
     # Collapsible section using checkbox styled as header
@@ -217,7 +218,7 @@ def render_home(db):
 
     if threads_expanded:
         if x_threads:
-            for idx, tweet in enumerate(x_threads[:10]):  # Limit to 10
+            for idx, tweet in enumerate(x_threads):
                 status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
 
                 # Preview: First 10-15 words of original text

@@ -23,9 +23,15 @@ from processor.summary_generator import SummaryGenerator
 router = APIRouter(prefix="/api/trends", tags=["summaries"], dependencies=[Depends(require_api_key)])
 
 
+_summary_generator_instance = None
+
+
 def get_summary_generator() -> SummaryGenerator:
-    """Dependency to get summary generator instance."""
-    return SummaryGenerator()
+    """Dependency to get summary generator instance (cached singleton)."""
+    global _summary_generator_instance
+    if _summary_generator_instance is None:
+        _summary_generator_instance = SummaryGenerator()
+    return _summary_generator_instance
 
 
 @router.post("/{trend_id}/generate-summary", response_model=SummaryGenerateResponse)
