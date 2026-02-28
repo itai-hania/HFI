@@ -27,7 +27,7 @@ st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
 from dashboard.db_helpers import get_db
 from dashboard.auth import check_auth
-from dashboard.navigation import init_navigation, render_sidebar
+from dashboard.navigation import init_navigation, render_sidebar, render_mobile_top_nav
 from dashboard.views.home import render_home
 from dashboard.views.content import render_content
 from dashboard.views.settings import render_settings
@@ -47,6 +47,9 @@ def main():
     # Sidebar with simplified navigation
     with st.sidebar:
         render_sidebar(db)
+
+    # Mobile top nav is displayed via CSS media query.
+    render_mobile_top_nav()
 
     # Main content based on current view
     view = st.session_state.current_view

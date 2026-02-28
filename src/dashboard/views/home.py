@@ -135,9 +135,9 @@ def render_home(db):
 
                 # Full-width trend card using st.container
                 with st.container():
-                    # Main card row - title, badge, generate, queue, delete buttons
-                    card_col1, card_col2, card_col_gen, card_col3, card_col4 = st.columns([4, 1, 1, 1, 0.5])
-                    with card_col1:
+                    # First row: content + source metadata
+                    header_col1, header_col2 = st.columns([5, 1])
+                    with header_col1:
                         # Title with rank
                         if trend.article_url and validate_safe_url(trend.article_url)[0]:
                             st.markdown(f"**#{idx + 1}** [{safe_title}]({html.escape(trend.article_url)})")
@@ -148,13 +148,17 @@ def render_home(db):
                             st.caption(summary_text)
                         # Keywords
                         if trend.keywords and isinstance(trend.keywords, list) and len(trend.keywords) > 0:
-                            st.markdown(f"🏷️ {', '.join(trend.keywords[:5])}")
-                    with card_col2:
+                            safe_keywords = ", ".join(html.escape(str(kw)) for kw in trend.keywords[:5])
+                            st.markdown(f"🏷️ {safe_keywords}")
+                    with header_col2:
                         # Source badge
                         st.markdown(f'<span class="status-badge {badge_cls}">{html.escape(source_val)}</span>', unsafe_allow_html=True)
                         if trend.source_count and trend.source_count > 1:
                             st.caption(f"{trend.source_count} sources")
-                    with card_col_gen:
+
+                    # Second row: primary actions
+                    action_col1, action_col2, action_col3 = st.columns(3)
+                    with action_col1:
                         if st.button("Generate", key=f"home_gen_{trend.id}", use_container_width=True):
                             # Pre-fill source text and navigate to Content > Generate
                             source = f"{trend.title}\n\n{trend.description or trend.summary or ''}"
@@ -162,7 +166,7 @@ def render_home(db):
                             st.session_state.current_view = 'content'
                             st.rerun()
 
-                    with card_col3:
+                    with action_col2:
                         # Queue button in same row
                         if in_queue:
                             st.success("✓ In Queue")
@@ -178,9 +182,8 @@ def render_home(db):
                                 db.commit()
                                 st.success(f"Added to queue!")
                                 st.rerun()
-                    with card_col4:
-                        # Delete button (trash icon)
-                        if st.button("🗑️", key=f"delete_trend_{trend.id}", help="Delete this trend"):
+                    with action_col3:
+                        if st.button("Delete", key=f"delete_trend_{trend.id}", help="Delete this trend", use_container_width=True):
                             delete_trend(db, trend.id)
                             st.rerun()
 
@@ -194,7 +197,8 @@ def render_home(db):
                             if trend.discovered_at:
                                 st.markdown(f"**📅 Discovered:** {trend.discovered_at.strftime('%Y-%m-%d %H:%M')}")
                             if trend.keywords and isinstance(trend.keywords, list):
-                                st.markdown(f"**🏷️ Keywords:** {', '.join(trend.keywords)}")
+                                safe_all_keywords = ", ".join(html.escape(str(kw)) for kw in trend.keywords)
+                                st.markdown(f"**🏷️ Keywords:** {safe_all_keywords}")
                         with detail_col2:
                             if trend.description:
                                 st.markdown(f"**📝 Full Description:**")
@@ -281,12 +285,12 @@ def render_home(db):
                                 st.info("No Hebrew translation yet.")
 
                         # Action buttons
-                        btn1, btn2, btn3, btn4 = st.columns(4)
+                        btn1, btn2 = st.columns([3, 1])
                         with btn1:
                             if tweet.source_url and validate_safe_url(tweet.source_url)[0]:
                                 st.markdown(f'[🔗 View Source]({html.escape(tweet.source_url)})')
                         with btn2:
-                            if st.button("✏️ Edit", key=f"home_edit_{tweet.id}"):
+                            if st.button("Edit", key=f"home_edit_{tweet.id}", use_container_width=True):
                                 st.session_state.selected_item = tweet.id
                                 st.session_state.current_view = 'content'
                                 st.rerun()

@@ -15,6 +15,41 @@ NC='\033[0m' # No Color
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+else
+    echo -e "${RED}❌ Python not found in PATH.${NC}"
+    exit 1
+fi
+
+DASHBOARD_HOST="${HFI_DASHBOARD_HOST:-0.0.0.0}"
+DASHBOARD_PORT="${HFI_DASHBOARD_PORT:-8501}"
+
+if ! [[ "$DASHBOARD_PORT" =~ ^[0-9]+$ ]]; then
+    DASHBOARD_PORT="8501"
+fi
+
+LAN_IP="$("$PYTHON_BIN" - <<'PY'
+import socket
+
+sock = None
+ip = ""
+try:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.connect(("8.8.8.8", 80))
+    ip = sock.getsockname()[0]
+except OSError:
+    pass
+finally:
+    if sock is not None:
+        sock.close()
+
+print("" if ip.startswith("127.") else ip)
+PY
+)"
+
 # Banner
 echo -e "${BLUE}=====================================${NC}"
 echo -e "${BLUE}  HFI Service Launcher${NC}"
@@ -32,7 +67,7 @@ fi
 # Check if database exists
 if [ ! -f "data/hfi.db" ]; then
     echo -e "${YELLOW}⚠️  Database not found. Initializing...${NC}"
-    python init_db.py
+    "$PYTHON_BIN" init_db.py
     echo ""
 fi
 
@@ -57,27 +92,45 @@ case $choice in
         echo ""
         cd src/scraper
         export SCRAPER_HEADLESS=false
-        python main.py
+        "$PYTHON_BIN" main.py
         ;;
     2)
         echo -e "${GREEN}🚀 Starting Scraper (automated)...${NC}"
         cd src/scraper
         export SCRAPER_HEADLESS=true
-        python main.py
+        "$PYTHON_BIN" main.py
         ;;
     3)
         echo -e "${GREEN}🚀 Starting Dashboard...${NC}"
-        echo -e "${BLUE}→ Dashboard will be available at: http://localhost:8501${NC}"
+        echo -e "${BLUE}→ Dashboard local: http://localhost:${DASHBOARD_PORT}${NC}"
+        if [ -n "$LAN_IP" ]; then
+            echo -e "${BLUE}→ Dashboard mobile (same Wi-Fi): http://${LAN_IP}:${DASHBOARD_PORT}${NC}"
+        fi
+        if [ "$DASHBOARD_HOST" = "0.0.0.0" ]; then
+            echo -e "${YELLOW}⚠️  Exposed on local network. Use trusted Wi-Fi only.${NC}"
+        fi
         echo ""
         cd src/dashboard
-        streamlit run app.py
+        streamlit run app.py \
+            --server.address="$DASHBOARD_HOST" \
+            --server.port="$DASHBOARD_PORT" \
+            --server.headless=true
         ;;
     4)
         echo -e "${GREEN}🚀 Starting Dashboard...${NC}"
-        echo -e "${BLUE}→ Dashboard will be available at: http://localhost:8501${NC}"
+        echo -e "${BLUE}→ Dashboard local: http://localhost:${DASHBOARD_PORT}${NC}"
+        if [ -n "$LAN_IP" ]; then
+            echo -e "${BLUE}→ Dashboard mobile (same Wi-Fi): http://${LAN_IP}:${DASHBOARD_PORT}${NC}"
+        fi
+        if [ "$DASHBOARD_HOST" = "0.0.0.0" ]; then
+            echo -e "${YELLOW}⚠️  Exposed on local network. Use trusted Wi-Fi only.${NC}"
+        fi
         echo ""
         cd src/dashboard
-        streamlit run app.py &
+        streamlit run app.py \
+            --server.address="$DASHBOARD_HOST" \
+            --server.port="$DASHBOARD_PORT" \
+            --server.headless=true &
         DASHBOARD_PID=$!
 
         echo ""
@@ -86,7 +139,7 @@ case $choice in
 
         cd "$PROJECT_ROOT/src/scraper"
         export SCRAPER_HEADLESS=true
-        python main.py
+        "$PYTHON_BIN" main.py
 
         kill $DASHBOARD_PID
         ;;
@@ -107,7 +160,7 @@ case $choice in
         ;;
     7)
         echo -e "${GREEN}🔍 Verifying setup...${NC}"
-        python verify_setup.py
+        "$PYTHON_BIN" verify_setup.py
         ;;
     8)
         echo -e "${BLUE}👋 Goodbye!${NC}"

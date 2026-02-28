@@ -8,6 +8,32 @@ def init_navigation():
         st.session_state.current_view = 'home'
 
 
+def render_mobile_top_nav():
+    """Top nav that is shown on mobile widths via CSS."""
+    nav_items = [
+        ('home', 'Home'),
+        ('content', 'Content'),
+        ('settings', 'Settings'),
+    ]
+
+    with st.container():
+        # Anchor for CSS targeting of this specific nav block.
+        st.markdown('<span id="mobile-nav-anchor"></span>', unsafe_allow_html=True)
+        cols = st.columns(len(nav_items))
+
+        for (key, label), col in zip(nav_items, cols):
+            with col:
+                is_active = st.session_state.current_view == key
+                if st.button(
+                    label,
+                    key=f"mobile_nav_{key}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary"
+                ):
+                    st.session_state.current_view = key
+                    st.rerun()
+
+
 def render_sidebar(db):
     """Sidebar with 3 navigation items"""
 

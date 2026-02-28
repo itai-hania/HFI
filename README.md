@@ -167,8 +167,11 @@ python main.py
 **Terminal 3 - Dashboard:**
 ```bash
 cd src/dashboard
-streamlit run app.py
-# Access at http://localhost:8501
+export HFI_DASHBOARD_HOST=0.0.0.0
+export HFI_DASHBOARD_PORT=8501
+streamlit run app.py --server.address=$HFI_DASHBOARD_HOST --server.port=$HFI_DASHBOARD_PORT --server.headless=true
+# Local:  http://localhost:8501
+# Mobile: http://<your-computer-lan-ip>:8501
 ```
 
 ### Cross-Platform Launcher
@@ -181,6 +184,21 @@ python start_services.py
 ```
 
 This provides an interactive menu to start services without platform-specific commands.
+
+### Access Dashboard from Mobile Browser (Same Wi-Fi)
+
+1. Start dashboard with host `0.0.0.0` (already handled by `start_services.py` and `start_services.sh`).
+2. Find your computer LAN IP:
+   - macOS/Linux: `hostname -I` or `ifconfig`
+   - Windows (PowerShell): `ipconfig`
+3. Open on phone browser:
+   - `http://<your-computer-lan-ip>:8501`
+
+If mobile cannot connect:
+- Ensure phone and computer are on the same Wi-Fi network.
+- Check local firewall rules for inbound TCP `8501`.
+- Disable AP/client isolation on router guest networks.
+- Only expose `0.0.0.0` on trusted networks. Use `HFI_DASHBOARD_HOST=127.0.0.1` when mobile access is not needed.
 
 ### Using the Dashboard
 

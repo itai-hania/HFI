@@ -10,6 +10,8 @@ import os
 import sys
 import subprocess
 import platform
+import socket
+from typing import Optional, Tuple
 from pathlib import Path
 
 
@@ -106,15 +108,58 @@ def run_scraper_automated(project_root: Path):
     )
 
 
+def get_dashboard_bind() -> Tuple[str, str]:
+    """Read dashboard bind host/port from env with safe defaults."""
+    host = (os.environ.get("HFI_DASHBOARD_HOST") or "0.0.0.0").strip() or "0.0.0.0"
+    port = (os.environ.get("HFI_DASHBOARD_PORT") or "8501").strip() or "8501"
+    if not port.isdigit():
+        port = "8501"
+    return host, port
+
+
+def detect_lan_ip() -> Optional[str]:
+    """Best-effort LAN IP detection for mobile access instructions."""
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        if ip and not ip.startswith("127."):
+            return ip
+    except OSError:
+        return None
+    finally:
+        if sock is not None:
+            sock.close()
+    return None
+
+
 def run_dashboard(project_root: Path):
     """Start the Streamlit dashboard."""
+    host, port = get_dashboard_bind()
+    lan_ip = detect_lan_ip()
+
     print(colorize("🚀 Starting Dashboard...", Colors.GREEN))
-    print(colorize("→ Dashboard will be available at: http://localhost:8501", Colors.BLUE))
+    print(colorize(f"→ Dashboard local: http://localhost:{port}", Colors.BLUE))
+    if host in {"0.0.0.0", "::"} and lan_ip:
+        print(colorize(f"→ Dashboard mobile (same Wi-Fi): http://{lan_ip}:{port}", Colors.BLUE))
+        print(colorize("⚠️  Exposed on local network. Use trusted Wi-Fi only.", Colors.YELLOW))
+    else:
+        print(colorize(f"→ Dashboard bind host: {host}:{port}", Colors.BLUE))
     print()
     
     dashboard_dir = project_root / "src" / "dashboard"
     subprocess.run(
-        [sys.executable, "-m", "streamlit", "run", "app.py"],
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "app.py",
+            f"--server.address={host}",
+            f"--server.port={port}",
+            "--server.headless=true",
+        ],
         cwd=dashboard_dir
     )
 
