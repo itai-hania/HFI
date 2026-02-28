@@ -8,6 +8,9 @@ from pathlib import Path
 from sqlalchemy import cast, String, func
 from common.models import Tweet, Trend, Thread, StyleExample
 from dashboard.lazy_loaders import get_style_manager
+from dashboard.state import push_flash, rerun_view
+from dashboard.ui_components import render_page_header
+from dashboard.ux_events import log_ux_event
 from dashboard.validators import validate_x_url
 
 logger = logging.getLogger(__name__)
@@ -16,12 +19,7 @@ logger = logging.getLogger(__name__)
 def render_settings(db):
     """Settings and configuration"""
 
-    st.markdown("""
-        <div class="page-header">
-            <h1 class="page-title">Settings</h1>
-            <p class="page-subtitle">Configuration and database management</p>
-        </div>
-    """, unsafe_allow_html=True)
+    render_page_header("Settings", "Configuration, glossary, style examples, and safety controls.")
 
     col1, col2 = st.columns(2)
 
@@ -56,13 +54,18 @@ def render_settings(db):
         if st.button("Save Glossary", key="save_glossary", use_container_width=True):
             try:
                 parsed = json.loads(edited_glossary)
-                # Validate structure: must be dict[str, str]
+                validation_errors = []
                 if not isinstance(parsed, dict):
-                    st.error("Glossary must be a JSON object (not array).")
-                elif not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
-                    st.error("Glossary values must all be strings.")
-                elif len(edited_glossary.encode('utf-8')) > 1_000_000:
-                    st.error("Glossary too large (max 1MB).")
+                    validation_errors.append("Glossary must be a JSON object (not an array).")
+                if isinstance(parsed, dict) and not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
+                    validation_errors.append("All glossary keys and values must be strings.")
+                if len(edited_glossary.encode('utf-8')) > 1_000_000:
+                    validation_errors.append("Glossary is too large (max 1MB).")
+
+                if validation_errors:
+                    st.error("Glossary validation failed:")
+                    for err in validation_errors:
+                        st.caption(f"- {err}")
                 else:
                     # Backup current glossary before overwriting
                     if glossary_path.exists():
@@ -71,7 +74,9 @@ def render_settings(db):
                         shutil.copy2(glossary_path, backup_path)
                     glossary_path.parent.mkdir(parents=True, exist_ok=True)
                     glossary_path.write_text(edited_glossary, encoding='utf-8')
-                    st.success("Glossary saved!")
+                    push_flash("success", "Glossary saved successfully.", view="settings")
+                    log_ux_event("save_glossary", "settings", success=True)
+                    rerun_view()
             except json.JSONDecodeError:
                 st.error("Invalid JSON. Please fix and try again.")
 
@@ -126,7 +131,6 @@ def render_settings(db):
             "Thread URL",
             placeholder="https://x.com/user/status/123...",
             key="style_import_url",
-            label_visibility="collapsed",
             max_chars=500
         )
         if st.button("Fetch Thread", key="import_x_thread", use_container_width=True, disabled=not thread_url_import):
@@ -157,7 +161,7 @@ def render_settings(db):
                                 st.session_state.style_import_preview = all_text
                                 st.session_state.style_import_tags = tags
                                 st.session_state.style_import_tweet_count = len(tweets_data)
-                                st.rerun()
+                                rerun_view()
                             else:
                                 st.warning("Thread doesn't contain enough Hebrew content (need >50%)")
                         else:
@@ -191,13 +195,13 @@ def render_settings(db):
                     st.session_state.pop('style_import_preview', None)
                     st.session_state.pop('style_import_tags', None)
                     st.session_state.pop('style_import_tweet_count', None)
-                    st.rerun()
+                    rerun_view()
             with pcol2:
                 if st.button("Cancel", key="cancel_x_import", use_container_width=True):
                     st.session_state.pop('style_import_preview', None)
                     st.session_state.pop('style_import_tags', None)
                     st.session_state.pop('style_import_tweet_count', None)
-                    st.rerun()
+                    rerun_view()
 
     with import_col2:
         st.markdown("#### Upload Local File")
@@ -205,7 +209,6 @@ def render_settings(db):
             "Upload .txt or .md file",
             type=['txt', 'md'],
             key="style_file_upload",
-            label_visibility="collapsed"
         )
         if uploaded_file:
             file_content = uploaded_file.read().decode('utf-8')
@@ -224,7 +227,7 @@ def render_settings(db):
                     ) if sm else None
                     if example:
                         st.success(f"Added file as style example (tags: {', '.join(final_tags[:3])})")
-                        st.rerun()
+                        rerun_view()
             else:
                 st.warning("File doesn't contain enough Hebrew content (need >50%)")
 
@@ -235,7 +238,6 @@ def render_settings(db):
         placeholder="הקלד כאן טקסט עברי לדוגמה...",
         height=100,
         key="manual_style_input",
-        label_visibility="collapsed",
         max_chars=10000
     )
     if manual_content and sm and sm.is_hebrew_content(manual_content, min_ratio=0.5):
@@ -256,7 +258,7 @@ def render_settings(db):
                 )
                 if example:
                     st.success(f"Added manual example (tags: {', '.join(final_tags[:3])})")
-                    st.rerun()
+                    rerun_view()
             else:
                 st.warning("Text doesn't contain enough Hebrew (need >50%)")
 
@@ -328,11 +330,11 @@ def render_settings(db):
                         if sm:
                             sm.update_example(db, ex.id, content=new_content, topic_tags=new_tags)
                         st.session_state[f'editing_style_{ex.id}'] = False
-                        st.rerun()
+                        rerun_view()
                 with edit_btn_col2:
                     if st.button("Cancel", key=f"cancel_edit_{ex.id}", use_container_width=True):
                         st.session_state[f'editing_style_{ex.id}'] = False
-                        st.rerun()
+                        rerun_view()
             else:
                 ex_col1, ex_col2, ex_col3 = st.columns([5, 1, 1])
                 with ex_col1:
@@ -352,19 +354,19 @@ def render_settings(db):
                 with ex_col2:
                     if st.button("Edit", key=f"edit_style_{ex.id}", help="Edit this example"):
                         st.session_state[f'editing_style_{ex.id}'] = True
-                        st.rerun()
+                        rerun_view()
                 with ex_col3:
-                    if st.button("🗑️", key=f"del_style_{ex.id}", help="Delete this example"):
+                    if st.button("Delete", key=f"del_style_{ex.id}", help="Delete this example"):
                         if sm:
                             sm.delete_example(db, ex.id)
-                            st.rerun()
+                            rerun_view()
 
         # Load More pagination
         if filtered_count > display_limit:
             st.caption(f"Showing {min(display_limit, len(examples))} of {filtered_count} examples")
             if st.button("Load More", key="load_more_examples", use_container_width=True):
                 st.session_state.style_examples_limit = display_limit + 20
-                st.rerun()
+                rerun_view()
         elif len(examples) > 0 and filtered_count > len(examples):
             st.caption(f"Showing {len(examples)} of {filtered_count} examples")
 
@@ -455,7 +457,12 @@ def render_settings(db):
     st.markdown("### Danger Zone")
     with st.expander("Destructive Actions"):
         st.warning("These actions cannot be undone")
-        confirm = st.checkbox("I understand this cannot be undone", key="danger_confirm")
+        confirm_token = st.text_input(
+            'Type "DELETE" to enable destructive actions',
+            key="danger_confirm_token",
+            max_chars=10,
+        )
+        confirm = confirm_token.strip().upper() == "DELETE"
 
         dcol1, dcol2, dcol3 = st.columns(3)
         with dcol1:
@@ -463,16 +470,16 @@ def render_settings(db):
                 db.query(Tweet).delete()
                 db.commit()
                 st.success("Deleted all tweets")
-                st.rerun()
+                rerun_view()
         with dcol2:
             if st.button("Delete All Threads", use_container_width=True, disabled=not confirm):
                 db.query(Thread).delete()
                 db.commit()
                 st.success("Deleted all threads")
-                st.rerun()
+                rerun_view()
         with dcol3:
             if st.button("Delete All Trends", use_container_width=True, disabled=not confirm):
                 db.query(Trend).delete()
                 db.commit()
                 st.success("Deleted all trends")
-                st.rerun()
+                rerun_view()

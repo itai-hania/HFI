@@ -26,14 +26,14 @@ def get_source_badge_class(source_name: str) -> str:
 
 
 def parse_media_info(media_paths_json: str) -> tuple:
-    """Parse media_paths JSON and return (count, icon).
+    """Parse media_paths JSON and return (count, media_label).
 
     Args:
         media_paths_json: JSON string of media list, e.g.
             '[{"type": "video", "path": "..."}, {"type": "photo", "path": "..."}]'
 
     Returns:
-        (media_count, media_icon) tuple. Icon is emoji string or empty.
+        (media_count, media_label) tuple. Label is "Video", "Image", or empty.
     """
     if not media_paths_json:
         return 0, ""
@@ -43,9 +43,9 @@ def parse_media_info(media_paths_json: str) -> tuple:
         has_video = any(m.get('type') == 'video' for m in media_list)
         has_photo = any(m.get('type') == 'photo' for m in media_list)
         if has_video:
-            return count, "\U0001f3a5"  # camera emoji
+            return count, "Video"
         elif has_photo:
-            return count, "\U0001f5bc\ufe0f"  # framed picture emoji
+            return count, "Image"
         return count, ""
     except (json.JSONDecodeError, TypeError, AttributeError):
         return 0, ""

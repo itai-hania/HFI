@@ -47,35 +47,35 @@ class TestParseMediaInfo:
     """Test media JSON parsing."""
 
     def test_empty_string(self):
-        count, icon = parse_media_info("")
+        count, label = parse_media_info("")
         assert count == 0
-        assert icon == ""
+        assert label == ""
 
     def test_none_input(self):
-        count, icon = parse_media_info(None)
+        count, label = parse_media_info(None)
         assert count == 0
-        assert icon == ""
+        assert label == ""
 
     def test_single_photo(self):
         data = json.dumps([{"type": "photo", "path": "/media/img.jpg"}])
-        count, icon = parse_media_info(data)
+        count, label = parse_media_info(data)
         assert count == 1
-        assert icon != ""
+        assert label == "Image"
 
     def test_single_video(self):
         data = json.dumps([{"type": "video", "path": "/media/vid.mp4"}])
-        count, icon = parse_media_info(data)
+        count, label = parse_media_info(data)
         assert count == 1
-        assert icon == "\U0001f3a5"
+        assert label == "Video"
 
     def test_video_preferred_over_photo(self):
         data = json.dumps([
             {"type": "photo", "path": "/media/img.jpg"},
             {"type": "video", "path": "/media/vid.mp4"},
         ])
-        count, icon = parse_media_info(data)
+        count, label = parse_media_info(data)
         assert count == 2
-        assert icon == "\U0001f3a5"
+        assert label == "Video"
 
     def test_multiple_photos(self):
         data = json.dumps([
@@ -83,30 +83,30 @@ class TestParseMediaInfo:
             {"type": "photo", "path": "/media/img2.jpg"},
             {"type": "photo", "path": "/media/img3.jpg"},
         ])
-        count, icon = parse_media_info(data)
+        count, label = parse_media_info(data)
         assert count == 3
-        assert icon == "\U0001f5bc\ufe0f"
+        assert label == "Image"
 
     def test_no_type_field(self):
         data = json.dumps([{"path": "/media/file.bin"}])
-        count, icon = parse_media_info(data)
+        count, label = parse_media_info(data)
         assert count == 1
-        assert icon == ""
+        assert label == ""
 
     def test_invalid_json(self):
-        count, icon = parse_media_info("{bad json")
+        count, label = parse_media_info("{bad json")
         assert count == 0
-        assert icon == ""
+        assert label == ""
 
     def test_non_list_json(self):
-        count, icon = parse_media_info('"just a string"')
+        count, label = parse_media_info('"just a string"')
         assert count == 0
-        assert icon == ""
+        assert label == ""
 
     def test_empty_list(self):
-        count, icon = parse_media_info("[]")
+        count, label = parse_media_info("[]")
         assert count == 0
-        assert icon == ""
+        assert label == ""
 
 
 # ==================== format_status_str ====================
