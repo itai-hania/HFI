@@ -639,6 +639,189 @@ DARK_MODE_CSS = """
     }
 
     /* ===========================================
+       RESPONSIVE FOUNDATION
+       =========================================== */
+    html, body, .stApp, [data-testid="stAppViewContainer"] {
+        overflow-x: hidden !important;
+    }
+
+    /* Tablet */
+    @media (max-width: 1024px) {
+        .main .block-container,
+        [data-testid="stMainBlockContainer"] {
+            max-width: 100% !important;
+            padding: 1rem 1.25rem !important;
+        }
+
+        [data-testid="stSidebar"],
+        [data-testid="stSidebar"] > div,
+        [data-testid="stSidebarContent"],
+        section[data-testid="stSidebar"] {
+            width: 230px !important;
+            min-width: 230px !important;
+        }
+
+        .page-title {
+            font-size: 1.55rem !important;
+        }
+
+        [data-testid="stMetricValue"] {
+            font-size: 1.5rem !important;
+        }
+    }
+
+    /* Mobile */
+    @media (max-width: 768px) {
+        .main .block-container,
+        [data-testid="stMainBlockContainer"] {
+            max-width: 100% !important;
+            padding: 0.75rem 0.75rem 5rem !important;
+        }
+
+        [data-testid="stSidebar"],
+        [data-testid="stSidebar"] > div,
+        [data-testid="stSidebarContent"],
+        section[data-testid="stSidebar"] {
+            width: 86vw !important;
+            min-width: 86vw !important;
+            max-width: 320px !important;
+        }
+
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+            gap: 0.5rem !important;
+        }
+
+        [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+            width: 100% !important;
+        }
+
+        .stButton > button,
+        .stDownloadButton > button,
+        [data-testid="baseButton-secondary"],
+        [data-testid="baseButton-primary"] {
+            min-height: 44px !important;
+        }
+
+        [data-testid="stMetric"] {
+            padding: 0.85rem !important;
+        }
+
+        [data-testid="stMetricValue"] {
+            font-size: 1.35rem !important;
+        }
+
+        .page-header {
+            margin-bottom: 1.2rem !important;
+            padding-bottom: 0.8rem !important;
+        }
+
+        .page-title {
+            font-size: 1.35rem !important;
+        }
+
+        .page-subtitle {
+            font-size: 0.8rem !important;
+        }
+
+        p, span, label, .stMarkdown, .stMarkdown p {
+            font-size: 1rem !important;
+            line-height: 1.55 !important;
+        }
+
+        .content-card,
+        .stat-card,
+        .translation-panel,
+        .thread-tweet-item,
+        .queue-item {
+            padding: 0.9rem !important;
+        }
+
+        .stat-value {
+            font-size: 2rem !important;
+        }
+
+        .status-badge {
+            font-size: 0.6rem !important;
+            padding: 0.3rem 0.65rem !important;
+        }
+
+        .stTabs [data-baseweb="tab-list"] {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            white-space: nowrap !important;
+            flex-wrap: nowrap !important;
+            gap: 0.25rem !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            flex: 0 0 auto !important;
+            white-space: nowrap !important;
+            min-height: 44px !important;
+            padding: 0.4rem 0.75rem !important;
+        }
+
+        /* Hover effects are less meaningful on touch screens */
+        .content-card:hover,
+        .stat-card:hover,
+        .queue-item:hover {
+            transform: none !important;
+        }
+    }
+
+    /* Compact phones */
+    @media (max-width: 480px) {
+        .main .block-container,
+        [data-testid="stMainBlockContainer"] {
+            padding: 0.65rem 0.5rem 4.5rem !important;
+        }
+
+        h1, .stMarkdown h1, .page-title {
+            font-size: 1.2rem !important;
+        }
+
+        h2, .stMarkdown h2 {
+            font-size: 1.05rem !important;
+        }
+
+        p, span, label, .stMarkdown, .stMarkdown p {
+            font-size: 1rem !important;
+            line-height: 1.55 !important;
+        }
+
+        .nav-brand {
+            padding: 0.9rem 0.85rem 1rem 0.85rem !important;
+        }
+
+        .nav-brand h1 {
+            font-size: 1.25rem !important;
+        }
+
+        .translation-content {
+            font-size: 1rem !important;
+            line-height: 1.55 !important;
+            padding: 0.65rem !important;
+        }
+
+        .thread-tweet-number {
+            width: 1.25rem !important;
+            height: 1.25rem !important;
+            font-size: 0.62rem !important;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation: none !important;
+            transition: none !important;
+            scroll-behavior: auto !important;
+        }
+    }
+
+    /* ===========================================
        SLIDER (Dark)
        =========================================== */
     .stSlider > div > div > div {

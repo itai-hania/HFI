@@ -72,185 +72,182 @@ def _render_acquire_section(db):
         max_chars=500
     )
 
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
-    with col1:
+    opt_col1, opt_col2 = st.columns(2)
+    with opt_col1:
         add_to_queue = st.checkbox("Add to queue", value=True)
-    with col2:
         consolidate = st.checkbox("Consolidate thread", value=True)
-    with col3:
+    with opt_col2:
         auto_translate = st.checkbox("Auto-translate", value=True, help="Translate using context-aware AI")
-    with col4:
         download_media = st.checkbox("Download media", value=False, help="Download images and videos from thread")
-    with col5:
-        if st.button("Scrape Thread", type="primary", use_container_width=True):
-            _url_valid, _url_err = validate_x_url(url) if url else (False, "")
-            if not url:
-                st.warning("Enter a URL first")
-            elif not _url_valid:
-                st.error(_url_err)
-            elif time.time() - st.session_state.get('last_scrape_time', 0) < _SCRAPE_COOLDOWN:
-                remaining = int(_SCRAPE_COOLDOWN - (time.time() - st.session_state.get('last_scrape_time', 0)))
-                st.warning(f"Please wait {remaining}s before scraping again.")
-            else:
-                st.session_state.last_scrape_time = time.time()
-                with st.spinner("Scraping..."):
-                    try:
-                        from scraper.scraper import TwitterScraper
+    if st.button("Scrape Thread", type="primary", use_container_width=True):
+        _url_valid, _url_err = validate_x_url(url) if url else (False, "")
+        if not url:
+            st.warning("Enter a URL first")
+        elif not _url_valid:
+            st.error(_url_err)
+        elif time.time() - st.session_state.get('last_scrape_time', 0) < _SCRAPE_COOLDOWN:
+            remaining = int(_SCRAPE_COOLDOWN - (time.time() - st.session_state.get('last_scrape_time', 0)))
+            st.warning(f"Please wait {remaining}s before scraping again.")
+        else:
+            st.session_state.last_scrape_time = time.time()
+            with st.spinner("Scraping..."):
+                try:
+                    from scraper.scraper import TwitterScraper
 
-                        progress = st.progress(0, "Connecting...")
+                    progress = st.progress(0, "Connecting...")
 
-                        async def run():
-                            scraper = TwitterScraper()
-                            try:
-                                progress.progress(20, "Logging in...")
-                                await scraper.ensure_logged_in()
-                                progress.progress(40, "Fetching thread...")
-                                return await scraper.fetch_raw_thread(url, author_only=True)
-                            finally:
-                                await scraper.close()
+                    async def run():
+                        scraper = TwitterScraper()
+                        try:
+                            progress.progress(20, "Logging in...")
+                            await scraper.ensure_logged_in()
+                            progress.progress(40, "Fetching thread...")
+                            return await scraper.fetch_raw_thread(url, author_only=True)
+                        finally:
+                            await scraper.close()
 
-                        result = asyncio.run(run())
-                        tweets_data = result.get('tweets', [])
-                        progress.progress(80, "Saving...")
+                    result = asyncio.run(run())
+                    tweets_data = result.get('tweets', [])
+                    progress.progress(80, "Saving...")
 
-                        if add_to_queue:
-                            if consolidate and len(tweets_data) > 1:
-                                # Combine original text for reference
-                                combined_text = "\n\n---\n\n".join([t.get('text', '') for t in tweets_data])
-                                first_url = tweets_data[0].get('permalink', url) if tweets_data else url
-                                media_urls = [t['media'][0]['src'] for t in tweets_data if t.get('media')]
+                    if add_to_queue:
+                        if consolidate and len(tweets_data) > 1:
+                            # Combine original text for reference
+                            combined_text = "\n\n---\n\n".join([t.get('text', '') for t in tweets_data])
+                            first_url = tweets_data[0].get('permalink', url) if tweets_data else url
+                            media_urls = [t['media'][0]['src'] for t in tweets_data if t.get('media')]
 
-                                if not db.query(Tweet).filter_by(source_url=first_url).first():
-                                    # Auto-translate if enabled
-                                    hebrew_draft = None
-                                    tweet_status = TweetStatus.PENDING
+                            if not db.query(Tweet).filter_by(source_url=first_url).first():
+                                # Auto-translate if enabled
+                                hebrew_draft = None
+                                tweet_status = TweetStatus.PENDING
 
-                                    if auto_translate:
-                                        progress.progress(60, "Translating with context awareness...")
-                                        try:
-                                            from processor.processor import ProcessorConfig, TranslationService
-                                            config = ProcessorConfig()
-                                            translator = TranslationService(config)
-
-                                            # Use context-aware consolidated translation
-                                            hebrew_draft = translator.translate_thread_consolidated(tweets_data)
-                                            tweet_status = TweetStatus.PROCESSED
-                                            logger.info(f"✅ Context-aware translation complete: {hebrew_draft[:100]}...")
-                                        except Exception as e:
-                                            logger.error(f"Translation failed: {e}")
-                                            st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
-
-                                    # Download all thread media (optional)
-                                    media_paths_json = None
-                                    first_media_path = None
-                                    if download_media:
-                                        try:
-                                            progress.progress(75, "Downloading media...")
-                                            from processor.processor import MediaDownloader
-                                            downloader = MediaDownloader()
-                                            media_results = downloader.download_thread_media(result)
-                                            if media_results:
-                                                import json as json_mod
-                                                media_paths_json = json_mod.dumps(media_results)
-                                                first_media_path = media_results[0].get('local_path')
-                                                logger.info(f"✅ Downloaded {len(media_results)} media files")
-                                        except Exception as e:
-                                            logger.warning(f"Media download failed: {e}")
-
-                                    db.add(Tweet(
-                                        source_url=first_url,
-                                        original_text=combined_text,
-                                        hebrew_draft=hebrew_draft,
-                                        status=tweet_status,
-                                        media_url=media_urls[0] if media_urls else None,
-                                        media_path=first_media_path,
-                                        media_paths=media_paths_json,
-                                        trend_topic=result.get('author_handle', '')
-                                    ))
-                                    db.commit()
-                                    progress.progress(100, "Done!")
-
-                                    if auto_translate and hebrew_draft:
-                                        st.success(f"✅ Added & translated consolidated thread ({len(tweets_data)} tweets → 1 flowing post)")
-                                    else:
-                                        st.success(f"Added consolidated thread ({len(tweets_data)} tweets combined)")
-                                else:
-                                    progress.progress(100, "Done!")
-                                    st.info("Thread already exists in queue")
-                            else:
-                                # Separate tweets mode
-                                saved = 0
-                                hebrew_translations = []
-
-                                # Auto-translate if enabled (context-aware)
-                                if auto_translate and tweets_data:
+                                if auto_translate:
                                     progress.progress(60, "Translating with context awareness...")
                                     try:
                                         from processor.processor import ProcessorConfig, TranslationService
                                         config = ProcessorConfig()
                                         translator = TranslationService(config)
 
-                                        # Use context-aware separate translation
-                                        hebrew_translations = translator.translate_thread_separate(tweets_data)
-                                        logger.info(f"✅ Context-aware translation complete: {len(hebrew_translations)} tweets translated")
+                                        # Use context-aware consolidated translation
+                                        hebrew_draft = translator.translate_thread_consolidated(tweets_data)
+                                        tweet_status = TweetStatus.PROCESSED
+                                        logger.info(f"✅ Context-aware translation complete: {hebrew_draft[:100]}...")
                                     except Exception as e:
                                         logger.error(f"Translation failed: {e}")
                                         st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
-                                        hebrew_translations = []
 
-                                for idx, t in enumerate(tweets_data):
-                                    permalink = t.get('permalink', '')
-                                    if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
-                                        media_url = t['media'][0]['src'] if t.get('media') else None
+                                # Download all thread media (optional)
+                                media_paths_json = None
+                                first_media_path = None
+                                if download_media:
+                                    try:
+                                        progress.progress(75, "Downloading media...")
+                                        from processor.processor import MediaDownloader
+                                        downloader = MediaDownloader()
+                                        media_results = downloader.download_thread_media(result)
+                                        if media_results:
+                                            import json as json_mod
+                                            media_paths_json = json_mod.dumps(media_results)
+                                            first_media_path = media_results[0].get('local_path')
+                                            logger.info(f"✅ Downloaded {len(media_results)} media files")
+                                    except Exception as e:
+                                        logger.warning(f"Media download failed: {e}")
 
-                                        # Get Hebrew translation if available
-                                        hebrew_draft = None
-                                        tweet_status = TweetStatus.PENDING
-                                        if hebrew_translations and idx < len(hebrew_translations):
-                                            hebrew_draft = hebrew_translations[idx]
-                                            tweet_status = TweetStatus.PROCESSED
-
-                                        db.add(Tweet(
-                                            source_url=permalink,
-                                            original_text=t.get('text', ''),
-                                            hebrew_draft=hebrew_draft,
-                                            status=tweet_status,
-                                            media_url=media_url,
-                                            trend_topic=t.get('author_handle', '')
-                                        ))
-                                        saved += 1
+                                db.add(Tweet(
+                                    source_url=first_url,
+                                    original_text=combined_text,
+                                    hebrew_draft=hebrew_draft,
+                                    status=tweet_status,
+                                    media_url=media_urls[0] if media_urls else None,
+                                    media_path=first_media_path,
+                                    media_paths=media_paths_json,
+                                    trend_topic=result.get('author_handle', '')
+                                ))
                                 db.commit()
                                 progress.progress(100, "Done!")
 
-                                if auto_translate and hebrew_translations:
-                                    st.success(f"✅ Added & translated {saved} tweets (with thread context)")
+                                if auto_translate and hebrew_draft:
+                                    st.success(f"✅ Added & translated consolidated thread ({len(tweets_data)} tweets → 1 flowing post)")
                                 else:
-                                    st.success(f"Added {saved} tweets to queue")
-                        else:
-                            existing = db.query(Thread).filter_by(source_url=url).first()
-                            if existing:
-                                existing.raw_json = json.dumps(tweets_data)
-                                existing.tweet_count = len(tweets_data)
-                                existing.updated_at = datetime.now(timezone.utc)
+                                    st.success(f"Added consolidated thread ({len(tweets_data)} tweets combined)")
                             else:
-                                thread = Thread(
-                                    source_url=url,
-                                    author_handle=result.get('author_handle', ''),
-                                    author_name=result.get('author_name', ''),
-                                    raw_json=json.dumps(tweets_data),
-                                    tweet_count=len(tweets_data),
-                                    status=TweetStatus.PENDING
-                                )
-                                db.add(thread)
+                                progress.progress(100, "Done!")
+                                st.info("Thread already exists in queue")
+                        else:
+                            # Separate tweets mode
+                            saved = 0
+                            hebrew_translations = []
+
+                            # Auto-translate if enabled (context-aware)
+                            if auto_translate and tweets_data:
+                                progress.progress(60, "Translating with context awareness...")
+                                try:
+                                    from processor.processor import ProcessorConfig, TranslationService
+                                    config = ProcessorConfig()
+                                    translator = TranslationService(config)
+
+                                    # Use context-aware separate translation
+                                    hebrew_translations = translator.translate_thread_separate(tweets_data)
+                                    logger.info(f"✅ Context-aware translation complete: {len(hebrew_translations)} tweets translated")
+                                except Exception as e:
+                                    logger.error(f"Translation failed: {e}")
+                                    st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
+                                    hebrew_translations = []
+
+                            for idx, t in enumerate(tweets_data):
+                                permalink = t.get('permalink', '')
+                                if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
+                                    media_url = t['media'][0]['src'] if t.get('media') else None
+
+                                    # Get Hebrew translation if available
+                                    hebrew_draft = None
+                                    tweet_status = TweetStatus.PENDING
+                                    if hebrew_translations and idx < len(hebrew_translations):
+                                        hebrew_draft = hebrew_translations[idx]
+                                        tweet_status = TweetStatus.PROCESSED
+
+                                    db.add(Tweet(
+                                        source_url=permalink,
+                                        original_text=t.get('text', ''),
+                                        hebrew_draft=hebrew_draft,
+                                        status=tweet_status,
+                                        media_url=media_url,
+                                        trend_topic=t.get('author_handle', '')
+                                    ))
+                                    saved += 1
                             db.commit()
                             progress.progress(100, "Done!")
-                            st.success(f"Saved thread with {len(tweets_data)} tweets")
 
-                        st.rerun()
+                            if auto_translate and hebrew_translations:
+                                st.success(f"✅ Added & translated {saved} tweets (with thread context)")
+                            else:
+                                st.success(f"Added {saved} tweets to queue")
+                    else:
+                        existing = db.query(Thread).filter_by(source_url=url).first()
+                        if existing:
+                            existing.raw_json = json.dumps(tweets_data)
+                            existing.tweet_count = len(tweets_data)
+                            existing.updated_at = datetime.now(timezone.utc)
+                        else:
+                            thread = Thread(
+                                source_url=url,
+                                author_handle=result.get('author_handle', ''),
+                                author_name=result.get('author_name', ''),
+                                raw_json=json.dumps(tweets_data),
+                                tweet_count=len(tweets_data),
+                                status=TweetStatus.PENDING
+                            )
+                            db.add(thread)
+                        db.commit()
+                        progress.progress(100, "Done!")
+                        st.success(f"Saved thread with {len(tweets_data)} tweets")
 
-                    except Exception as e:
-                        logger.error(f"Scrape failed: {e}")
-                        st.error("Scrape failed. Check server logs for details.")
+                    st.rerun()
+
+                except Exception as e:
+                    logger.error(f"Scrape failed: {e}")
+                    st.error("Scrape failed. Check server logs for details.")
 
     st.markdown("---")
 
@@ -273,7 +270,7 @@ def _render_acquire_section(db):
 
     # ---- Phase A: Fetch & Analyze ----
     if st.session_state.pipeline_phase == 'idle':
-        if st.button("Fetch & Analyze", type="primary", use_container_width=False, key="pipeline_fetch"):
+        if st.button("Fetch & Analyze", type="primary", use_container_width=True, key="pipeline_fetch"):
             pipeline = get_auto_pipeline()
             if not pipeline:
                 st.error("Could not initialize pipeline. Check OPENAI_API_KEY.")
@@ -321,7 +318,7 @@ def _render_acquire_section(db):
                     )
                     st.markdown(f"""
                         <div style="padding: 0.5rem 0;">
-                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
                                 <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">#{idx+1}</span>
                                 <span>{cat_emoji}</span>
                                 {title_html}
@@ -542,7 +539,7 @@ def _render_acquire_section(db):
         tech_count = sum(1 for a in ranked if a.get('category') == 'Tech')
 
         st.markdown(f"""
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; row-gap: 0.5rem; margin-bottom: 1rem;">
                 <h3 style="margin: 0;">Top Articles (Ranked)</h3>
                 <div style="display: flex; gap: 0.5rem;">
                     <span class="status-badge category-finance">💰 Finance: {finance_count}</span>
@@ -649,11 +646,11 @@ def _render_queue_section(db):
     """Queue section: content list with actions"""
     stats = get_stats(db)
 
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-    with col1:
+    action_col1, action_col2 = st.columns(2)
+    with action_col1:
         if st.button("Translate All", use_container_width=True, disabled=stats['pending'] == 0, key="q_translate"):
             run_batch_translate(db)
-    with col2:
+    with action_col2:
         if st.button("Approve All", use_container_width=True, disabled=stats['processed'] == 0, key="q_approve"):
             count = db.query(Tweet).filter(
                 Tweet.status == TweetStatus.PROCESSED,
@@ -663,14 +660,16 @@ def _render_queue_section(db):
             if count > 0:
                 st.success(f"Approved {count}")
                 st.rerun()
-    with col3:
+
+    filter_col1, filter_col2 = st.columns([2, 1])
+    with filter_col1:
         status_filter = st.selectbox(
             "Filter",
             ['all', 'pending', 'processed', 'approved', 'published', 'failed'],
             label_visibility="collapsed",
             key="q_filter"
         )
-    with col4:
+    with filter_col2:
         st.caption(f"Total: {stats['total']} items")
 
     st.markdown("---")
@@ -879,7 +878,7 @@ def _render_thread_translation(db):
         if translations:
             st.markdown("---")
 
-            action_col1, action_col2, action_col3, action_col4 = st.columns(4)
+            action_col1, action_col2 = st.columns(2)
 
             with action_col1:
                 if st.button("Add to Queue", use_container_width=True, key="add_trans_queue"):
@@ -928,7 +927,6 @@ def _render_thread_translation(db):
                         logger.error(f"Failed to add to queue: {e}")
                         st.error("Failed to add to queue. Check server logs for details.")
 
-            with action_col2:
                 # Copy Hebrew text button
                 if translations.get('mode') == 'consolidated':
                     hebrew_copy = translations.get('hebrew', '')
@@ -945,12 +943,11 @@ def _render_thread_translation(db):
                         key="download_hebrew"
                     )
 
-            with action_col3:
+            with action_col2:
                 if st.button("Re-translate", use_container_width=True, key="retranslate_btn"):
                     st.session_state.thread_translations = None
                     st.rerun()
 
-            with action_col4:
                 if st.button("Clear Thread", use_container_width=True, key="clear_thread_btn"):
                     st.session_state.thread_data = None
                     st.session_state.thread_translations = None
@@ -1229,7 +1226,7 @@ def render_content_item(tweet, db):
             # SAFETY: trend_topic and original_text are user-derived, must escape
             st.markdown(f"""
                 <div style="padding: 0.5rem 0;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
                         <span style="font-weight: 500; color: var(--text-primary);">{html.escape(tweet.trend_topic or 'Unknown')}</span>
                         <span class="status-badge status-{status_str.lower()}">{html.escape(status_str)}</span>
                     </div>
@@ -1439,15 +1436,14 @@ def render_editor(db, tweet_id):
             logger.warning(f"Failed to parse media_paths: {e}")
 
     # Action buttons
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    with col1:
+    action_row1_col1, action_row1_col2, action_row1_col3 = st.columns(3)
+    with action_row1_col1:
         if st.button("Save", key="ed_save", use_container_width=True, type="primary"):
             update_tweet(db, tweet.id, hebrew_draft=hebrew)
             st.success("Saved!")
             st.rerun()
 
-    with col2:
+    with action_row1_col2:
         if st.button("Translate", key="ed_trans", use_container_width=True):
             with st.spinner("Translating..."):
                 try:
@@ -1465,7 +1461,7 @@ def render_editor(db, tweet_id):
                     st.error("Translation failed. Check server logs.")
             st.rerun()
 
-    with col3:
+    with action_row1_col3:
         if tweet.status != TweetStatus.APPROVED:
             if st.button("Approve", key="ed_approve", use_container_width=True):
                 update_tweet(db, tweet.id, status=TweetStatus.APPROVED, hebrew_draft=hebrew)
@@ -1476,12 +1472,13 @@ def render_editor(db, tweet_id):
                 st.session_state.selected_item = None
                 st.rerun()
 
-    with col4:
+    action_row2_col1, action_row2_col2 = st.columns(2)
+    with action_row2_col1:
         if st.button("Reset", key="ed_reset", use_container_width=True):
             update_tweet(db, tweet.id, status=TweetStatus.PENDING)
             st.rerun()
 
-    with col5:
+    with action_row2_col2:
         if st.button("Delete", key="ed_delete", use_container_width=True):
             delete_tweet(db, tweet.id)
             st.session_state.selected_item = None

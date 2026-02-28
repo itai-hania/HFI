@@ -243,48 +243,42 @@ def render_settings(db):
         edited_manual_tags = st.text_input("Edit Tags (comma-separated)", value=", ".join(manual_auto_tags), key="manual_edit_tags")
     else:
         edited_manual_tags = ""
-    manual_col1, manual_col2 = st.columns([3, 1])
-    with manual_col2:
-        if st.button("Add Example", key="add_manual_style", use_container_width=True, disabled=not manual_content):
-            if sm and sm.is_hebrew_content(manual_content, min_ratio=0.5):
-                final_tags = [t.strip() for t in edited_manual_tags.split(",") if t.strip()] if edited_manual_tags else ['fintech']
-                example = sm.add_style_example(
-                    db,
-                    content=manual_content,
-                    source_type='manual',
-                    topic_tags=final_tags
-                )
-                if example:
-                    st.success(f"Added manual example (tags: {', '.join(final_tags[:3])})")
-                    st.rerun()
-            else:
-                st.warning("Text doesn't contain enough Hebrew (need >50%)")
+    if st.button("Add Example", key="add_manual_style", use_container_width=True, disabled=not manual_content):
+        if sm and sm.is_hebrew_content(manual_content, min_ratio=0.5):
+            final_tags = [t.strip() for t in edited_manual_tags.split(",") if t.strip()] if edited_manual_tags else ['fintech']
+            example = sm.add_style_example(
+                db,
+                content=manual_content,
+                source_type='manual',
+                topic_tags=final_tags
+            )
+            if example:
+                st.success(f"Added manual example (tags: {', '.join(final_tags[:3])})")
+                st.rerun()
+        else:
+            st.warning("Text doesn't contain enough Hebrew (need >50%)")
 
     # Export button
     st.markdown("---")
-    export_col1, export_col2 = st.columns([3, 1])
-    with export_col2:
-        if example_count > 0 and sm:
-            export_data = sm.export_to_json(db)
-            st.download_button(
-                "Export Examples (JSON)",
-                export_data,
-                "style_examples.json",
-                mime="application/json",
-                use_container_width=True
-            )
+    if example_count > 0 and sm:
+        export_data = sm.export_to_json(db)
+        st.download_button(
+            "Export Examples (JSON)",
+            export_data,
+            "style_examples.json",
+            mime="application/json",
+            use_container_width=True
+        )
 
     # Examples list with search/filter
     if example_count > 0:
         st.markdown("#### Your Style Examples")
 
         # Topic tag filter
-        filter_col1, filter_col2 = st.columns([3, 1])
-        with filter_col1:
-            if topics:
-                selected_tag = st.selectbox("Filter by topic", ["All"] + sorted(topics), key="style_tag_filter")
-            else:
-                selected_tag = "All"
+        if topics:
+            selected_tag = st.selectbox("Filter by topic", ["All"] + sorted(topics), key="style_tag_filter")
+        else:
+            selected_tag = "All"
 
         # Pagination state
         if 'style_examples_limit' not in st.session_state:
@@ -334,11 +328,11 @@ def render_settings(db):
                         st.session_state[f'editing_style_{ex.id}'] = False
                         st.rerun()
             else:
-                ex_col1, ex_col2, ex_col3 = st.columns([5, 1, 1])
+                ex_col1, ex_col2 = st.columns([5, 2])
                 with ex_col1:
                     st.markdown(f"""
                         <div class="queue-item" style="padding: 0.75rem;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; row-gap: 0.35rem;">
                                 <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-primary);">#{ex.id}</span>
                                 <div>
                                     <span class="status-badge source-manual" style="font-size: 0.6rem;">{source_label}</span>
@@ -350,11 +344,10 @@ def render_settings(db):
                         </div>
                     """, unsafe_allow_html=True)
                 with ex_col2:
-                    if st.button("Edit", key=f"edit_style_{ex.id}", help="Edit this example"):
+                    if st.button("Edit", key=f"edit_style_{ex.id}", help="Edit this example", use_container_width=True):
                         st.session_state[f'editing_style_{ex.id}'] = True
                         st.rerun()
-                with ex_col3:
-                    if st.button("🗑️", key=f"del_style_{ex.id}", help="Delete this example"):
+                    if st.button("Delete", key=f"del_style_{ex.id}", help="Delete this example", use_container_width=True):
                         if sm:
                             sm.delete_example(db, ex.id)
                             st.rerun()
@@ -374,7 +367,7 @@ def render_settings(db):
     st.markdown("### Autopilot Defaults")
     st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Configure defaults for the two-phase autopilot pipeline.</p>', unsafe_allow_html=True)
 
-    ap_col1, ap_col2, ap_col3 = st.columns(3)
+    ap_col1, ap_col2 = st.columns(2)
     with ap_col1:
         ap_top_n = st.slider(
             "Trends to auto-select",
@@ -393,14 +386,14 @@ def render_settings(db):
             key="ap_angle_select",
         )
         st.session_state.autopilot_angle = ap_angle
-    with ap_col3:
-        ap_summarize = st.checkbox(
-            "Auto-summarize",
-            value=st.session_state.get('autopilot_auto_summarize', True),
-            key="ap_summarize_check",
-            help="Generate AI summaries during Phase A",
-        )
-        st.session_state.autopilot_auto_summarize = ap_summarize
+
+    ap_summarize = st.checkbox(
+        "Auto-summarize",
+        value=st.session_state.get('autopilot_auto_summarize', True),
+        key="ap_summarize_check",
+        help="Generate AI summaries during Phase A",
+    )
+    st.session_state.autopilot_auto_summarize = ap_summarize
 
     st.markdown("---")
 
@@ -417,7 +410,7 @@ def render_settings(db):
 
         for status, desc in statuses:
             st.markdown(f"""
-                <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0;">
                     <span class="status-badge status-{status.lower()}">{status}</span>
                     <span style="color: var(--text-secondary); font-size: 0.85rem;">{desc}</span>
                 </div>
