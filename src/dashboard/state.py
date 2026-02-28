@@ -9,6 +9,7 @@ import streamlit as st
 
 KEY_CURRENT_VIEW = "current_view"
 KEY_CONTENT_TAB = "content_tab"
+KEY_CONTENT_SECTION_SELECTOR = "content_section_selector"
 KEY_SELECTED_ITEM = "selected_item"
 KEY_HOME_PUBLISH_EXPANDED = "home_publish_expanded"
 KEY_HOME_TRENDS_EXPANDED = "home_trends_expanded"
@@ -18,6 +19,7 @@ KEY_FLASH_MESSAGES = "flash_messages"
 DEFAULT_STATE: Dict[str, Any] = {
     KEY_CURRENT_VIEW: "home",
     KEY_CONTENT_TAB: "Acquire",
+    KEY_CONTENT_SECTION_SELECTOR: "Acquire",
     KEY_SELECTED_ITEM: None,
     KEY_HOME_PUBLISH_EXPANDED: True,
     KEY_HOME_TRENDS_EXPANDED: True,

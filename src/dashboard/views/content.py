@@ -10,6 +10,7 @@ from dashboard.db_helpers import get_stats, get_tweets, update_tweet, delete_twe
 from dashboard.helpers import get_source_badge_class, parse_media_info, format_status_str
 from dashboard.lazy_loaders import get_style_manager, get_summary_generator, get_auto_pipeline
 from dashboard.state import (
+    KEY_CONTENT_SECTION_SELECTOR,
     get_content_tab,
     get_selected_item,
     push_flash,
@@ -50,14 +51,18 @@ def render_content(db):
     if current_section not in sections:
         current_section = "Acquire"
 
+    # Keep the widget key synchronized with external navigation requests
+    # (e.g., Home -> Content -> Generate) before the widget is instantiated.
+    if st.session_state.get(KEY_CONTENT_SECTION_SELECTOR) != current_section:
+        st.session_state[KEY_CONTENT_SECTION_SELECTOR] = current_section
+
     section = st.radio(
         "Content section",
         sections,
-        index=sections.index(current_section),
-        key="content_section_selector",
+        key=KEY_CONTENT_SECTION_SELECTOR,
         horizontal=True,
     )
-    if section != get_content_tab():
+    if section != current_section:
         set_content_tab(section)
 
     if section == "Acquire":
