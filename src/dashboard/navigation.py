@@ -1,11 +1,15 @@
 import streamlit as st
 from dashboard.db_helpers import get_stats
+from dashboard.state import (
+    get_current_view,
+    init_session_state,
+    set_current_view,
+)
 
 
 def init_navigation():
-    """Initialize navigation state"""
-    if 'current_view' not in st.session_state:
-        st.session_state.current_view = 'home'
+    """Initialize navigation state."""
+    init_session_state()
 
 
 def render_sidebar(db):
@@ -26,15 +30,14 @@ def render_sidebar(db):
     ]
 
     for key, label in nav_items:
-        is_active = st.session_state.current_view == key
+        is_active = get_current_view() == key
         if st.button(
             label,
             key=f"nav_{key}",
             use_container_width=True,
             type="primary" if is_active else "secondary"
         ):
-            st.session_state.current_view = key
-            st.rerun()
+            set_current_view(key)
 
     st.markdown("---")
 

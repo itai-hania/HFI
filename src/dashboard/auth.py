@@ -3,6 +3,7 @@ import secrets
 import time
 import logging
 import streamlit as st
+from dashboard.state import rerun_view
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def check_auth() -> bool:
             st.session_state.authenticated = True
             st.session_state.authenticated_at = time.time()
             logger.info("Successful login")
-            st.rerun()
+            rerun_view()
         else:
             _record_failed_attempt()
             st.error("Incorrect password")

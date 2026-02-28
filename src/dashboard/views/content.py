@@ -9,6 +9,18 @@ from common.models import Tweet, Trend, Thread, TrendSource, TweetStatus, StyleE
 from dashboard.db_helpers import get_stats, get_tweets, update_tweet, delete_tweet
 from dashboard.helpers import get_source_badge_class, parse_media_info, format_status_str
 from dashboard.lazy_loaders import get_style_manager, get_summary_generator, get_auto_pipeline
+from dashboard.state import (
+    KEY_CONTENT_SECTION_SELECTOR,
+    get_content_tab,
+    get_selected_item,
+    push_flash,
+    set_content_tab,
+    set_current_view,
+    set_selected_item,
+    rerun_view,
+)
+from dashboard.ui_components import render_empty_state, render_page_header, render_section_header
+from dashboard.ux_events import log_ux_event
 from dashboard.validators import validate_x_url, validate_safe_url
 
 # Cooldown constants (seconds)
@@ -21,72 +33,88 @@ logger = logging.getLogger(__name__)
 def render_content(db):
     """Content view - acquire content and manage queue"""
 
-    st.markdown("""
-        <div class="page-header">
-            <h1 class="page-title">Content</h1>
-            <p class="page-subtitle">Acquire and manage content</p>
-        </div>
-    """, unsafe_allow_html=True)
+    render_page_header("Content", "Acquire, review, generate, and hand off content for publishing.")
 
     # Auto-translate if triggered
     if st.session_state.get('auto_translate'):
         st.session_state.auto_translate = False
         run_batch_translate(db)
 
-    # Initialize selected item state
-    if 'selected_item' not in st.session_state:
-        st.session_state.selected_item = None
-
     # If editing a specific item, show editor
-    if st.session_state.selected_item:
-        render_editor(db, st.session_state.selected_item)
+    selected_item = get_selected_item()
+    if selected_item:
+        render_editor(db, selected_item)
         return
 
-    # Use tabs to organize: Acquire | Queue | Thread Translation | Generate
-    tab_acquire, tab_queue, tab_threads, tab_generate = st.tabs(["Acquire", "Queue", "Thread Translation", "Generate"])
+    sections = ["Acquire", "Queue", "Thread Translation", "Generate", "Publish"]
+    current_section = get_content_tab()
+    if current_section not in sections:
+        current_section = "Acquire"
 
-    with tab_acquire:
+    # Keep the widget key synchronized with external navigation requests
+    # (e.g., Home -> Content -> Generate) before the widget is instantiated.
+    if st.session_state.get(KEY_CONTENT_SECTION_SELECTOR) != current_section:
+        st.session_state[KEY_CONTENT_SECTION_SELECTOR] = current_section
+
+    section = st.radio(
+        "Content section",
+        sections,
+        key=KEY_CONTENT_SECTION_SELECTOR,
+        horizontal=True,
+    )
+    if section != current_section:
+        set_content_tab(section)
+
+    if section == "Acquire":
         _render_acquire_section(db)
-
-    with tab_queue:
+    elif section == "Queue":
         _render_queue_section(db)
-
-    with tab_threads:
+    elif section == "Thread Translation":
         _render_thread_translation(db)
-
-    with tab_generate:
+    elif section == "Generate":
         _render_generate_section(db)
+    else:
+        render_publish_handoff(db)
 
 
 def _render_acquire_section(db):
     """Acquire section: thread scraper + trend fetching"""
 
     # ---- Thread Scraper ----
-    st.markdown("### Scrape Thread from X")
+    render_section_header("Scrape Thread from X", "Fetch a thread, optionally translate, and add to queue.")
 
-    url = st.text_input(
-        "Thread URL",
-        placeholder="https://x.com/user/status/1234567890",
-        key="scrape_url",
-        label_visibility="collapsed",
-        max_chars=500
-    )
+    remaining = int(_SCRAPE_COOLDOWN - (time.time() - st.session_state.get("last_scrape_time", 0)))
+    if remaining > 0:
+        st.caption(f"Scrape cooldown active: {remaining}s remaining.")
 
-    opt_col1, opt_col2 = st.columns(2)
-    with opt_col1:
-        add_to_queue = st.checkbox("Add to queue", value=True)
-        consolidate = st.checkbox("Consolidate thread", value=True)
-    with opt_col2:
-        auto_translate = st.checkbox("Auto-translate", value=True, help="Translate using context-aware AI")
-        download_media = st.checkbox("Download media", value=False, help="Download images and videos from thread")
-    if st.button("Scrape Thread", type="primary", use_container_width=True):
+    with st.form("scrape_thread_form"):
+        url = st.text_input(
+            "Thread URL",
+            placeholder="https://x.com/user/status/1234567890",
+            key="scrape_url",
+            max_chars=500,
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            add_to_queue = st.checkbox("Add to queue", value=True)
+        with col2:
+            consolidate = st.checkbox("Consolidate thread", value=True)
+        with col3:
+            auto_translate = st.checkbox("Auto-translate", value=True, help="Translate using context-aware AI")
+        with col4:
+            download_media = st.checkbox("Download media", value=False, help="Download images and videos from thread")
+
+        scrape_clicked = st.form_submit_button("Scrape Thread", type="primary", use_container_width=True)
+
+    if scrape_clicked:
         _url_valid, _url_err = validate_x_url(url) if url else (False, "")
         if not url:
-            st.warning("Enter a URL first")
+            st.warning("Enter a URL before scraping.")
         elif not _url_valid:
             st.error(_url_err)
-        elif time.time() - st.session_state.get('last_scrape_time', 0) < _SCRAPE_COOLDOWN:
-            remaining = int(_SCRAPE_COOLDOWN - (time.time() - st.session_state.get('last_scrape_time', 0)))
+        elif time.time() - st.session_state.get("last_scrape_time", 0) < _SCRAPE_COOLDOWN:
+            remaining = int(_SCRAPE_COOLDOWN - (time.time() - st.session_state.get("last_scrape_time", 0)))
             st.warning(f"Please wait {remaining}s before scraping again.")
         else:
             st.session_state.last_scrape_time = time.time()
@@ -107,18 +135,16 @@ def _render_acquire_section(db):
                             await scraper.close()
 
                     result = asyncio.run(run())
-                    tweets_data = result.get('tweets', [])
+                    tweets_data = result.get("tweets", [])
                     progress.progress(80, "Saving...")
 
                     if add_to_queue:
                         if consolidate and len(tweets_data) > 1:
-                            # Combine original text for reference
-                            combined_text = "\n\n---\n\n".join([t.get('text', '') for t in tweets_data])
-                            first_url = tweets_data[0].get('permalink', url) if tweets_data else url
-                            media_urls = [t['media'][0]['src'] for t in tweets_data if t.get('media')]
+                            combined_text = "\n\n---\n\n".join([t.get("text", "") for t in tweets_data])
+                            first_url = tweets_data[0].get("permalink", url) if tweets_data else url
+                            media_urls = [t["media"][0]["src"] for t in tweets_data if t.get("media")]
 
                             if not db.query(Tweet).filter_by(source_url=first_url).first():
-                                # Auto-translate if enabled
                                 hebrew_draft = None
                                 tweet_status = TweetStatus.PENDING
 
@@ -128,16 +154,13 @@ def _render_acquire_section(db):
                                         from processor.processor import ProcessorConfig, TranslationService
                                         config = ProcessorConfig()
                                         translator = TranslationService(config)
-
-                                        # Use context-aware consolidated translation
                                         hebrew_draft = translator.translate_thread_consolidated(tweets_data)
                                         tweet_status = TweetStatus.PROCESSED
-                                        logger.info(f"✅ Context-aware translation complete: {hebrew_draft[:100]}...")
+                                        logger.info("Context-aware consolidated translation complete")
                                     except Exception as e:
                                         logger.error(f"Translation failed: {e}")
                                         st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
 
-                                # Download all thread media (optional)
                                 media_paths_json = None
                                 first_media_path = None
                                 if download_media:
@@ -149,80 +172,79 @@ def _render_acquire_section(db):
                                         if media_results:
                                             import json as json_mod
                                             media_paths_json = json_mod.dumps(media_results)
-                                            first_media_path = media_results[0].get('local_path')
-                                            logger.info(f"✅ Downloaded {len(media_results)} media files")
+                                            first_media_path = media_results[0].get("local_path")
+                                            logger.info(f"Downloaded {len(media_results)} media files")
                                     except Exception as e:
                                         logger.warning(f"Media download failed: {e}")
 
-                                db.add(Tweet(
-                                    source_url=first_url,
-                                    original_text=combined_text,
-                                    hebrew_draft=hebrew_draft,
-                                    status=tweet_status,
-                                    media_url=media_urls[0] if media_urls else None,
-                                    media_path=first_media_path,
-                                    media_paths=media_paths_json,
-                                    trend_topic=result.get('author_handle', '')
-                                ))
+                                db.add(
+                                    Tweet(
+                                        source_url=first_url,
+                                        original_text=combined_text,
+                                        hebrew_draft=hebrew_draft,
+                                        status=tweet_status,
+                                        media_url=media_urls[0] if media_urls else None,
+                                        media_path=first_media_path,
+                                        media_paths=media_paths_json,
+                                        trend_topic=result.get("author_handle", ""),
+                                    )
+                                )
                                 db.commit()
                                 progress.progress(100, "Done!")
-
                                 if auto_translate and hebrew_draft:
-                                    st.success(f"✅ Added & translated consolidated thread ({len(tweets_data)} tweets → 1 flowing post)")
+                                    push_flash(
+                                        "success",
+                                        f"Added and translated consolidated thread ({len(tweets_data)} tweets to 1 post).",
+                                        view="content",
+                                    )
                                 else:
-                                    st.success(f"Added consolidated thread ({len(tweets_data)} tweets combined)")
+                                    push_flash("success", f"Added consolidated thread ({len(tweets_data)} tweets).", view="content")
                             else:
                                 progress.progress(100, "Done!")
-                                st.info("Thread already exists in queue")
+                                push_flash("info", "Thread already exists in queue.", view="content")
                         else:
-                            # Separate tweets mode
                             saved = 0
                             hebrew_translations = []
-
-                            # Auto-translate if enabled (context-aware)
                             if auto_translate and tweets_data:
                                 progress.progress(60, "Translating with context awareness...")
                                 try:
                                     from processor.processor import ProcessorConfig, TranslationService
                                     config = ProcessorConfig()
                                     translator = TranslationService(config)
-
-                                    # Use context-aware separate translation
                                     hebrew_translations = translator.translate_thread_separate(tweets_data)
-                                    logger.info(f"✅ Context-aware translation complete: {len(hebrew_translations)} tweets translated")
+                                    logger.info("Context-aware separate translation complete")
                                 except Exception as e:
                                     logger.error(f"Translation failed: {e}")
                                     st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
-                                    hebrew_translations = []
 
                             for idx, t in enumerate(tweets_data):
-                                permalink = t.get('permalink', '')
+                                permalink = t.get("permalink", "")
                                 if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
-                                    media_url = t['media'][0]['src'] if t.get('media') else None
-
-                                    # Get Hebrew translation if available
+                                    media_url = t["media"][0]["src"] if t.get("media") else None
                                     hebrew_draft = None
                                     tweet_status = TweetStatus.PENDING
                                     if hebrew_translations and idx < len(hebrew_translations):
                                         hebrew_draft = hebrew_translations[idx]
                                         tweet_status = TweetStatus.PROCESSED
 
-                                    db.add(Tweet(
-                                        source_url=permalink,
-                                        original_text=t.get('text', ''),
-                                        hebrew_draft=hebrew_draft,
-                                        status=tweet_status,
-                                        media_url=media_url,
-                                        trend_topic=t.get('author_handle', '')
-                                    ))
+                                    db.add(
+                                        Tweet(
+                                            source_url=permalink,
+                                            original_text=t.get("text", ""),
+                                            hebrew_draft=hebrew_draft,
+                                            status=tweet_status,
+                                            media_url=media_url,
+                                            trend_topic=t.get("author_handle", ""),
+                                        )
+                                    )
                                     saved += 1
+
                             db.commit()
                             progress.progress(100, "Done!")
-
                             if auto_translate and hebrew_translations:
-                                st.success(f"✅ Added & translated {saved} tweets (with thread context)")
+                                push_flash("success", f"Added and translated {saved} tweets.", view="content")
                             else:
-                                st.success(f"Added {saved} tweets to queue")
+                                push_flash("success", f"Added {saved} tweets to queue.", view="content")
                     else:
                         existing = db.query(Thread).filter_by(source_url=url).first()
                         if existing:
@@ -232,21 +254,22 @@ def _render_acquire_section(db):
                         else:
                             thread = Thread(
                                 source_url=url,
-                                author_handle=result.get('author_handle', ''),
-                                author_name=result.get('author_name', ''),
+                                author_handle=result.get("author_handle", ""),
+                                author_name=result.get("author_name", ""),
                                 raw_json=json.dumps(tweets_data),
                                 tweet_count=len(tweets_data),
-                                status=TweetStatus.PENDING
+                                status=TweetStatus.PENDING,
                             )
                             db.add(thread)
                         db.commit()
                         progress.progress(100, "Done!")
-                        st.success(f"Saved thread with {len(tweets_data)} tweets")
+                        push_flash("success", f"Saved thread with {len(tweets_data)} tweets.", view="content")
 
-                    st.rerun()
-
+                    log_ux_event("scrape_thread", "content", success=True, metadata={"tweets_found": len(tweets_data)})
+                    rerun_view()
                 except Exception as e:
                     logger.error(f"Scrape failed: {e}")
+                    log_ux_event("scrape_thread", "content", success=False, error_code="scrape_failed")
                     st.error("Scrape failed. Check server logs for details.")
 
     st.markdown("---")
@@ -270,7 +293,7 @@ def _render_acquire_section(db):
 
     # ---- Phase A: Fetch & Analyze ----
     if st.session_state.pipeline_phase == 'idle':
-        if st.button("Fetch & Analyze", type="primary", use_container_width=True, key="pipeline_fetch"):
+        if st.button("Fetch & Analyze", type="primary", use_container_width=False, key="pipeline_fetch"):
             pipeline = get_auto_pipeline()
             if not pipeline:
                 st.error("Could not initialize pipeline. Check OPENAI_API_KEY.")
@@ -284,7 +307,7 @@ def _render_acquire_section(db):
                         if candidates:
                             st.session_state.pipeline_candidates = candidates
                             st.session_state.pipeline_phase = 'candidates'
-                            st.rerun()
+                            rerun_view()
                         else:
                             st.info("No new candidates found. All top trends are already in your queue.")
                     except Exception as e:
@@ -302,14 +325,14 @@ def _render_acquire_section(db):
             safe_summary = html.escape(cand.get('summary', '') or cand.get('description', ''))[:200]
             badge_cls = get_source_badge_class(cand.get('source', ''))
             safe_source = html.escape(cand.get('source', ''))
-            cat_emoji = "💰" if cand.get('category') == 'Finance' else "💻"
+            category_label = "Finance" if cand.get("category") == "Finance" else "Tech"
             url = cand.get('url', '')
             url_valid = bool(url) and validate_safe_url(url)[0]
 
             with st.container():
                 sel_col, info_col = st.columns([0.3, 5])
                 with sel_col:
-                    checked = st.checkbox("", value=True, key=f"pipe_sel_{idx}", label_visibility="collapsed")
+                    checked = st.checkbox(f"Select candidate {idx + 1}", value=True, key=f"pipe_sel_{idx}")
                     selections[idx] = checked
                 with info_col:
                     title_html = (
@@ -318,9 +341,9 @@ def _render_acquire_section(db):
                     )
                     st.markdown(f"""
                         <div style="padding: 0.5rem 0;">
-                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
                                 <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">#{idx+1}</span>
-                                <span>{cat_emoji}</span>
+                                <span class="status-badge {'category-finance' if category_label == 'Finance' else 'category-tech'}">{category_label}</span>
                                 {title_html}
                                 <span class="status-badge {badge_cls}" style="font-size: 0.65rem;">{safe_source}</span>
                             </div>
@@ -345,7 +368,7 @@ def _render_acquire_section(db):
                             )
                             st.session_state.pipeline_results = results
                             st.session_state.pipeline_phase = 'review'
-                            st.rerun()
+                            rerun_view()
                         except Exception as e:
                             logger.error(f"Generation failed: {e}")
                             st.error("Generation failed. Check server logs for details.")
@@ -353,7 +376,7 @@ def _render_acquire_section(db):
             if st.button("Cancel", use_container_width=True, key="pipeline_cancel_a"):
                 st.session_state.pipeline_phase = 'idle'
                 st.session_state.pipeline_candidates = []
-                st.rerun()
+                rerun_view()
 
     # ---- Phase B UI: Review generated posts ----
     elif st.session_state.pipeline_phase == 'review':
@@ -374,7 +397,6 @@ def _render_acquire_section(db):
                 value=hebrew_text,
                 height=120,
                 key=f"pipe_review_{idx}",
-                label_visibility="collapsed",
             )
 
             char_count = len(edited) if edited else 0
@@ -397,7 +419,7 @@ def _render_acquire_section(db):
                             if edited and len(edited.strip()) > 30:
                                 _auto_learn_style(db, edited.strip())
                             st.success(f"Approved: {safe_title}")
-                            st.rerun()
+                            rerun_view()
             with btn_col2:
                 if st.button("Skip", key=f"pipe_skip_{idx}", use_container_width=True):
                     if tweet_id:
@@ -410,7 +432,7 @@ def _render_acquire_section(db):
                             db.delete(tweet)
                             db.commit()
                     st.info(f"Skipped: {safe_title}")
-                    st.rerun()
+                    rerun_view()
 
             st.markdown("<hr style='margin: 0.5rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
 
@@ -433,18 +455,18 @@ def _render_acquire_section(db):
                 st.session_state.pipeline_phase = 'idle'
                 st.session_state.pipeline_candidates = []
                 st.session_state.pipeline_results = []
-                st.rerun()
+                rerun_view()
         with done_col2:
             if st.button("Back to Candidates", use_container_width=True, key="pipe_back"):
                 st.session_state.pipeline_phase = 'candidates'
                 st.session_state.pipeline_results = []
-                st.rerun()
+                rerun_view()
         with done_col3:
             if st.button("Done", use_container_width=True, key="pipe_done"):
                 st.session_state.pipeline_phase = 'idle'
                 st.session_state.pipeline_candidates = []
                 st.session_state.pipeline_results = []
-                st.rerun()
+                rerun_view()
 
     st.markdown("---")
 
@@ -472,7 +494,7 @@ def _render_acquire_section(db):
                         with st.spinner(f"Generating summaries for {trends_without_summary} trends..."):
                             stats = generator.backfill_summaries(db, limit=20)
                             st.success(f"Generated {stats['success']} summaries ({stats['failed']} failed)")
-                            st.rerun()
+                            rerun_view()
                     else:
                         st.error("Could not initialize summary generator. Check OPENAI_API_KEY.")
 
@@ -525,8 +547,8 @@ def _render_acquire_section(db):
                                         success_count += 1
                                 st.success(f"Generated {success_count} AI summaries")
 
-                    st.session_state.current_view = 'home'
-                    st.rerun()
+                    set_current_view("home")
+                    rerun_view()
                 except Exception as e:
                     logger.error(f"Fetch trends failed: {e}")
                     st.error("Fetch failed. Check server logs for details.")
@@ -539,11 +561,11 @@ def _render_acquire_section(db):
         tech_count = sum(1 for a in ranked if a.get('category') == 'Tech')
 
         st.markdown(f"""
-            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; row-gap: 0.5rem; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h3 style="margin: 0;">Top Articles (Ranked)</h3>
                 <div style="display: flex; gap: 0.5rem;">
-                    <span class="status-badge category-finance">💰 Finance: {finance_count}</span>
-                    <span class="status-badge category-tech">💻 Tech: {tech_count}</span>
+                    <span class="status-badge category-finance">Finance: {finance_count}</span>
+                    <span class="status-badge category-tech">Tech: {tech_count}</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -560,7 +582,7 @@ def _render_acquire_section(db):
             art_source = html.escape(art.get('source', '') or '')
             art_category = art.get('category', 'Unknown')
             badge_cls = get_source_badge_class(art.get('source', ''))
-            category_emoji = "💰" if art_category == "Finance" else "💻"
+            category_label = "Finance" if art_category == "Finance" else "Tech"
             title_html = (
                 f'<a href="{art_url}" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;">{art_title}</a>'
                 if raw_art_url and validate_safe_url(raw_art_url)[0]
@@ -584,7 +606,8 @@ def _render_acquire_section(db):
                 summary_html = ''
                 keywords_html = ''
 
-            card_html = f'<div class="queue-item"><div style="display: flex; justify-content: space-between; align-items: center;"><div style="display: flex; align-items: center; gap: 0.5rem;"><span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 1.5rem;">#{idx}</span><span style="font-size: 1rem;">{category_emoji}</span>{title_html}</div><span class="status-badge {badge_cls}">{art_source}</span></div>{summary_html}{keywords_html}</div>'
+            category_cls = "category-finance" if category_label == "Finance" else "category-tech"
+            card_html = f'<div class="queue-item"><div style="display: flex; justify-content: space-between; align-items: center;"><div style="display: flex; align-items: center; gap: 0.5rem;"><span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 1.5rem;">#{idx}</span><span class="status-badge {category_cls}">{category_label}</span>{title_html}</div><span class="status-badge {badge_cls}">{art_source}</span></div>{summary_html}{keywords_html}</div>'
             st.markdown(card_html, unsafe_allow_html=True)
     else:
         # Show recent trends from DB if no ranked results
@@ -633,24 +656,26 @@ def _render_acquire_section(db):
     st.markdown("### Add Manual Trend")
     mcol1, mcol2 = st.columns([3, 1])
     with mcol1:
-        manual = st.text_input("Trend Title", key="manual_trend", label_visibility="collapsed", placeholder="Enter trend topic...", max_chars=256)
+        manual = st.text_input("Trend Title", key="manual_trend", placeholder="Enter trend topic...", max_chars=256)
     with mcol2:
         if st.button("Add Trend", key="add_manual_trend", disabled=not manual, use_container_width=True):
             db.add(Trend(title=manual, source=TrendSource.MANUAL))
             db.commit()
             st.success(f"Added: {manual}")
-            st.rerun()
+            rerun_view()
 
 
 def _render_queue_section(db):
     """Queue section: content list with actions"""
     stats = get_stats(db)
 
-    action_col1, action_col2 = st.columns(2)
-    with action_col1:
+    render_section_header("Queue Workflow", "Translate, review, and approve items ready for publishing.")
+
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    with col1:
         if st.button("Translate All", use_container_width=True, disabled=stats['pending'] == 0, key="q_translate"):
             run_batch_translate(db)
-    with action_col2:
+    with col2:
         if st.button("Approve All", use_container_width=True, disabled=stats['processed'] == 0, key="q_approve"):
             count = db.query(Tweet).filter(
                 Tweet.status == TweetStatus.PROCESSED,
@@ -659,17 +684,14 @@ def _render_queue_section(db):
             db.commit()
             if count > 0:
                 st.success(f"Approved {count}")
-                st.rerun()
-
-    filter_col1, filter_col2 = st.columns([2, 1])
-    with filter_col1:
+                rerun_view()
+    with col3:
         status_filter = st.selectbox(
-            "Filter",
+            "Status filter",
             ['all', 'pending', 'processed', 'approved', 'published', 'failed'],
-            label_visibility="collapsed",
             key="q_filter"
         )
-    with filter_col2:
+    with col4:
         st.caption(f"Total: {stats['total']} items")
 
     st.markdown("---")
@@ -677,13 +699,7 @@ def _render_queue_section(db):
     tweets = get_tweets(db, status_filter=status_filter, limit=50)
 
     if not tweets:
-        st.markdown("""
-            <div class="empty-state">
-                <div class="empty-state-icon">📭</div>
-                <div class="empty-state-title">No content found</div>
-                <div class="empty-state-text">Scrape some threads to get started</div>
-            </div>
-        """, unsafe_allow_html=True)
+        render_empty_state("No content found", "Scrape threads or generate content to populate the queue.")
         return
 
     for tweet in tweets:
@@ -693,8 +709,7 @@ def _render_queue_section(db):
 def _render_thread_translation(db):
     """Thread Translation section with side-by-side English/Hebrew display."""
 
-    st.markdown("### Thread Translation")
-    st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Paste a Twitter/X thread URL to fetch and translate with side-by-side RTL Hebrew display.</p>', unsafe_allow_html=True)
+    render_section_header("Thread Translation", "Fetch an X thread and translate with side-by-side English/Hebrew review.")
 
     # Initialize session state for thread translation
     if 'thread_data' not in st.session_state:
@@ -711,7 +726,6 @@ def _render_thread_translation(db):
             "Thread URL",
             placeholder="https://x.com/user/status/1234567890",
             key="thread_trans_url",
-            label_visibility="collapsed",
             value=st.session_state.thread_url,
             max_chars=500
         )
@@ -749,7 +763,7 @@ def _render_thread_translation(db):
                         st.session_state.thread_url = thread_url
                         st.session_state.thread_translations = None
                         st.success(f"Fetched {len(tweets_data)} tweets from thread")
-                        st.rerun()
+                        rerun_view()
                     else:
                         st.warning("No tweets found in thread")
 
@@ -774,7 +788,6 @@ def _render_thread_translation(db):
                 "Mode",
                 ["Consolidated", "Separate"],
                 key="trans_mode",
-                label_visibility="collapsed",
                 help="Consolidated: One flowing post. Separate: Keep thread structure."
             )
         with header_col3:
@@ -804,7 +817,7 @@ def _render_thread_translation(db):
                         }
 
                     st.success("Translation complete!")
-                    st.rerun()
+                    rerun_view()
 
                 except Exception as e:
                     logger.error(f"Translation failed: {e}")
@@ -878,7 +891,7 @@ def _render_thread_translation(db):
         if translations:
             st.markdown("---")
 
-            action_col1, action_col2 = st.columns(2)
+            action_col1, action_col2, action_col3, action_col4 = st.columns(4)
 
             with action_col1:
                 if st.button("Add to Queue", use_container_width=True, key="add_trans_queue"):
@@ -921,12 +934,13 @@ def _render_thread_translation(db):
                             db.commit()
                             st.success(f"Added {saved} tweets to queue!")
 
-                        st.rerun()
+                        rerun_view()
 
                     except Exception as e:
                         logger.error(f"Failed to add to queue: {e}")
                         st.error("Failed to add to queue. Check server logs for details.")
 
+            with action_col2:
                 # Copy Hebrew text button
                 if translations.get('mode') == 'consolidated':
                     hebrew_copy = translations.get('hebrew', '')
@@ -943,25 +957,22 @@ def _render_thread_translation(db):
                         key="download_hebrew"
                     )
 
-            with action_col2:
+            with action_col3:
                 if st.button("Re-translate", use_container_width=True, key="retranslate_btn"):
                     st.session_state.thread_translations = None
-                    st.rerun()
+                    rerun_view()
 
+            with action_col4:
                 if st.button("Clear Thread", use_container_width=True, key="clear_thread_btn"):
                     st.session_state.thread_data = None
                     st.session_state.thread_translations = None
                     st.session_state.thread_url = ""
-                    st.rerun()
+                    rerun_view()
     else:
-        # Empty state
-        st.markdown("""
-            <div class="empty-state" style="margin-top: 2rem;">
-                <div class="empty-state-icon">🧵</div>
-                <div class="empty-state-title">No thread loaded</div>
-                <div class="empty-state-text">Paste a Twitter/X thread URL above and click "Fetch Thread" to get started with side-by-side translation.</div>
-            </div>
-        """, unsafe_allow_html=True)
+        render_empty_state(
+            "No thread loaded",
+            'Paste a Twitter/X thread URL above and click "Fetch Thread" to start side-by-side translation.',
+        )
 
 
 def _render_generate_section(db):
@@ -1034,7 +1045,7 @@ def _render_generate_section(db):
                     st.session_state['gen_source_for_save'] = source_text
                     st.session_state['gen_mode_result'] = 'thread'
 
-                st.rerun()
+                rerun_view()
             except Exception as e:
                 logger.error(f"Generation failed: {e}")
                 st.error("Generation failed. Check server logs for details.")
@@ -1063,7 +1074,6 @@ def _render_generate_section(db):
                     value=variant['content'],
                     height=120,
                     key=f"gen_var_{i}",
-                    label_visibility="collapsed"
                 )
 
                 # Char counter
@@ -1099,7 +1109,7 @@ def _render_generate_section(db):
                         if edited and len(edited.strip()) > 30:
                             _auto_learn_style(db, edited.strip())
                         st.success(f"Variant {i+1} approved and saved!")
-                        st.rerun()
+                        rerun_view()
 
                 with col_save_draft:
                     if st.button(f"Save as Draft", key=f"gen_draft_{i}", use_container_width=True):
@@ -1121,14 +1131,14 @@ def _render_generate_section(db):
                         db.add(new_tweet)
                         db.commit()
                         st.success(f"Variant {i+1} saved as draft!")
-                        st.rerun()
+                        rerun_view()
 
                 st.divider()
 
         if st.button("Clear Results", key="gen_clear"):
             for k in ['gen_variants', 'gen_source_for_save', 'gen_mode_result']:
                 st.session_state.pop(k, None)
-            st.rerun()
+            rerun_view()
 
     # ---- Display generated thread ----
     if st.session_state.get('gen_mode_result') == 'thread' and 'gen_thread_result' in st.session_state:
@@ -1148,7 +1158,6 @@ def _render_generate_section(db):
                 value=tweet_data['content'],
                 height=80,
                 key=f"gen_thread_{i}",
-                label_visibility="collapsed"
             )
             all_edited.append(edited)
 
@@ -1183,7 +1192,7 @@ def _render_generate_section(db):
                 if combined and len(combined.strip()) > 30:
                     _auto_learn_style(db, combined.strip())
                 st.success("Thread approved and saved!")
-                st.rerun()
+                rerun_view()
 
         with col_draft_thread:
             if st.button("Save as Draft", key="gen_thread_draft", use_container_width=True):
@@ -1205,19 +1214,98 @@ def _render_generate_section(db):
                 db.add(new_tweet)
                 db.commit()
                 st.success("Thread saved as draft!")
-                st.rerun()
+                rerun_view()
 
         with col_clear_thread:
             if st.button("Clear", key="gen_thread_clear", use_container_width=True):
                 for k in ['gen_thread_result', 'gen_source_for_save', 'gen_mode_result']:
                     st.session_state.pop(k, None)
-                st.rerun()
+                rerun_view()
+
+
+def render_publish_handoff(db):
+    """Publish handoff workflow for approved content."""
+    render_section_header("Publish Handoff", "Schedule approved content and mark manual publish outcomes.")
+
+    stats = get_stats(db)
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("Ready to publish", stats.get("ready_to_publish", 0))
+    with m2:
+        st.metric("Scheduled", stats.get("scheduled", 0))
+    with m3:
+        st.metric("Published", stats.get("published", 0))
+
+    approved_tweets = (
+        db.query(Tweet)
+        .filter(Tweet.status == TweetStatus.APPROVED)
+        .order_by(Tweet.updated_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    if not approved_tweets:
+        render_empty_state("No approved items", "Approve drafts in Queue or Generate to prepare publish handoff.")
+        return
+
+    st.info("Publishing backend is not enabled yet. Use this section to schedule and track manual posting.")
+
+    for tweet in approved_tweets:
+        trend_title = html.escape(tweet.trend_topic or "Untitled")
+        preview = html.escape((tweet.hebrew_draft or "")[:180])
+        if len(tweet.hebrew_draft or "") > 180:
+            preview += "..."
+        current_schedule = tweet.scheduled_at
+        scheduled_label = current_schedule.strftime("%Y-%m-%d %H:%M UTC") if current_schedule else "Not scheduled"
+
+        with st.container():
+            c1, c2, c3 = st.columns([5, 3, 2])
+            with c1:
+                st.markdown(f"**{trend_title}**")
+                st.markdown(f"<div style='direction: rtl; text-align: right; color: var(--text-secondary);'>{preview}</div>", unsafe_allow_html=True)
+                st.caption(f"Schedule: {scheduled_label}")
+            with c2:
+                default_dt = current_schedule or datetime.now(timezone.utc)
+                schedule_date = st.date_input(
+                    "Schedule date",
+                    value=default_dt.date(),
+                    key=f"publish_date_{tweet.id}",
+                )
+                schedule_time = st.time_input(
+                    "Schedule time (UTC)",
+                    value=default_dt.astimezone(timezone.utc).time().replace(second=0, microsecond=0, tzinfo=None),
+                    key=f"publish_time_{tweet.id}",
+                )
+                if st.button("Set Scheduled Time", key=f"set_schedule_{tweet.id}", use_container_width=True):
+                    schedule_dt = datetime.combine(schedule_date, schedule_time, tzinfo=timezone.utc)
+                    tweet.scheduled_at = schedule_dt
+                    db.commit()
+                    push_flash("success", f"Schedule set for item {tweet.id}.", view="content")
+                    log_ux_event("set_scheduled_time", "content", success=True, metadata={"tweet_id": tweet.id})
+                    rerun_view()
+            with c3:
+                if st.button("Mark as Published", key=f"mark_published_{tweet.id}", use_container_width=True, type="primary"):
+                    tweet.status = TweetStatus.PUBLISHED
+                    tweet.scheduled_at = None
+                    db.commit()
+                    push_flash("success", f"Item {tweet.id} marked as published.", view="content")
+                    log_ux_event("mark_published", "content", success=True, metadata={"tweet_id": tweet.id})
+                    rerun_view()
+
+                if st.button("Return to Review", key=f"return_review_{tweet.id}", use_container_width=True):
+                    tweet.status = TweetStatus.PROCESSED
+                    tweet.scheduled_at = None
+                    db.commit()
+                    push_flash("warning", f"Item {tweet.id} returned to review.", view="content")
+                    log_ux_event("return_to_review", "content", success=True, metadata={"tweet_id": tweet.id})
+                    rerun_view()
+        st.divider()
 
 
 def render_content_item(tweet, db):
     """Render a content list item with media indicators"""
     status_str = format_status_str(tweet.status)
-    media_count, media_icon = parse_media_info(tweet.media_paths)
+    media_count, media_label = parse_media_info(tweet.media_paths)
 
     with st.container():
         col1, col2, col3 = st.columns([4, 1, 1])
@@ -1226,7 +1314,7 @@ def render_content_item(tweet, db):
             # SAFETY: trend_topic and original_text are user-derived, must escape
             st.markdown(f"""
                 <div style="padding: 0.5rem 0;">
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
                         <span style="font-weight: 500; color: var(--text-primary);">{html.escape(tweet.trend_topic or 'Unknown')}</span>
                         <span class="status-badge status-{status_str.lower()}">{html.escape(status_str)}</span>
                     </div>
@@ -1240,7 +1328,7 @@ def render_content_item(tweet, db):
             if media_count > 0:
                 st.markdown(f"""
                     <div style="font-size: 0.75rem; color: var(--accent-primary); text-align: center;">
-                        {media_icon} {media_count} media
+                        {media_label} ({media_count})
                     </div>
                 """, unsafe_allow_html=True)
             elif tweet.hebrew_draft:
@@ -1254,8 +1342,8 @@ def render_content_item(tweet, db):
 
         with col3:
             if st.button("Edit", key=f"edit_{tweet.id}", use_container_width=True):
-                st.session_state.selected_item = tweet.id
-                st.rerun()
+                set_selected_item(tweet.id)
+                rerun_view()
 
         st.markdown("<hr style='margin: 0.5rem 0; border-color: var(--border-default);'>", unsafe_allow_html=True)
 
@@ -1313,7 +1401,7 @@ def render_editor(db, tweet_id):
 
     if not tweet:
         st.error("Item not found")
-        st.session_state.selected_item = None
+        set_selected_item(None)
         return
 
     status_str = tweet.status.value if hasattr(tweet.status, 'value') else str(tweet.status)
@@ -1323,8 +1411,8 @@ def render_editor(db, tweet_id):
 
     with col1:
         if st.button("< Back", use_container_width=True):
-            st.session_state.selected_item = None
-            st.rerun()
+            set_selected_item(None)
+            rerun_view()
 
     with col2:
         st.markdown(f"""
@@ -1356,7 +1444,6 @@ def render_editor(db, tweet_id):
             height=250,
             disabled=True,
             key="edit_original",
-            label_visibility="collapsed"
         )
 
     with col2:
@@ -1371,7 +1458,6 @@ def render_editor(db, tweet_id):
             value=tweet.hebrew_draft or "",
             height=250,
             key="edit_hebrew",
-            label_visibility="collapsed",
             placeholder="Enter Hebrew translation..."
         )
 
@@ -1424,11 +1510,11 @@ def render_editor(db, tweet_id):
                                 st.image(local_path, caption=f"Tweet #{idx+1}")
                             elif media_type == 'video':
                                 st.video(local_path)
-                                st.caption(f"🎥 Video #{idx+1}")
+                                st.caption(f"Video #{idx+1}")
                         else:
                             st.markdown(f"""
                                 <div style="background: var(--bg-elevated); padding: 1rem; border-radius: 8px; text-align: center; color: var(--text-muted);">
-                                    ❌ {media_type.title()} missing<br>
+                                    {media_type.title()} missing<br>
                                     <small>File not found</small>
                                 </div>
                             """, unsafe_allow_html=True)
@@ -1436,14 +1522,15 @@ def render_editor(db, tweet_id):
             logger.warning(f"Failed to parse media_paths: {e}")
 
     # Action buttons
-    action_row1_col1, action_row1_col2, action_row1_col3 = st.columns(3)
-    with action_row1_col1:
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
         if st.button("Save", key="ed_save", use_container_width=True, type="primary"):
             update_tweet(db, tweet.id, hebrew_draft=hebrew)
             st.success("Saved!")
-            st.rerun()
+            rerun_view()
 
-    with action_row1_col2:
+    with col2:
         if st.button("Translate", key="ed_trans", use_container_width=True):
             with st.spinner("Translating..."):
                 try:
@@ -1459,9 +1546,9 @@ def render_editor(db, tweet_id):
                 except Exception as e:
                     logger.error(f"Editor translation failed: {e}")
                     st.error("Translation failed. Check server logs.")
-            st.rerun()
+            rerun_view()
 
-    with action_row1_col3:
+    with col3:
         if tweet.status != TweetStatus.APPROVED:
             if st.button("Approve", key="ed_approve", use_container_width=True):
                 update_tweet(db, tweet.id, status=TweetStatus.APPROVED, hebrew_draft=hebrew)
@@ -1469,20 +1556,19 @@ def render_editor(db, tweet_id):
                 if hebrew and len(hebrew.strip()) > 30:
                     _auto_learn_style(db, hebrew.strip(), tweet.source_url)
                 st.success("Approved!")
-                st.session_state.selected_item = None
-                st.rerun()
+                set_selected_item(None)
+                rerun_view()
 
-    action_row2_col1, action_row2_col2 = st.columns(2)
-    with action_row2_col1:
+    with col4:
         if st.button("Reset", key="ed_reset", use_container_width=True):
             update_tweet(db, tweet.id, status=TweetStatus.PENDING)
-            st.rerun()
+            rerun_view()
 
-    with action_row2_col2:
+    with col5:
         if st.button("Delete", key="ed_delete", use_container_width=True):
             delete_tweet(db, tweet.id)
-            st.session_state.selected_item = None
-            st.rerun()
+            set_selected_item(None)
+            rerun_view()
 
     # Error display
     if tweet.status == TweetStatus.FAILED and tweet.error_message:
@@ -1539,7 +1625,7 @@ def run_batch_translate(db):
         progress.empty()
         status_text.empty()
         st.success(f"Translated {success}/{len(pending)} items")
-        st.rerun()
+        rerun_view()
 
     except Exception as e:
         logger.error(f"Batch translation error: {e}")

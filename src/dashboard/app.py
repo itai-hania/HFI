@@ -28,12 +28,16 @@ st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 from dashboard.db_helpers import get_db
 from dashboard.auth import check_auth
 from dashboard.navigation import init_navigation, render_sidebar
+from dashboard.state import get_current_view, init_session_state
+from dashboard.ui_components import render_flash_messages
 from dashboard.views.home import render_home
 from dashboard.views.content import render_content
 from dashboard.views.settings import render_settings
 
 
 def main():
+    init_session_state()
+
     if '_tables_created' not in st.session_state:
         create_tables()
         st.session_state._tables_created = True
@@ -49,7 +53,8 @@ def main():
         render_sidebar(db)
 
     # Main content based on current view
-    view = st.session_state.current_view
+    view = get_current_view()
+    render_flash_messages(view)
 
     if view == 'home':
         render_home(db)

@@ -8,6 +8,9 @@ from pathlib import Path
 from sqlalchemy import cast, String, func
 from common.models import Tweet, Trend, Thread, StyleExample
 from dashboard.lazy_loaders import get_style_manager
+from dashboard.state import push_flash, rerun_view
+from dashboard.ui_components import render_page_header
+from dashboard.ux_events import log_ux_event
 from dashboard.validators import validate_x_url
 
 logger = logging.getLogger(__name__)
@@ -16,12 +19,7 @@ logger = logging.getLogger(__name__)
 def render_settings(db):
     """Settings and configuration"""
 
-    st.markdown("""
-        <div class="page-header">
-            <h1 class="page-title">Settings</h1>
-            <p class="page-subtitle">Configuration and database management</p>
-        </div>
-    """, unsafe_allow_html=True)
+    render_page_header("Settings", "Configuration, glossary, style examples, and safety controls.")
 
     col1, col2 = st.columns(2)
 
@@ -56,13 +54,18 @@ def render_settings(db):
         if st.button("Save Glossary", key="save_glossary", use_container_width=True):
             try:
                 parsed = json.loads(edited_glossary)
-                # Validate structure: must be dict[str, str]
+                validation_errors = []
                 if not isinstance(parsed, dict):
-                    st.error("Glossary must be a JSON object (not array).")
-                elif not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
-                    st.error("Glossary values must all be strings.")
-                elif len(edited_glossary.encode('utf-8')) > 1_000_000:
-                    st.error("Glossary too large (max 1MB).")
+                    validation_errors.append("Glossary must be a JSON object (not an array).")
+                if isinstance(parsed, dict) and not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
+                    validation_errors.append("All glossary keys and values must be strings.")
+                if len(edited_glossary.encode('utf-8')) > 1_000_000:
+                    validation_errors.append("Glossary is too large (max 1MB).")
+
+                if validation_errors:
+                    st.error("Glossary validation failed:")
+                    for err in validation_errors:
+                        st.caption(f"- {err}")
                 else:
                     # Backup current glossary before overwriting
                     if glossary_path.exists():
@@ -71,7 +74,9 @@ def render_settings(db):
                         shutil.copy2(glossary_path, backup_path)
                     glossary_path.parent.mkdir(parents=True, exist_ok=True)
                     glossary_path.write_text(edited_glossary, encoding='utf-8')
-                    st.success("Glossary saved!")
+                    push_flash("success", "Glossary saved successfully.", view="settings")
+                    log_ux_event("save_glossary", "settings", success=True)
+                    rerun_view()
             except json.JSONDecodeError:
                 st.error("Invalid JSON. Please fix and try again.")
 
@@ -126,7 +131,6 @@ def render_settings(db):
             "Thread URL",
             placeholder="https://x.com/user/status/123...",
             key="style_import_url",
-            label_visibility="collapsed",
             max_chars=500
         )
         if st.button("Fetch Thread", key="import_x_thread", use_container_width=True, disabled=not thread_url_import):
@@ -157,7 +161,7 @@ def render_settings(db):
                                 st.session_state.style_import_preview = all_text
                                 st.session_state.style_import_tags = tags
                                 st.session_state.style_import_tweet_count = len(tweets_data)
-                                st.rerun()
+                                rerun_view()
                             else:
                                 st.warning("Thread doesn't contain enough Hebrew content (need >50%)")
                         else:
@@ -191,13 +195,13 @@ def render_settings(db):
                     st.session_state.pop('style_import_preview', None)
                     st.session_state.pop('style_import_tags', None)
                     st.session_state.pop('style_import_tweet_count', None)
-                    st.rerun()
+                    rerun_view()
             with pcol2:
                 if st.button("Cancel", key="cancel_x_import", use_container_width=True):
                     st.session_state.pop('style_import_preview', None)
                     st.session_state.pop('style_import_tags', None)
                     st.session_state.pop('style_import_tweet_count', None)
-                    st.rerun()
+                    rerun_view()
 
     with import_col2:
         st.markdown("#### Upload Local File")
@@ -205,7 +209,6 @@ def render_settings(db):
             "Upload .txt or .md file",
             type=['txt', 'md'],
             key="style_file_upload",
-            label_visibility="collapsed"
         )
         if uploaded_file:
             file_content = uploaded_file.read().decode('utf-8')
@@ -224,7 +227,7 @@ def render_settings(db):
                     ) if sm else None
                     if example:
                         st.success(f"Added file as style example (tags: {', '.join(final_tags[:3])})")
-                        st.rerun()
+                        rerun_view()
             else:
                 st.warning("File doesn't contain enough Hebrew content (need >50%)")
 
@@ -235,7 +238,6 @@ def render_settings(db):
         placeholder="הקלד כאן טקסט עברי לדוגמה...",
         height=100,
         key="manual_style_input",
-        label_visibility="collapsed",
         max_chars=10000
     )
     if manual_content and sm and sm.is_hebrew_content(manual_content, min_ratio=0.5):
@@ -243,42 +245,48 @@ def render_settings(db):
         edited_manual_tags = st.text_input("Edit Tags (comma-separated)", value=", ".join(manual_auto_tags), key="manual_edit_tags")
     else:
         edited_manual_tags = ""
-    if st.button("Add Example", key="add_manual_style", use_container_width=True, disabled=not manual_content):
-        if sm and sm.is_hebrew_content(manual_content, min_ratio=0.5):
-            final_tags = [t.strip() for t in edited_manual_tags.split(",") if t.strip()] if edited_manual_tags else ['fintech']
-            example = sm.add_style_example(
-                db,
-                content=manual_content,
-                source_type='manual',
-                topic_tags=final_tags
-            )
-            if example:
-                st.success(f"Added manual example (tags: {', '.join(final_tags[:3])})")
-                st.rerun()
-        else:
-            st.warning("Text doesn't contain enough Hebrew (need >50%)")
+    manual_col1, manual_col2 = st.columns([3, 1])
+    with manual_col2:
+        if st.button("Add Example", key="add_manual_style", use_container_width=True, disabled=not manual_content):
+            if sm and sm.is_hebrew_content(manual_content, min_ratio=0.5):
+                final_tags = [t.strip() for t in edited_manual_tags.split(",") if t.strip()] if edited_manual_tags else ['fintech']
+                example = sm.add_style_example(
+                    db,
+                    content=manual_content,
+                    source_type='manual',
+                    topic_tags=final_tags
+                )
+                if example:
+                    st.success(f"Added manual example (tags: {', '.join(final_tags[:3])})")
+                    rerun_view()
+            else:
+                st.warning("Text doesn't contain enough Hebrew (need >50%)")
 
     # Export button
     st.markdown("---")
-    if example_count > 0 and sm:
-        export_data = sm.export_to_json(db)
-        st.download_button(
-            "Export Examples (JSON)",
-            export_data,
-            "style_examples.json",
-            mime="application/json",
-            use_container_width=True
-        )
+    export_col1, export_col2 = st.columns([3, 1])
+    with export_col2:
+        if example_count > 0 and sm:
+            export_data = sm.export_to_json(db)
+            st.download_button(
+                "Export Examples (JSON)",
+                export_data,
+                "style_examples.json",
+                mime="application/json",
+                use_container_width=True
+            )
 
     # Examples list with search/filter
     if example_count > 0:
         st.markdown("#### Your Style Examples")
 
         # Topic tag filter
-        if topics:
-            selected_tag = st.selectbox("Filter by topic", ["All"] + sorted(topics), key="style_tag_filter")
-        else:
-            selected_tag = "All"
+        filter_col1, filter_col2 = st.columns([3, 1])
+        with filter_col1:
+            if topics:
+                selected_tag = st.selectbox("Filter by topic", ["All"] + sorted(topics), key="style_tag_filter")
+            else:
+                selected_tag = "All"
 
         # Pagination state
         if 'style_examples_limit' not in st.session_state:
@@ -322,17 +330,17 @@ def render_settings(db):
                         if sm:
                             sm.update_example(db, ex.id, content=new_content, topic_tags=new_tags)
                         st.session_state[f'editing_style_{ex.id}'] = False
-                        st.rerun()
+                        rerun_view()
                 with edit_btn_col2:
                     if st.button("Cancel", key=f"cancel_edit_{ex.id}", use_container_width=True):
                         st.session_state[f'editing_style_{ex.id}'] = False
-                        st.rerun()
+                        rerun_view()
             else:
-                ex_col1, ex_col2 = st.columns([5, 2])
+                ex_col1, ex_col2, ex_col3 = st.columns([5, 1, 1])
                 with ex_col1:
                     st.markdown(f"""
                         <div class="queue-item" style="padding: 0.75rem;">
-                            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; row-gap: 0.35rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-primary);">#{ex.id}</span>
                                 <div>
                                     <span class="status-badge source-manual" style="font-size: 0.6rem;">{source_label}</span>
@@ -344,20 +352,21 @@ def render_settings(db):
                         </div>
                     """, unsafe_allow_html=True)
                 with ex_col2:
-                    if st.button("Edit", key=f"edit_style_{ex.id}", help="Edit this example", use_container_width=True):
+                    if st.button("Edit", key=f"edit_style_{ex.id}", help="Edit this example"):
                         st.session_state[f'editing_style_{ex.id}'] = True
-                        st.rerun()
-                    if st.button("Delete", key=f"del_style_{ex.id}", help="Delete this example", use_container_width=True):
+                        rerun_view()
+                with ex_col3:
+                    if st.button("Delete", key=f"del_style_{ex.id}", help="Delete this example"):
                         if sm:
                             sm.delete_example(db, ex.id)
-                            st.rerun()
+                            rerun_view()
 
         # Load More pagination
         if filtered_count > display_limit:
             st.caption(f"Showing {min(display_limit, len(examples))} of {filtered_count} examples")
             if st.button("Load More", key="load_more_examples", use_container_width=True):
                 st.session_state.style_examples_limit = display_limit + 20
-                st.rerun()
+                rerun_view()
         elif len(examples) > 0 and filtered_count > len(examples):
             st.caption(f"Showing {len(examples)} of {filtered_count} examples")
 
@@ -367,7 +376,7 @@ def render_settings(db):
     st.markdown("### Autopilot Defaults")
     st.markdown('<p style="color: var(--text-secondary); font-size: 0.85rem;">Configure defaults for the two-phase autopilot pipeline.</p>', unsafe_allow_html=True)
 
-    ap_col1, ap_col2 = st.columns(2)
+    ap_col1, ap_col2, ap_col3 = st.columns(3)
     with ap_col1:
         ap_top_n = st.slider(
             "Trends to auto-select",
@@ -386,14 +395,14 @@ def render_settings(db):
             key="ap_angle_select",
         )
         st.session_state.autopilot_angle = ap_angle
-
-    ap_summarize = st.checkbox(
-        "Auto-summarize",
-        value=st.session_state.get('autopilot_auto_summarize', True),
-        key="ap_summarize_check",
-        help="Generate AI summaries during Phase A",
-    )
-    st.session_state.autopilot_auto_summarize = ap_summarize
+    with ap_col3:
+        ap_summarize = st.checkbox(
+            "Auto-summarize",
+            value=st.session_state.get('autopilot_auto_summarize', True),
+            key="ap_summarize_check",
+            help="Generate AI summaries during Phase A",
+        )
+        st.session_state.autopilot_auto_summarize = ap_summarize
 
     st.markdown("---")
 
@@ -410,7 +419,7 @@ def render_settings(db):
 
         for status, desc in statuses:
             st.markdown(f"""
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0;">
                     <span class="status-badge status-{status.lower()}">{status}</span>
                     <span style="color: var(--text-secondary); font-size: 0.85rem;">{desc}</span>
                 </div>
@@ -448,7 +457,12 @@ def render_settings(db):
     st.markdown("### Danger Zone")
     with st.expander("Destructive Actions"):
         st.warning("These actions cannot be undone")
-        confirm = st.checkbox("I understand this cannot be undone", key="danger_confirm")
+        confirm_token = st.text_input(
+            'Type "DELETE" to enable destructive actions',
+            key="danger_confirm_token",
+            max_chars=10,
+        )
+        confirm = confirm_token.strip().upper() == "DELETE"
 
         dcol1, dcol2, dcol3 = st.columns(3)
         with dcol1:
@@ -456,16 +470,16 @@ def render_settings(db):
                 db.query(Tweet).delete()
                 db.commit()
                 st.success("Deleted all tweets")
-                st.rerun()
+                rerun_view()
         with dcol2:
             if st.button("Delete All Threads", use_container_width=True, disabled=not confirm):
                 db.query(Thread).delete()
                 db.commit()
                 st.success("Deleted all threads")
-                st.rerun()
+                rerun_view()
         with dcol3:
             if st.button("Delete All Trends", use_container_width=True, disabled=not confirm):
                 db.query(Trend).delete()
                 db.commit()
                 st.success("Deleted all trends")
-                st.rerun()
+                rerun_view()

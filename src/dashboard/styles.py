@@ -4,17 +4,18 @@ DARK_MODE_CSS = """
 
     /* Dark Mode Design Tokens - Typefully Style */
     :root {
-        --bg-primary: #0B0E11;
-        --bg-secondary: #14181D;
-        --bg-tertiary: #1A1F26;
-        --bg-elevated: #1E2329;
+        --bg-primary: #020617;
+        --bg-secondary: #0F172A;
+        --bg-tertiary: #1E293B;
+        --bg-elevated: #334155;
 
         --text-primary: #FFFFFF;
-        --text-secondary: #9BA3AE;
-        --text-muted: #6B7280;
+        --text-secondary: #CBD5E1;
+        --text-muted: #94A3B8;
 
-        --accent-primary: #199AF5;
-        --accent-primary-hover: #47B1FF;
+        --accent-primary: #22C55E;
+        --accent-primary-hover: #16A34A;
+        --accent-secondary: #3B82F6;
         --accent-success: #22C55E;
         --accent-warning: #F59E0B;
         --accent-danger: #EF4444;
@@ -102,7 +103,7 @@ DARK_MODE_CSS = """
         font-size: 1.75rem !important;
         font-weight: 700 !important;
         margin: 0 !important;
-        background: linear-gradient(135deg, #FFFFFF 0%, var(--accent-primary) 100%);
+        background: linear-gradient(135deg, #FFFFFF 0%, var(--accent-secondary) 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -131,14 +132,14 @@ DARK_MODE_CSS = """
     }
 
     [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
-        background: rgba(25, 154, 245, 0.15) !important;
+        background: rgba(34, 197, 94, 0.15) !important;
         color: var(--accent-primary) !important;
         border-left: 3px solid var(--accent-primary) !important;
         font-weight: 600 !important;
     }
 
     [data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
-        background: rgba(25, 154, 245, 0.2) !important;
+        background: rgba(34, 197, 94, 0.22) !important;
     }
 
     [data-testid="stSidebar"] .stTextInput input {
@@ -154,8 +155,8 @@ DARK_MODE_CSS = """
     }
 
     [data-testid="stSidebar"] .stTextInput input:focus {
-        border-color: var(--accent-primary) !important;
-        box-shadow: 0 0 0 4px rgba(25, 154, 245, 0.15) !important;
+        border-color: var(--accent-secondary) !important;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18) !important;
     }
 
     [data-testid="stSidebar"] p,
@@ -194,7 +195,7 @@ DARK_MODE_CSS = """
     }
 
     .content-card:hover {
-        border-color: rgba(25, 154, 245, 0.3);
+        border-color: rgba(59, 130, 246, 0.35);
         box-shadow: var(--shadow-md);
         transform: translateY(-2px);
     }
@@ -275,20 +276,20 @@ DARK_MODE_CSS = """
 
     .stButton > button:hover {
         background: var(--bg-elevated) !important;
-        border-color: rgba(25, 154, 245, 0.3) !important;
+        border-color: rgba(59, 130, 246, 0.35) !important;
         transform: translateY(-1px) !important;
         box-shadow: var(--shadow-md) !important;
     }
 
     .stButton > button[data-testid="baseButton-primary"] {
-        background: rgba(25, 154, 245, 0.15) !important;
-        color: #199AF5 !important;
-        border: 1px solid rgba(25, 154, 245, 0.3) !important;
+        background: rgba(34, 197, 94, 0.18) !important;
+        color: #4ADE80 !important;
+        border: 1px solid rgba(34, 197, 94, 0.4) !important;
         font-weight: 600 !important;
     }
 
     .stButton > button[data-testid="baseButton-primary"]:hover {
-        background: rgba(25, 154, 245, 0.25) !important;
+        background: rgba(34, 197, 94, 0.28) !important;
         box-shadow: none !important;
         transform: none !important;
     }
@@ -312,9 +313,9 @@ DARK_MODE_CSS = """
         border: 1px solid rgba(245, 158, 11, 0.3);
     }
     .status-processed {
-        background: rgba(25, 154, 245, 0.15);
-        color: #47B1FF;
-        border: 1px solid rgba(25, 154, 245, 0.3);
+        background: rgba(59, 130, 246, 0.15);
+        color: #60A5FA;
+        border: 1px solid rgba(59, 130, 246, 0.3);
     }
     .status-approved {
         background: rgba(34, 197, 94, 0.15);
@@ -333,10 +334,10 @@ DARK_MODE_CSS = """
     }
 
     /* Source Badges */
-    .source-yahoo-finance { background: rgba(155, 89, 182, 0.15); color: #BB86FC; border: 1px solid rgba(155, 89, 182, 0.3); }
-    .source-wsj { background: rgba(25, 154, 245, 0.15); color: #47B1FF; border: 1px solid rgba(25, 154, 245, 0.3); }
+    .source-yahoo-finance { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3); }
+    .source-wsj { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
     .source-techcrunch { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3); }
-    .source-bloomberg { background: rgba(155, 89, 182, 0.15); color: #BB86FC; border: 1px solid rgba(155, 89, 182, 0.3); }
+    .source-bloomberg { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
     .source-marketwatch { background: rgba(255, 193, 7, 0.15); color: #FFC107; border: 1px solid rgba(255, 193, 7, 0.3); }
     .source-manual { background: rgba(155, 163, 174, 0.15); color: #9BA3AE; border: 1px solid rgba(155, 163, 174, 0.3); }
     .source-x { background: rgba(255, 255, 255, 0.1); color: #E4E6EA; border: 1px solid rgba(255, 255, 255, 0.2); }
@@ -360,8 +361,8 @@ DARK_MODE_CSS = """
     }
 
     .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: var(--accent-primary) !important;
-        box-shadow: 0 0 0 4px rgba(25, 154, 245, 0.15) !important;
+        border-color: var(--accent-secondary) !important;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18) !important;
         background: var(--bg-elevated) !important;
     }
 
@@ -378,7 +379,7 @@ DARK_MODE_CSS = """
     }
 
     .stSelectbox > div > div:hover {
-        border-color: rgba(25, 154, 245, 0.3) !important;
+        border-color: rgba(59, 130, 246, 0.35) !important;
     }
 
     .stCheckbox > label {
@@ -504,7 +505,7 @@ DARK_MODE_CSS = """
     }
 
     .queue-item:hover {
-        border-color: rgba(25, 154, 245, 0.4);
+        border-color: rgba(59, 130, 246, 0.4);
         background: var(--bg-tertiary);
         box-shadow: var(--shadow-sm);
         transform: translateX(4px);
@@ -865,8 +866,9 @@ DARK_MODE_CSS = """
     }
 
     :focus-visible {
-        outline: none;
-        box-shadow: 0 0 0 3px rgba(25, 154, 245, 0.5) !important;
+        outline: 2px solid var(--accent-secondary);
+        outline-offset: 2px;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35) !important;
     }
 
     @keyframes shimmer {
@@ -972,7 +974,7 @@ DARK_MODE_CSS = """
     }
 
     .thread-tweet-item:hover {
-        border-color: rgba(25, 154, 245, 0.3);
+        border-color: rgba(59, 130, 246, 0.35);
     }
 
     .thread-tweet-number {
@@ -981,7 +983,7 @@ DARK_MODE_CSS = """
         justify-content: center;
         width: 1.5rem;
         height: 1.5rem;
-        background: var(--accent-primary);
+        background: var(--accent-secondary);
         color: white;
         font-size: 0.7rem;
         font-weight: 700;
@@ -996,5 +998,59 @@ DARK_MODE_CSS = """
 
     /* Hebrew font loading */
     @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap');
+
+    /* ===========================================
+       RESPONSIVE BREAKPOINTS
+       =========================================== */
+    @media (max-width: 1200px) {
+        .main .block-container, [data-testid="stMainBlockContainer"] {
+            padding: 1.25rem 1.25rem !important;
+        }
+    }
+
+    @media (max-width: 992px) {
+        [data-testid="stSidebar"],
+        [data-testid="stSidebar"] > div,
+        [data-testid="stSidebarContent"],
+        section[data-testid="stSidebar"] {
+            width: 220px !important;
+            min-width: 220px !important;
+        }
+
+        .main .block-container, [data-testid="stMainBlockContainer"] {
+            padding: 1rem !important;
+        }
+    }
+
+    @media (max-width: 768px) {
+        h1, .stMarkdown h1, .page-title {
+            font-size: 1.4rem !important;
+        }
+
+        .main .block-container, [data-testid="stMainBlockContainer"] {
+            padding: 0.75rem !important;
+        }
+
+        .empty-state {
+            padding: 2rem 1rem;
+        }
+    }
+
+    /* ===========================================
+       REDUCED MOTION
+       =========================================== */
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation: none !important;
+            transition: none !important;
+            scroll-behavior: auto !important;
+        }
+
+        .content-card:hover,
+        .stat-card:hover,
+        .queue-item:hover {
+            transform: none !important;
+        }
+    }
 </style>
 """

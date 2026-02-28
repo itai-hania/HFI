@@ -25,6 +25,8 @@ def get_stats(db):
         func.sum(case((Tweet.status == TweetStatus.APPROVED, 1), else_=0)),
         func.sum(case((Tweet.status == TweetStatus.PUBLISHED, 1), else_=0)),
         func.sum(case((Tweet.status == TweetStatus.FAILED, 1), else_=0)),
+        func.sum(case(((Tweet.status == TweetStatus.APPROVED) & Tweet.scheduled_at.isnot(None), 1), else_=0)),
+        func.sum(case(((Tweet.status == TweetStatus.APPROVED) & Tweet.scheduled_at.is_(None), 1), else_=0)),
     ).one()
 
     stats = {
@@ -34,6 +36,8 @@ def get_stats(db):
         'approved': int(row[3] or 0),
         'published': int(row[4] or 0),
         'failed': int(row[5] or 0),
+        'scheduled': int(row[6] or 0),
+        'ready_to_publish': int(row[7] or 0),
         '_ts': _time.time(),
     }
     st.session_state['_stats_cache'] = stats
