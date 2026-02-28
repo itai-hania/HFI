@@ -645,11 +645,6 @@ DARK_MODE_CSS = """
         overflow-x: hidden !important;
     }
 
-    /* Hidden by default; enabled on mobile breakpoint below */
-    div[data-testid="stVerticalBlock"]:has(#mobile-nav-anchor) {
-        display: none !important;
-    }
-
     /* Tablet */
     @media (max-width: 1024px) {
         .main .block-container,
@@ -701,29 +696,6 @@ DARK_MODE_CSS = """
             min-width: 100% !important;
             flex: 1 1 100% !important;
             width: 100% !important;
-        }
-
-        div[data-testid="stVerticalBlock"]:has(#mobile-nav-anchor) {
-            display: block !important;
-            position: sticky !important;
-            top: 0 !important;
-            z-index: 100 !important;
-            margin-bottom: 0.75rem !important;
-            padding: 0.2rem 0.1rem 0.55rem 0.1rem !important;
-            border-bottom: 1px solid var(--border-default) !important;
-            background: linear-gradient(180deg, rgba(11, 14, 17, 0.98) 0%, rgba(11, 14, 17, 0.92) 100%) !important;
-            backdrop-filter: blur(6px) !important;
-        }
-
-        div[data-testid="stVerticalBlock"]:has(#mobile-nav-anchor) [data-testid="stHorizontalBlock"] {
-            flex-wrap: nowrap !important;
-            gap: 0.35rem !important;
-        }
-
-        div[data-testid="stVerticalBlock"]:has(#mobile-nav-anchor) [data-testid="stHorizontalBlock"] > [data-testid="column"] {
-            min-width: 0 !important;
-            width: auto !important;
-            flex: 1 1 0 !important;
         }
 
         .stButton > button,
