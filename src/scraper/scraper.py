@@ -535,7 +535,7 @@ class TwitterScraper:
 
             # Scroll down
             scroll_distance = random.randint(600, 1000)
-            await self.page.evaluate(f"window.scrollBy(0, {scroll_distance});")
+            await self.page.evaluate("(dist) => window.scrollBy(0, dist)", scroll_distance)
 
             # Random delay
             await self._random_delay(1.2, 2.5)
@@ -635,7 +635,7 @@ class TwitterScraper:
 
             # Scroll down
             scroll_distance = random.randint(600, 1000)
-            await self.page.evaluate(f"window.scrollBy(0, {scroll_distance});")
+            await self.page.evaluate("(dist) => window.scrollBy(0, dist)", scroll_distance)
 
             # Random delay
             await self._random_delay(1.2, 2.5)

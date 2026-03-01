@@ -11,7 +11,7 @@ DARK_MODE_CSS = """
 
         --text-primary: #FFFFFF;
         --text-secondary: #CBD5E1;
-        --text-muted: #94A3B8;
+        --text-muted: #A1B0C4;
 
         --accent-primary: #22C55E;
         --accent-primary-hover: #16A34A;
@@ -31,6 +31,14 @@ DARK_MODE_CSS = """
         --radius-md: 12px;
         --radius-lg: 20px;
         --radius-pill: 9999px;
+
+        --font-size-xs: 0.75rem;
+        --font-size-sm: 0.8rem;
+        --font-size-base: 0.875rem;
+        --font-size-md: 0.9rem;
+        --font-size-lg: 1rem;
+        --font-size-xl: 1.25rem;
+        --font-size-2xl: 1.75rem;
     }
 
     /* Base Dark Background */
@@ -172,7 +180,7 @@ DARK_MODE_CSS = """
 
     /* Nav Section Label */
     .nav-section {
-        font-size: 0.65rem;
+        font-size: var(--font-size-xs);
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.1em;
@@ -192,6 +200,7 @@ DARK_MODE_CSS = """
         border: 1px solid var(--border-default);
         box-shadow: var(--shadow-sm);
         transition: all 0.2s ease;
+        cursor: pointer;
     }
 
     .content-card:hover {
@@ -367,7 +376,7 @@ DARK_MODE_CSS = """
     }
 
     .stTextInput input::placeholder, .stTextArea textarea::placeholder {
-        color: var(--text-muted) !important;
+        color: #B0BDD0 !important;
     }
 
     .stSelectbox > div > div {
@@ -765,6 +774,22 @@ DARK_MODE_CSS = """
             padding: 0.4rem 0.75rem !important;
         }
 
+        /* Scrollable content edge indicators */
+        .stTabs [data-baseweb="tab-list"] {
+            position: relative;
+        }
+        .stTabs [data-baseweb="tab-list"]::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 24px;
+            background: linear-gradient(to left, var(--bg-secondary), transparent);
+            pointer-events: none;
+            z-index: 1;
+        }
+
         /* Hover effects are less meaningful on touch screens */
         .content-card:hover,
         .stat-card:hover,
@@ -811,14 +836,6 @@ DARK_MODE_CSS = """
             width: 1.25rem !important;
             height: 1.25rem !important;
             font-size: 0.62rem !important;
-        }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
-            animation: none !important;
-            transition: none !important;
-            scroll-behavior: auto !important;
         }
     }
 
@@ -912,6 +929,12 @@ DARK_MODE_CSS = """
     .ltr-container {
         direction: ltr;
         text-align: left;
+    }
+
+    .rtl-text {
+        direction: rtl;
+        text-align: right;
+        unicode-bidi: embed;
     }
 
     /* Side-by-side translation panel */
@@ -1037,10 +1060,65 @@ DARK_MODE_CSS = """
     }
 
     /* ===========================================
+       FOCUS STATES
+       =========================================== */
+    [data-testid="stSidebar"] .stButton > button:focus-visible {
+        outline: 2px solid var(--accent-secondary);
+        outline-offset: 2px;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35) !important;
+    }
+
+    /* ===========================================
+       LINK STYLES
+       =========================================== */
+    a, .stMarkdown a {
+        text-decoration: underline;
+        text-decoration-color: rgba(59, 130, 246, 0.5);
+        text-underline-offset: 2px;
+    }
+    a:hover, .stMarkdown a:hover {
+        text-decoration-color: var(--accent-secondary);
+    }
+
+    /* ===========================================
+       SKIP LINK (Keyboard Navigation)
+       =========================================== */
+    .skip-link {
+        position: absolute;
+        top: -100%;
+        left: 0;
+        background: var(--accent-secondary);
+        color: white;
+        padding: 0.75rem 1.5rem;
+        z-index: 10000;
+        font-size: var(--font-size-base);
+        border-radius: 0 0 var(--radius-md) 0;
+        text-decoration: none;
+    }
+    .skip-link:focus {
+        top: 0;
+    }
+
+    /* ===========================================
+       TEXT TRUNCATION UTILITIES
+       =========================================== */
+    .text-truncate {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .text-truncate-1 {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* ===========================================
        REDUCED MOTION
        =========================================== */
     @media (prefers-reduced-motion: reduce) {
-        * {
+        *, *::before, *::after {
             animation: none !important;
             transition: none !important;
             scroll-behavior: auto !important;
@@ -1048,8 +1126,30 @@ DARK_MODE_CSS = """
 
         .content-card:hover,
         .stat-card:hover,
-        .queue-item:hover {
+        .queue-item:hover,
+        .stButton > button:hover {
             transform: none !important;
+        }
+    }
+
+    /* ===========================================
+       PRINT STYLES
+       =========================================== */
+    @media print {
+        [data-testid="stSidebar"],
+        [data-testid="stHeader"],
+        .stDeployButton,
+        #MainMenu, footer, header {
+            display: none !important;
+        }
+        .stApp, .main, .main .block-container {
+            background: white !important;
+            color: black !important;
+        }
+        .content-card, .stat-card, .translation-panel {
+            break-inside: avoid;
+            border: 1px solid #ccc !important;
+            box-shadow: none !important;
         }
     }
 </style>

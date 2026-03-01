@@ -1,7 +1,7 @@
 import streamlit as st
 import html
 import json
-import time
+import time as _time
 import asyncio
 import logging
 from pathlib import Path
@@ -15,6 +15,28 @@ from dashboard.validators import validate_x_url
 
 logger = logging.getLogger(__name__)
 
+_SETTINGS_STATS_TTL = 5  # seconds
+
+
+def _get_settings_counts(db):
+    """Get tweet/thread/trend counts with session-state TTL caching."""
+    cached = st.session_state.get('_settings_counts_cache')
+    if cached and (_time.time() - cached['_ts']) < _SETTINGS_STATS_TTL:
+        return cached
+
+    tweet_count = db.query(func.count(Tweet.id)).scalar() or 0
+    thread_count = db.query(func.count(Thread.id)).scalar() or 0
+    trend_count = db.query(func.count(Trend.id)).scalar() or 0
+
+    counts = {
+        'tweet_count': tweet_count,
+        'thread_count': thread_count,
+        'trend_count': trend_count,
+        '_ts': _time.time(),
+    }
+    st.session_state['_settings_counts_cache'] = counts
+    return counts
+
 
 def render_settings(db):
     """Settings and configuration"""
@@ -26,9 +48,10 @@ def render_settings(db):
     with col1:
         st.markdown("### Database Stats")
 
-        tweet_count = db.query(Tweet).count()
-        thread_count = db.query(Thread).count()
-        trend_count = db.query(Trend).count()
+        counts = _get_settings_counts(db)
+        tweet_count = counts['tweet_count']
+        thread_count = counts['thread_count']
+        trend_count = counts['trend_count']
 
         st.metric("Total Tweets", tweet_count)
         st.metric("Total Threads", thread_count)

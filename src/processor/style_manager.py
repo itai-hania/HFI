@@ -12,6 +12,7 @@ import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from common.models import StyleExample
@@ -118,6 +119,9 @@ def get_examples_by_tags(db: Session, tags: List[str], limit: int = 5) -> List[S
     # Get all active examples
     all_examples = get_all_examples(db)
 
+    # Pre-compute lowercase tag set once
+    tags_lower = {t.lower() for t in tags}
+
     # Score examples by tag overlap
     scored = []
     for example in all_examples:
@@ -127,9 +131,8 @@ def get_examples_by_tags(db: Session, tags: List[str], limit: int = 5) -> List[S
                 example_tags = json.loads(example_tags)
             except (json.JSONDecodeError, ValueError):
                 example_tags = []
-
-        # Count matching tags
-        matches = sum(1 for t in tags if t.lower() in [et.lower() for et in example_tags])
+        example_tags_lower = {et.lower() for et in example_tags}
+        matches = len(tags_lower & example_tags_lower)
         scored.append((example, matches))
 
     # Sort by matches (desc), then by word count (prefer varied lengths)
@@ -153,22 +156,25 @@ def get_diverse_examples(db: Session, limit: int = 5) -> List[StyleExample]:
     """
     Get a diverse set of examples with varied word counts.
 
-    Selects examples to cover different lengths (short, medium, long).
+    Selects examples to cover different lengths (short, medium, long)
+    using SQL OFFSET to avoid loading the full table.
     """
-    all_examples = get_all_examples(db)
+    total = db.query(func.count(StyleExample.id)).filter(StyleExample.is_active == True).scalar() or 0
+    if total <= limit:
+        return get_all_examples(db)
 
-    if len(all_examples) <= limit:
-        return all_examples
+    base_query = db.query(StyleExample).filter(
+        StyleExample.is_active == True
+    ).order_by(StyleExample.word_count)
 
-    # Sort by word count
-    sorted_examples = sorted(all_examples, key=lambda x: x.word_count)
-
-    # Select from different parts of the distribution (uniform spacing)
     result = []
+    seen_ids = set()
     for i in range(limit):
-        idx = i * len(sorted_examples) // limit
-        if sorted_examples[idx] not in result:
-            result.append(sorted_examples[idx])
+        offset = i * total // limit
+        row = base_query.offset(offset).limit(1).first()
+        if row and row.id not in seen_ids:
+            result.append(row)
+            seen_ids.add(row.id)
 
     return result
 
@@ -224,42 +230,38 @@ def update_example(
 
 
 def get_example_stats(db: Session) -> Dict:
-    """Get statistics about style examples."""
-    all_examples = get_all_examples(db)
+    """Get statistics about style examples using SQL aggregation."""
+    count = db.query(func.count(StyleExample.id)).filter(StyleExample.is_active == True).scalar() or 0
+    if count == 0:
+        return {'count': 0, 'total_words': 0, 'topics': [], 'avg_words': 0, 'sources': {}}
 
-    if not all_examples:
-        return {
-            'count': 0,
-            'total_words': 0,
-            'topics': [],
-            'avg_words': 0,
-            'sources': {}
-        }
+    total_words = db.query(func.sum(StyleExample.word_count)).filter(StyleExample.is_active == True).scalar() or 0
 
-    total_words = sum(ex.word_count for ex in all_examples)
+    # Source counts via GROUP BY
+    source_rows = db.query(StyleExample.source_type, func.count(StyleExample.id)).filter(
+        StyleExample.is_active == True
+    ).group_by(StyleExample.source_type).all()
+    sources = {st: cnt for st, cnt in source_rows}
 
-    # Collect all topics
+    # Topics still need loading since they're JSON arrays, but only fetch needed columns
+    tag_rows = db.query(StyleExample.topic_tags).filter(
+        StyleExample.is_active == True, StyleExample.topic_tags.isnot(None)
+    ).all()
     all_topics = set()
-    for ex in all_examples:
-        tags = ex.topic_tags or []
-        if isinstance(tags, str):
+    for (tags,) in tag_rows:
+        if isinstance(tags, list):
+            all_topics.update(tags)
+        elif isinstance(tags, str):
             try:
-                tags = json.loads(tags)
+                all_topics.update(json.loads(tags))
             except (json.JSONDecodeError, ValueError):
-                tags = []
-        all_topics.update(tags)
-
-    # Count by source type
-    sources = {}
-    for ex in all_examples:
-        st = ex.source_type or 'unknown'
-        sources[st] = sources.get(st, 0) + 1
+                pass
 
     return {
-        'count': len(all_examples),
+        'count': count,
         'total_words': total_words,
         'topics': list(all_topics),
-        'avg_words': total_words // len(all_examples) if all_examples else 0,
+        'avg_words': total_words // count if count else 0,
         'sources': sources
     }
 
@@ -294,6 +296,7 @@ def find_examples_by_tag_overlap(db: Session, tags: List[str], limit: int = 5) -
     if not tags:
         return []
     all_examples = get_all_examples(db)
+    tags_lower = {t.lower() for t in tags}
     matched = []
     for ex in all_examples:
         ex_tags = ex.topic_tags or []
@@ -302,7 +305,8 @@ def find_examples_by_tag_overlap(db: Session, tags: List[str], limit: int = 5) -
                 ex_tags = json.loads(ex_tags)
             except (json.JSONDecodeError, ValueError):
                 ex_tags = []
-        overlap = sum(1 for t in tags if t.lower() in [et.lower() for et in ex_tags])
+        ex_tags_lower = {et.lower() for et in ex_tags}
+        overlap = len(tags_lower & ex_tags_lower)
         if overlap > 0:
             matched.append((ex, overlap))
     matched.sort(key=lambda x: -x[1])
@@ -371,7 +375,8 @@ Select the most specific and relevant tags."""
         if result.startswith('['):
             tags = json.loads(result)
             # Validate tags
-            valid_tags = [t for t in tags if t.lower() in [v.lower() for v in tag_vocabulary]]
+            vocab_lower = {v.lower() for v in tag_vocabulary}
+            valid_tags = [t for t in tags if t.lower() in vocab_lower]
             if valid_tags:
                 logger.info(f"Extracted tags: {valid_tags}")
                 return valid_tags[:5]

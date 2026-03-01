@@ -5,7 +5,7 @@ from sqlalchemy import or_
 
 from common.models import Trend, Tweet, TweetStatus
 from dashboard.db_helpers import delete_trend, get_stats
-from dashboard.helpers import get_source_badge_class
+from dashboard.helpers import get_source_badge_class, safe_css_class
 from dashboard.state import (
     KEY_HOME_PUBLISH_EXPANDED,
     KEY_HOME_THREADS_EXPANDED,
@@ -245,7 +245,7 @@ def _render_processed_threads(db):
                     TweetStatus.PENDING,
                 ]
             ),
-            or_(Tweet.source_url.like("%x.com/%"), Tweet.source_url.like("%twitter.com/%")),
+            or_(Tweet.source_domain == "x.com", Tweet.source_domain == "twitter.com"),
         )
         .order_by(Tweet.updated_at.desc())
         .limit(10)
@@ -297,7 +297,7 @@ def _render_processed_threads(db):
                 st.caption(status_line)
             with pcol2:
                 st.markdown(
-                    f'<span class="status-badge status-{status_str.lower()}">{html.escape(status_str)}</span>',
+                    f'<span class="status-badge status-{safe_css_class(status_str.lower())}">{html.escape(status_str)}</span>',
                     unsafe_allow_html=True,
                 )
 

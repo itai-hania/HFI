@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Generator, Optional
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from sqlalchemy import (
     create_engine,
@@ -31,7 +32,7 @@ from sqlalchemy import (
     JSON,
 )
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, validates
 from sqlalchemy.pool import StaticPool
 
 # Configure logging
@@ -202,6 +203,23 @@ class Tweet(Base):
         comment="Original X (Twitter) post URL"
     )
 
+    source_domain = Column(
+        String(256),
+        nullable=True,
+        index=True,
+        comment="Domain extracted from source_url for indexed lookups"
+    )
+
+    @validates('source_url')
+    def _auto_set_source_domain(self, key, url):
+        """Auto-populate source_domain when source_url is set."""
+        if url:
+            try:
+                self.source_domain = urlparse(url).netloc
+            except Exception:
+                pass
+        return url
+
     # Content
     original_text = Column(
         Text,
@@ -317,6 +335,7 @@ class Tweet(Base):
         return {
             'id': self.id,
             'source_url': self.source_url,
+            'source_domain': self.source_domain,
             'original_text': self.original_text,
             'hebrew_draft': self.hebrew_draft,
             'media_url': self.media_url,
@@ -684,6 +703,7 @@ def create_tables(drop_existing: bool = False):
             ("tweets", "scheduled_at", "ALTER TABLE tweets ADD COLUMN scheduled_at DATETIME"),
             ("style_examples", "approval_count", "ALTER TABLE style_examples ADD COLUMN approval_count INTEGER DEFAULT 0"),
             ("style_examples", "rejection_count", "ALTER TABLE style_examples ADD COLUMN rejection_count INTEGER DEFAULT 0"),
+            ("tweets", "source_domain", "ALTER TABLE tweets ADD COLUMN source_domain VARCHAR(256)"),
         ]
 
         for table, column, sql in migrations:
@@ -709,6 +729,33 @@ def create_tables(drop_existing: bool = False):
                     logger.debug("Migration skipped: style_examples table doesn't exist yet")
                 else:
                     logger.warning(f"Migration failed for style_examples.is_active: {e}")
+
+        # Backfill source_domain from source_url for existing rows
+        with engine.connect() as conn:
+            try:
+                # Extract domain: strip protocol, take host before first '/'
+                # For x.com URLs: "https://x.com/user/..." -> "x.com"
+                # For twitter.com URLs: "https://twitter.com/user/..." -> "twitter.com"
+                # Generic: strip "https://" or "http://", take text before next "/"
+                conn.execute(_text(
+                    "UPDATE tweets SET source_domain = "
+                    "SUBSTR("
+                    "  REPLACE(REPLACE(source_url, 'https://', ''), 'http://', ''), "
+                    "  1, "
+                    "  CASE WHEN INSTR(REPLACE(REPLACE(source_url, 'https://', ''), 'http://', ''), '/') > 0 "
+                    "    THEN INSTR(REPLACE(REPLACE(source_url, 'https://', ''), 'http://', ''), '/') - 1 "
+                    "    ELSE LENGTH(REPLACE(REPLACE(source_url, 'https://', ''), 'http://', '')) "
+                    "  END"
+                    ") "
+                    "WHERE source_domain IS NULL AND source_url IS NOT NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: backfilled source_domain from source_url")
+            except (sqlite3.OperationalError, Exception) as e:
+                if "no such column" in str(e).lower() or "no such table" in str(e).lower():
+                    logger.debug("Migration skipped: source_domain backfill not applicable yet")
+                else:
+                    logger.warning(f"Migration failed for source_domain backfill: {e}")
 
         logger.info("Database tables created successfully")
 

@@ -25,6 +25,9 @@ st.set_page_config(
 # Inject dark mode CSS
 st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
+# Skip link for keyboard navigation
+st.markdown('<a href="#main-content" class="skip-link">Skip to main content</a>', unsafe_allow_html=True)
+
 from dashboard.db_helpers import get_db
 from dashboard.auth import check_auth
 from dashboard.navigation import init_navigation, render_sidebar
@@ -51,6 +54,9 @@ def main():
     # Sidebar with simplified navigation
     with st.sidebar:
         render_sidebar(db)
+
+    # Main content anchor for skip link
+    st.markdown('<div id="main-content"></div>', unsafe_allow_html=True)
 
     # Main content based on current view
     view = get_current_view()
