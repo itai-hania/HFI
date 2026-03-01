@@ -780,6 +780,10 @@ class MediaDownloader:
 
         logger.info(f"Downloading video from {video_url}")
 
+        if video_url.startswith('-'):
+            logger.warning(f"Suspicious video URL starts with dash: {video_url[:100]}")
+            return None
+
         try:
             # Find yt-dlp binary using cross-platform method
             yt_dlp_cmd = self._find_yt_dlp()
@@ -799,8 +803,8 @@ class MediaDownloader:
                 '--no-playlist',
                 '--no-warnings',
                 '--max-filesize', f'{self.MAX_VIDEO_SIZE // (1024 * 1024)}M',
-                video_url,
-                '-o', str(output_path)
+                '-o', str(output_path),
+                '--', video_url
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=300)  # 5 minute timeout
 
             if output_path.exists():

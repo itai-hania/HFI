@@ -217,9 +217,15 @@ def _render_acquire_section(db):
                                     logger.error(f"Translation failed: {e}")
                                     st.warning(f"Translation failed: {str(e)[:80]}. Added without translation.")
 
+                            # Batch duplicate check: collect all permalinks and query once
+                            all_permalinks = [t.get("permalink", "") for t in tweets_data if t.get("permalink")]
+                            existing_urls = set(
+                                url for (url,) in db.query(Tweet.source_url).filter(Tweet.source_url.in_(all_permalinks)).all()
+                            ) if all_permalinks else set()
+
                             for idx, t in enumerate(tweets_data):
                                 permalink = t.get("permalink", "")
-                                if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
+                                if permalink and permalink not in existing_urls:
                                     media_url = t["media"][0]["src"] if t.get("media") else None
                                     hebrew_draft = None
                                     tweet_status = TweetStatus.PENDING
@@ -330,9 +336,9 @@ def _render_acquire_section(db):
             url_valid = bool(url) and validate_safe_url(url)[0]
 
             with st.container():
-                sel_col, info_col = st.columns([0.3, 5])
+                sel_col, info_col = st.columns([1, 12])
                 with sel_col:
-                    checked = st.checkbox(f"Select candidate {idx + 1}", value=True, key=f"pipe_sel_{idx}")
+                    checked = st.checkbox(f"Select candidate {idx + 1}", value=True, key=f"pipe_sel_{idx}", label_visibility="collapsed")
                     selections[idx] = checked
                 with info_col:
                     title_html = (
@@ -345,7 +351,7 @@ def _render_acquire_section(db):
                                 <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">#{idx+1}</span>
                                 <span class="status-badge {'category-finance' if category_label == 'Finance' else 'category-tech'}">{category_label}</span>
                                 {title_html}
-                                <span class="status-badge {badge_cls}" style="font-size: 0.65rem;">{safe_source}</span>
+                                <span class="status-badge {badge_cls}" style="font-size: 0.75rem;">{safe_source}</span>
                             </div>
                             <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.3rem; line-height: 1.4;">{safe_summary}</div>
                         </div>
@@ -918,9 +924,15 @@ def _render_thread_translation(db):
                             # Add as separate tweets
                             hebrew_list = translations.get('hebrew_list', [])
                             saved = 0
+                            # Batch duplicate check
+                            all_permalinks = [tweet.get('permalink', '') for tweet in tweets if tweet.get('permalink')]
+                            existing_urls = set(
+                                url for (url,) in db.query(Tweet.source_url).filter(Tweet.source_url.in_(all_permalinks)).all()
+                            ) if all_permalinks else set()
+
                             for idx, tweet in enumerate(tweets):
                                 permalink = tweet.get('permalink', '')
-                                if permalink and not db.query(Tweet).filter_by(source_url=permalink).first():
+                                if permalink and permalink not in existing_urls:
                                     hebrew_text = hebrew_list[idx] if idx < len(hebrew_list) else None
                                     new_tweet = Tweet(
                                         source_url=permalink,

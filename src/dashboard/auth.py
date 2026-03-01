@@ -13,6 +13,8 @@ MAX_ATTEMPTS = 5
 LOCKOUT_WINDOW = 120
 # Session expiry in seconds (4 hours)
 SESSION_EXPIRY = 4 * 60 * 60
+# Minimum password length
+MIN_PASSWORD_LENGTH = 12
 
 
 def _is_production() -> bool:
@@ -25,6 +27,11 @@ def _get_password() -> str:
     password = os.getenv('DASHBOARD_PASSWORD')
     if not password:
         return ""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        logger.warning(
+            f"DASHBOARD_PASSWORD is shorter than {MIN_PASSWORD_LENGTH} characters. "
+            "Consider using a stronger password."
+        )
     return password
 
 

@@ -17,6 +17,8 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from html.parser import HTMLParser
+from io import StringIO
 from typing import List, Dict, Optional
 
 # Setup logging
@@ -40,6 +42,20 @@ STOPWORDS = {
     'once', 'here', 'there', 'as', 'if', 'while', 'report', 'reports',
     'according', 'amid', 'among', 'like', 'between', 'against', 'despite',
 }
+
+
+class _HTMLStripper(HTMLParser):
+    """Lightweight HTML tag stripper without regex (ReDoS-safe)."""
+
+    def __init__(self):
+        super().__init__()
+        self.fed = []
+
+    def handle_data(self, d):
+        self.fed.append(d)
+
+    def get_data(self):
+        return ''.join(self.fed)
 
 
 class NewsScraper:
@@ -309,8 +325,15 @@ class NewsScraper:
         return title_kws + title_kws + desc_kws
 
     def _clean_html(self, text: str) -> str:
-        """Remove basic HTML tags from descriptions."""
-        return self._HTML_RE.sub('', text).strip()
+        """Remove HTML tags safely without regex."""
+        if not text:
+            return ""
+        stripper = _HTMLStripper()
+        try:
+            stripper.feed(text)
+            return stripper.get_data().strip()
+        except Exception:
+            return self._HTML_RE.sub('', text).strip()
 
 
 if __name__ == "__main__":

@@ -5,7 +5,9 @@ These functions contain no Streamlit dependencies and can be
 imported and tested independently.
 """
 
+import html
 import json
+import re
 
 
 # Source name -> CSS class mapping
@@ -20,9 +22,36 @@ _SOURCE_BADGE_MAP = {
 }
 
 
+def safe_html(content: str) -> str:
+    """Escape dynamic content for safe use inside unsafe_allow_html=True blocks.
+
+    Applies html.escape() to prevent XSS when embedding user-supplied or
+    dynamic strings into HTML rendered via st.markdown(..., unsafe_allow_html=True).
+
+    Args:
+        content: Raw string that may contain HTML-special characters.
+
+    Returns:
+        HTML-escaped string safe for embedding in markup.
+    """
+    return html.escape(content)
+
+
+_CSS_CLASS_RE = re.compile(r'[^a-zA-Z0-9_-]')
+
+
+def safe_css_class(cls: str) -> str:
+    """Sanitize a string for safe use as a CSS class name in HTML.
+
+    Strips any character that is not alphanumeric, hyphen, or underscore.
+    """
+    return _CSS_CLASS_RE.sub('', cls)
+
+
 def get_source_badge_class(source_name: str) -> str:
-    """Return CSS class for a source badge."""
-    return _SOURCE_BADGE_MAP.get(source_name, 'source-manual')
+    """Return CSS class for a source badge (sanitized for safe HTML embedding)."""
+    cls = _SOURCE_BADGE_MAP.get(source_name, 'source-manual')
+    return safe_css_class(cls)
 
 
 def parse_media_info(media_paths_json: str) -> tuple:
