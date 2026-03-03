@@ -98,13 +98,51 @@ HFI/
 │   ├── hfi.db              # SQLite database
 │   ├── media/              # Downloaded media
 │   └── session/            # Browser session cookies
+├── docs/                    # Documentation, plans, PDFs
 ├── k8s/                     # K8s manifests
-├── tests/                   # Unit tests
+├── tests/                   # ALL test files (pytest)
+├── tools/                   # Utility / one-off scripts
+│   ├── init_db.py           # Database initializer
+│   ├── verify_setup.py      # Pre-flight dependency checker
+│   ├── verify_changes.py    # Import sanity checker
+│   └── scrape_hebrew_threads.py  # Ad-hoc style-data scraper
 ├── docker-compose.yml
+├── docker-build.sh          # Docker build helper
+├── docker-validate.sh       # Docker validation
+├── start_services.py        # App entrypoint
+├── start_services.sh        # App entrypoint (shell)
 ├── .env                     # Environment configuration (not in git)
-├── IMPLEMENTATION_PLAN.md  # Detailed implementation guide
+├── CLAUDE.md
 └── README.md
 ```
+
+---
+
+## 🗂️ Project Structure Rules
+
+**NEVER drop files at the repository root.** The root is reserved exclusively for:
+- Project config/meta: `README.md`, `CLAUDE.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`, `requirements.txt`
+- Docker: `docker-compose.yml`, `docker-build.sh`, `docker-validate.sh`
+- App entrypoints: `start_services.py`, `start_services.sh`
+
+### Where each file type belongs
+
+| File type | Correct location |
+|-----------|------------------|
+| `test_*.py` — pytest test files | `tests/` |
+| `verify_*.py`, `init_*.py`, ad-hoc scripts | `tools/` |
+| Scraper/processor/dashboard logic | `src/<service>/` |
+| `.md` plans, specs, PDFs, reference docs | `docs/` |
+| K8s YAML manifests | `k8s/` |
+| Glossary, style guide, config JSONs | `config/` |
+| DB file, media downloads, session cookies | `data/` (gitignored) |
+
+### Rules
+1. **No new `.py` files at root** — they belong in `src/`, `tests/`, or `tools/`.
+2. **No new `.md` files at root** — they belong in `docs/` (exception: `README.md` and `CLAUDE.md`).
+3. **No PDF / reference documents at root** — they belong in `docs/`.
+4. **Stale one-off scripts must live in `tools/`**, not scattered anywhere else.
+5. When in doubt, ask: *which concern does this serve?* → put it in the matching folder.
 
 ---
 
@@ -247,7 +285,7 @@ time[datetime]                       // Timestamp
 **Reset Database:**
 ```bash
 rm data/hfi.db
-python init_db.py
+python tools/init_db.py
 ```
 
 ### 5. Docker/K8s Deployment
@@ -739,6 +777,6 @@ When helping:
 
 ---
 
-**Last Updated:** 2026-02-15
-**Version:** 1.5
+**Last Updated:** 2026-03-04
+**Version:** 1.6
 **Maintained by:** HFI Project Team

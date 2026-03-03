@@ -135,7 +135,7 @@ def main():
         print("✅ All checks passed! System is ready.")
         print("\nNext steps:")
         print("1. Ensure .env is configured with your credentials")
-        print("2. Run database initialization: python init_db.py")
+        print("2. Run database initialization: python tools/init_db.py")
         print("3. Start scraper: cd src/scraper && python main.py")
         print("4. Start dashboard: cd src/dashboard && streamlit run app.py")
     else:
