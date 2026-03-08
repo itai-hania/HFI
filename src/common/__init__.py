@@ -14,6 +14,11 @@ from .models import (
     # Models
     Tweet,
     Trend,
+    StyleExample,
+    InspirationAccount,
+    InspirationPost,
+    Notification,
+    UserPreference,
 
     # Enums
     TweetStatus,
@@ -44,6 +49,11 @@ __all__ = [
     # Models
     'Tweet',
     'Trend',
+    'StyleExample',
+    'InspirationAccount',
+    'InspirationPost',
+    'Notification',
+    'UserPreference',
 
     # Enums
     'TweetStatus',

@@ -2,14 +2,12 @@
 
 > 🤖 AI-powered automated content creation pipeline for Hebrew FinTech content on X (Twitter)
 
-**Latest Updates:**
-- ⚡ **Performance optimized:** Parallel RSS feeds, consolidated DB queries, singleton caching, N+1 fixes
-- 🔒 **Security hardened:** Auth gate, rate limiting, input validation, XSS protection, CORS lockdown
-- 🤖 **Autopilot pipeline:** Two-phase trend-to-post workflow with smart ranking and diversity
-- ✨ Multi-source news scraping (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg, MarketWatch)
-- 📊 Smart ranking algorithm with Wall Street focus and weighted sampling (70/30 finance/tech)
-- 🎨 Style learning system with DB-backed examples, topic tags, and engagement-based scoring
-- 🎯 Content generation engine with multi-angle Hebrew post/thread creation
+**Latest Updates (v2):**
+- Next.js 14+ Content Studio frontend (`frontend/`) with RTL-first Hebrew UX
+- Expanded FastAPI API (`src/api/`) with JWT auth, content CRUD, generation, inspiration, settings, notifications
+- Telegram bot + APScheduler service (`src/telegram_bot/`) for briefs, alerts, and commands
+- Alert detector + inspiration engagement search integrated into the existing scraper/processor engine
+- Streamlit dashboard archived at `archive/dashboard-v1/` (source retained for reference)
 
 ## Project Status
 
@@ -19,13 +17,14 @@
 🔒 **Security:** Auth, rate limiting, input validation, XSS hardening, CORS
 ⚡ **Performance:** Optimized queries, parallel RSS feeds, caching, N+1 fixes
 
-### Component Status
+### Component Status (v2)
 
 | Component | Status | Grade | Notes |
 |-----------|--------|-------|-------|
 | **Scraper** | ✅ Production Ready | A- (91/100) | Playwright-based X scraper + parallel RSS feeds with timeout |
 | **Processor** | ✅ Production Ready | A (95/100) | OpenAI GPT-4o translation + content generation + media downloads |
-| **Dashboard** | ✅ Production Ready | A- (90/100) | Streamlit modular UI with optimized queries and caching |
+| **Frontend** | ✅ Production Ready | A- | Next.js content studio with RTL, queue, inspiration, settings |
+| **Dashboard (v1)** | 📦 Archived | N/A | Streamlit dashboard moved to `archive/dashboard-v1/` |
 | **Models** | ✅ Production Ready | A- | SQLAlchemy models with consolidated queries |
 | **Security** | ✅ Hardened | A (95/100) | Auth, rate limiting, input validation, XSS, CORS |
 | **API** | ✅ Production Ready | A- | FastAPI with auth, optimized endpoints, singleton services |
@@ -34,12 +33,12 @@
 
 ## What is HFI?
 
-HFI automates the discovery, translation, and curation of FinTech content from English to Hebrew. It combines:
+HFI automates discovery, translation, generation, and curation of FinTech content from English to Hebrew. It combines:
 
 1. **Multi-Source Scraping** - Monitors X (Twitter) + RSS feeds (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
 2. **Smart Ranking** - Ranks articles by cross-source keyword overlap to surface trending topics
 3. **AI Translation** - GPT-4o translates with style matching and financial terminology
-4. **Human Review** - Dashboard for content approval and editing
+4. **Human Review** - Web Content Studio (Next.js) for content approval, editing, and scheduling
 5. **Automated Publishing** - (Planned) Schedule posts to X
 
 ---
@@ -47,23 +46,27 @@ HFI automates the discovery, translation, and curation of FinTech content from E
 ## Architecture
 
 ```
-┌─────────────┐      ┌────────────┐      ┌──────────────┐
-│  X Scraper  │─────▶│  Database  │◀─────│  Dashboard   │
-│ (Playwright)│      │  (SQLite)  │      │ (Streamlit)  │
-└─────────────┘      └────────────┘      └──────────────┘
-                           ▲                    │
-┌─────────────┐            │                    │
-│ News Scraper│────────────┤                    │
-│  (RSS Feeds)│            │                    │
-└─────────────┘            │                    │
-                           │                    │
-                    ┌──────────────┐            │
-                    │  Processor   │◀───────────┘
-                    │ (OpenAI GPT) │
-                    └──────────────┘
-
-Data Flow: Scrape → Rank → Translate → Review → Approve → Publish
-Sources: X (Twitter) + Yahoo Finance + WSJ + TechCrunch Fintech + Bloomberg
+┌──────────────────────────────┐        ┌──────────────────────────────┐
+│ Next.js Content Studio       │        │ Telegram Bot + Scheduler     │
+│ (frontend/)                  │        │ (src/telegram_bot/)          │
+└───────────────┬──────────────┘        └───────────────┬──────────────┘
+                │ REST (JWT)                             │ REST (JWT)
+                └───────────────┬────────────────────────┘
+                                ▼
+                    ┌──────────────────────────────┐
+                    │ FastAPI API (src/api/)       │
+                    │ Auth, Content, Gen, Settings │
+                    └───────────────┬──────────────┘
+                                    │ SQLAlchemy
+                                    ▼
+                    ┌──────────────────────────────┐
+                    │ SQLite (data/hfi.db)         │
+                    └───────────────┬──────────────┘
+                                    │
+                    ┌───────────────┴──────────────┐
+                    │ Existing Engine Services      │
+                    │ scraper/, processor/          │
+                    └──────────────────────────────┘
 ```
 
 ---
@@ -118,11 +121,14 @@ pip install -r requirements.txt
 pip install -r src/scraper/requirements.txt
 playwright install chromium
 
-# Dashboard dependencies
-pip install -r src/dashboard/requirements.txt
+# API dependencies
+pip install -r src/api/requirements.txt
 
 # Processor dependencies
 pip install -r src/processor/requirements.txt
+
+# Telegram bot dependencies (optional)
+pip install -r src/telegram_bot/requirements.txt
 ```
 
 ### 4. Initialize Database
@@ -151,27 +157,29 @@ python main.py
 
 ### 6. Run Services
 
-**Terminal 1 - Scraper (manual/on-demand):**
+**Terminal 1 - API:**
 ```bash
-cd src/scraper
-export SCRAPER_HEADLESS=true
-python main.py
+cd src/api
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Terminal 2 - Processor (continuous):**
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+# http://localhost:3000
+```
+
+**Terminal 3 - Processor:**
 ```bash
 cd src/processor
 python main.py
 ```
 
-**Terminal 3 - Dashboard:**
+**Terminal 4 - Telegram Bot (optional):**
 ```bash
-cd src/dashboard
-export HFI_DASHBOARD_HOST=0.0.0.0
-export HFI_DASHBOARD_PORT=8501
-streamlit run app.py --server.address=$HFI_DASHBOARD_HOST --server.port=$HFI_DASHBOARD_PORT --server.headless=true
-# Local:  http://localhost:8501
-# Mobile: http://<your-computer-lan-ip>:8501
+python -m telegram_bot.main
 ```
 
 ### Cross-Platform Launcher
@@ -185,36 +193,19 @@ python start_services.py
 
 This provides an interactive menu to start services without platform-specific commands.
 
-### Access Dashboard from Mobile Browser (Same Wi-Fi)
+### Telegram Setup
 
-1. Start dashboard with host `0.0.0.0` (already handled by `start_services.py` and `start_services.sh`).
-2. Find your computer LAN IP:
-   - macOS/Linux: `hostname -I` or `ifconfig`
-   - Windows (PowerShell): `ipconfig`
-3. Open on phone browser:
-   - `http://<your-computer-lan-ip>:8501`
+1. Create a bot with BotFather and copy `TELEGRAM_BOT_TOKEN`.
+2. Get your chat ID and set `TELEGRAM_CHAT_ID`.
+3. Ensure `DASHBOARD_PASSWORD` and `API_BASE_URL` are set.
+4. Run `python -m telegram_bot.main`.
 
-If mobile cannot connect:
-- Ensure phone and computer are on the same Wi-Fi network.
-- Check local firewall rules for inbound TCP `8501`.
-- Disable AP/client isolation on router guest networks.
-- Only expose `0.0.0.0` on trusted networks. Use `HFI_DASHBOARD_HOST=127.0.0.1` when mobile access is not needed.
+### Using Content Studio
 
-### Using the Dashboard
-
-1. **Discover Trends**: Navigate to Content → Acquire → Click "Fetch All Trends"
-   - Fetches articles from Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg
-   - Ranks by cross-source keyword overlap
-   - Displays top 10 most relevant articles with source badges
-
-2. **Scrape Threads**: Paste an X thread URL → Click "Scrape Thread"
-   - Automatically extracts all tweets from thread
-   - Option to consolidate into single post or keep separate
-
-3. **Review Content**: Navigate to Content → Queue
-   - Filter by status (pending/processed/approved)
-   - Click "Edit" to review translations
-   - Approve when ready
+1. Login from `/login` (password -> JWT).
+2. View brief + queue stats on Dashboard.
+3. Generate variants in `/create`, edit Hebrew draft, copy/save/schedule.
+4. Manage queue/library/inspiration/settings from dedicated pages.
 
 ---
 
@@ -223,18 +214,19 @@ If mobile cannot connect:
 ### Local Development with Docker Compose
 
 ```bash
-# Build and start all services
+# Build and start all services (frontend + api + processor + scraper + telegram bot)
 docker-compose up -d
 
 # View logs
 docker-compose logs -f processor
-docker-compose logs -f dashboard
+docker-compose logs -f api
+docker-compose logs -f frontend
 
 # Run scraper manually when needed
 docker-compose exec scraper python main.py
 
-# Access dashboard
-open http://localhost:8501
+# Access app
+open http://localhost:3000
 
 # Stop services
 docker-compose down
@@ -276,10 +268,24 @@ HFI/
 │   │   ├── main.py          # Polling loop
 │   │   ├── requirements.txt
 │   │   └── Dockerfile
-│   └── dashboard/           # Streamlit web UI
-│       ├── app.py           # Dashboard application
+│   ├── api/                 # FastAPI REST API for frontend + bot
+│   │   ├── routes/
+│   │   ├── schemas/
+│   │   └── main.py
+│   ├── telegram_bot/        # Telegram commands + scheduler
+│   │   ├── bot.py
+│   │   ├── scheduler.py
+│   │   └── main.py
+│   └── dashboard/           # Legacy Streamlit v1 (deprecated)
+│       ├── app.py
 │       ├── requirements.txt
 │       └── Dockerfile
+├── frontend/                # Next.js Content Studio (v2)
+│   ├── src/app/
+│   ├── src/components/
+│   └── Dockerfile
+├── archive/
+│   └── dashboard-v1/        # Frozen Streamlit reference snapshot
 ├── config/
 │   ├── glossary.json        # Financial term translations (EN→HE)
 │   └── style.txt            # Hebrew tweet style examples
@@ -310,6 +316,11 @@ HFI/
 | `X_PASSWORD` | X/Twitter password | Yes | - |
 | `OPENAI_API_KEY` | OpenAI API key | Yes | - |
 | `DATABASE_URL` | SQLite database path | No | `sqlite:///data/hfi.db` |
+| `DASHBOARD_PASSWORD` | Password used by `/api/auth/login` | Yes | - |
+| `JWT_SECRET` | JWT signing secret | Yes (prod) | dev fallback |
+| `NEXT_PUBLIC_API_URL` | Frontend API base URL | No | `http://localhost:8000` |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token | No | - |
+| `TELEGRAM_CHAT_ID` | Telegram chat id | No | - |
 | `SCRAPER_HEADLESS` | Run browser headless | No | `true` |
 | `SCRAPER_MAX_TRENDS` | Max trends to scrape | No | `5` |
 | `PROCESSOR_POLL_INTERVAL` | Seconds between polls | No | `30` |
@@ -357,7 +368,7 @@ HFI/
    └─ Update DB (status: processed, store hebrew_draft + media_path)
 
 4. REVIEW
-   ├─ Human opens dashboard (Streamlit)
+   ├─ Human opens Content Studio (Next.js)
    ├─ Reviews Hebrew translation
    ├─ Edits if needed
    └─ Approves (status: approved)

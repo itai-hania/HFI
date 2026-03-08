@@ -8,12 +8,12 @@
 
 **Name:** Hebrew FinTech Informant (HFI)
 **Type:** Automated content creation pipeline
-**Tech Stack:** Python, Playwright, OpenAI GPT-4o, Streamlit, SQLite, Docker, Kubernetes, RSS Feed Parsing
-**Purpose:** Scrape English FinTech content from X (Twitter) + news sources (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg), rank by relevance, translate to Hebrew with style matching, enable human review, and (future) auto-publish
+**Tech Stack:** Python, FastAPI, Next.js, Playwright, OpenAI GPT-4o, SQLite, Telegram Bot API, Docker, Kubernetes, RSS Feed Parsing
+**Purpose:** Scrape English FinTech content from X (Twitter) + news sources, rank by relevance, translate/generate Hebrew content, manage content in a Next.js studio, and deliver briefs/alerts through Telegram
 
 ---
 
-## Current Status (as of 2026-02-15)
+## Current Status (as of 2026-03-08)
 
 ### Completion: ~95% (Beta Phase)
 
@@ -21,7 +21,9 @@
 - ✅ X Scraper service (Playwright-based X scraper with thread support)
 - ✅ News Scraper service (Multi-source RSS feeds with parallel fetching + smart ranking)
 - ✅ Processor service (GPT-4o translation + media downloads + content generation)
-- ✅ Dashboard (Streamlit modular UI with trend discovery, content generation, style learning)
+- ✅ API v2 (JWT auth, content CRUD, generation, inspiration, settings, notifications)
+- ✅ Frontend v2 (Next.js Content Studio with RTL UX and full content workflow)
+- ✅ Telegram bot service (briefs, alerts, commands + scheduler)
 - ✅ Database models (SQLAlchemy + SQLite)
 - ✅ Docker containers + Compose file
 - ✅ Kubernetes manifests (ready for deployment)
@@ -42,20 +44,24 @@
 ### Services
 
 ```
-┌─────────────┐      ┌────────────┐      ┌──────────────┐
-│  X Scraper  │─────▶│  Database  │◀─────│  Dashboard   │
-│ (Playwright)│      │  (SQLite)  │      │ (Streamlit)  │
-└─────────────┘      └────────────┘      └──────────────┘
-                           ▲                    │
-┌─────────────┐            │                    │
-│ News Scraper│────────────┤                    │
-│ (RSS + Rank)│            │                    │
-└─────────────┘            │                    │
-                           │                    │
-                    ┌──────────────┐            │
-                    │  Processor   │◀───────────┘
-                    │ (OpenAI GPT) │
-                    └──────────────┘
+┌───────────────────────┐        ┌────────────────────────┐
+│ Next.js Frontend      │        │ Telegram Bot           │
+│ (frontend/)           │        │ (src/telegram_bot/)    │
+└───────────┬───────────┘        └───────────┬────────────┘
+            │ REST (JWT)                      │ REST (JWT)
+            └───────────────────┬─────────────┘
+                                ▼
+                    ┌────────────────────────┐
+                    │ FastAPI API (src/api/) │
+                    └───────────┬────────────┘
+                                ▼
+                         ┌────────────┐
+                         │ SQLite DB  │
+                         └──────┬─────┘
+                                ▼
+                    ┌────────────────────────┐
+                    │ Scraper + Processor    │
+                    └────────────────────────┘
 ```
 
 ### Directory Structure
@@ -78,7 +84,9 @@ HFI/
 │   │   ├── style_manager.py      # Style example management
 │   │   ├── main.py
 │   │   └── Dockerfile
-│   └── dashboard/           # Streamlit UI (modular)
+│   ├── api/                 # FastAPI routes/schemas/dependencies
+│   ├── telegram_bot/        # Bot commands + scheduler
+│   └── dashboard/           # Legacy Streamlit UI (deprecated)
 │       ├── app.py           # ~63 lines — thin router
 │       ├── styles.py        # CSS constant
 │       ├── db_helpers.py    # DB helper functions
@@ -91,6 +99,8 @@ HFI/
 │       │   ├── content.py   # Content page (Acquire, Queue, Translation, Generate)
 │       │   └── settings.py  # Settings page
 │       └── Dockerfile
+├── frontend/                # Next.js Content Studio
+├── archive/                 # Archived legacy modules
 ├── config/
 │   ├── glossary.json        # EN→HE term translations
 │   └── style.txt            # Hebrew tweet examples
