@@ -20,8 +20,8 @@ class TestTelegramBot:
         msg = format_brief_message(stories, "morning")
         assert "SEC approves Bitcoin ETF" in msg
         assert "Bloomberg" in msg
-        assert "/write_1" in msg
-        assert "/write_2" in msg
+        assert "/write_1" not in msg
+        assert "Use /write <source text or URL>" in msg
 
     def test_format_alert_message(self):
         alert = {
@@ -31,4 +31,4 @@ class TestTelegramBot:
         }
         msg = format_alert_message(alert)
         assert "CBDC pilot program" in msg
-        assert "/write" in msg
+        assert "Use /write <source text or URL>" in msg

@@ -29,7 +29,7 @@ async def main():
     scheduler.start()
 
     try:
-        await bot.app.run_polling()
+        bot.app.run_polling()
     finally:
         scheduler.shutdown(wait=False)
         await bot.close()

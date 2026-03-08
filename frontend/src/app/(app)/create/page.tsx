@@ -10,7 +10,7 @@ import { SourceInput } from "@/components/create/SourceInput";
 import { VariantCards } from "@/components/create/VariantCards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useCopyContent, useCreateContent, useUpdateContent } from "@/hooks/useContent";
+import { useContentItem, useCopyContent, useCreateContent, useUpdateContent } from "@/hooks/useContent";
 import { useGenerate } from "@/hooks/useGenerate";
 import { useTranslate } from "@/hooks/useTranslate";
 import type { Variant } from "@/lib/types";
@@ -19,16 +19,32 @@ function looksLikeUrl(value: string) {
   return /^https?:\/\//i.test(value.trim());
 }
 
-export default function CreatePage() {
-  const params = useSearchParams();
-  const initialSource = params.get("text") || params.get("source") || "";
+interface CreateWorkspaceProps {
+  initialSource: string;
+  initialEditorText: string;
+  initialScheduleAt: string;
+  initialContentId: number | null;
+  editId: number | null;
+  editLoading: boolean;
+  editError: boolean;
+}
+
+function CreateWorkspace({
+  initialSource,
+  initialEditorText,
+  initialScheduleAt,
+  initialContentId,
+  editId,
+  editLoading,
+  editError,
+}: CreateWorkspaceProps) {
   const [sourceText, setSourceText] = useState(initialSource);
   const [angle, setAngle] = useState("news");
   const [variants, setVariants] = useState<Variant[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [editorText, setEditorText] = useState("");
-  const [scheduleAt, setScheduleAt] = useState("");
-  const [contentId, setContentId] = useState<number | null>(null);
+  const [editorText, setEditorText] = useState(initialEditorText);
+  const [scheduleAt, setScheduleAt] = useState(initialScheduleAt);
+  const [contentId, setContentId] = useState<number | null>(initialContentId);
 
   const generate = useGenerate();
   const translate = useTranslate();
@@ -185,6 +201,7 @@ export default function CreatePage() {
   });
 
   const busy =
+    editLoading ||
     generate.isPending ||
     translate.isPending ||
     createContent.isPending ||
@@ -206,6 +223,21 @@ export default function CreatePage() {
         <p className="mt-2 text-sm text-[var(--muted)]">
           Source {"->"} Angle {"->"} Generate {"->"} Pick {"->"} Edit {"->"} Copy or Save
         </p>
+        {editId ? (
+          <p className="mt-3 text-xs text-[var(--muted)]" aria-live="polite">
+            Editing draft #{editId}
+          </p>
+        ) : null}
+        {editLoading ? (
+          <p className="mt-2 text-sm text-[var(--muted)]" aria-live="polite">
+            Loading draft...
+          </p>
+        ) : null}
+        {editError ? (
+          <p className="mt-2 text-sm text-red-300" role="alert">
+            Failed to load draft. Open Queue and retry.
+          </p>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--muted)]">
           <span className="rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1">Shortcut: Ctrl/Cmd + Enter</span>
           <span className="rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1">Target: up to 280 chars</span>
@@ -213,40 +245,100 @@ export default function CreatePage() {
         </div>
       </header>
 
-      <Card className="lift-hover">
-        <CardHeader>
-          <CardTitle>Workflow</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SourceInput value={sourceText} onChange={setSourceText} />
-          <AngleSelector value={angle} onChange={setAngle} />
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={handleGenerate} disabled={busy}>
-              Generate (Ctrl+Enter)
-            </Button>
-            <Button variant="secondary" onClick={handleTranslateSource} disabled={busy}>
-              Translate Source
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {editLoading ? (
+        <Card>
+          <CardContent className="py-5 text-sm text-[var(--muted)]">Fetching draft details...</CardContent>
+        </Card>
+      ) : (
+        <>
+          <Card className="lift-hover">
+            <CardHeader>
+              <CardTitle>Workflow</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <SourceInput value={sourceText} onChange={setSourceText} />
+              <AngleSelector value={angle} onChange={setAngle} />
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={handleGenerate} disabled={busy}>
+                  Generate (Ctrl+Enter)
+                </Button>
+                <Button variant="secondary" onClick={handleTranslateSource} disabled={busy}>
+                  Translate Source
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-      <VariantCards variants={variants} selectedIndex={selectedIndex} onSelect={handleSelectVariant} />
+          <VariantCards variants={variants} selectedIndex={selectedIndex} onSelect={handleSelectVariant} />
 
-      <Card className="lift-hover">
-        <CardContent className="py-5">
-          <HebrewEditor
-            value={editorText}
-            onChange={setEditorText}
-            scheduleAt={scheduleAt}
-            onScheduleAt={setScheduleAt}
-            onCopy={handleCopy}
-            onSaveDraft={handleSaveDraft}
-            onSchedule={handleSchedule}
-            disabled={busy}
-          />
-        </CardContent>
-      </Card>
+          <Card className="lift-hover">
+            <CardContent className="py-5">
+              <HebrewEditor
+                value={editorText}
+                onChange={setEditorText}
+                scheduleAt={scheduleAt}
+                onScheduleAt={setScheduleAt}
+                onCopy={handleCopy}
+                onSaveDraft={handleSaveDraft}
+                onSchedule={handleSchedule}
+                disabled={busy}
+              />
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
+  );
+}
+
+export default function CreatePage() {
+  const params = useSearchParams();
+  const initialSource = params.get("text") || "";
+  const rawEditId = params.get("edit");
+  const editId = rawEditId && /^\d+$/.test(rawEditId) ? Number(rawEditId) : null;
+  const editQuery = useContentItem(editId);
+
+  if (editId && editQuery.data) {
+    const item = editQuery.data;
+    return (
+      <CreateWorkspace
+        key={`edit-${item.id}`}
+        initialSource={item.original_text || item.source_url}
+        initialEditorText={item.hebrew_draft || ""}
+        initialScheduleAt={item.scheduled_at ? item.scheduled_at.slice(0, 16) : ""}
+        initialContentId={item.id}
+        editId={item.id}
+        editLoading={false}
+        editError={false}
+      />
+    );
+  }
+
+  if (editId) {
+    return (
+      <CreateWorkspace
+        key={`edit-${editId}-state`}
+        initialSource={initialSource}
+        initialEditorText=""
+        initialScheduleAt=""
+        initialContentId={null}
+        editId={editId}
+        editLoading={editQuery.isLoading}
+        editError={editQuery.isError}
+      />
+    );
+  }
+
+  return (
+    <CreateWorkspace
+      key={`new-${initialSource}`}
+      initialSource={initialSource}
+      initialEditorText=""
+      initialScheduleAt=""
+      initialContentId={null}
+      editId={null}
+      editLoading={false}
+      editError={false}
+    />
   );
 }

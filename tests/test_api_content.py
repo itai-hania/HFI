@@ -73,6 +73,37 @@ class TestContentEndpoints:
         assert data["original_text"] == "Test fintech news"
         assert data["hebrew_draft"] == "חדשות פינטק"
 
+    def test_create_content_respects_explicit_status(self, db_and_client):
+        _, client = db_and_client
+        resp = client.post(
+            "/api/content",
+            json={
+                "source_url": "https://x.com/test/status/124",
+                "original_text": "Scheduled content",
+                "hebrew_draft": "תוכן מתוזמן",
+                "status": "approved",
+                "scheduled_at": "2026-03-10T09:30:00Z",
+            },
+            headers=self._auth_header(client),
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "approved"
+        assert data["scheduled_at"] is not None
+
+    def test_create_content_duplicate_source_url_returns_conflict(self, db_and_client):
+        _, client = db_and_client
+        payload = {
+            "source_url": "https://x.com/test/status/125",
+            "original_text": "Duplicate source",
+        }
+
+        first = client.post("/api/content", json=payload, headers=self._auth_header(client))
+        assert first.status_code == 201
+
+        second = client.post("/api/content", json=payload, headers=self._auth_header(client))
+        assert second.status_code == 409
+
     def test_get_content_by_id(self, db_and_client):
         db, client = db_and_client
         tweet = Tweet(source_url="https://x.com/t/1", original_text="Hello", status=TweetStatus.PENDING)

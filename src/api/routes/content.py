@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, require_jwt
@@ -118,7 +119,8 @@ def get_content(content_id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=ContentResponse, status_code=201)
 def create_content(data: ContentCreate, db: Session = Depends(get_db)):
     """Create a new content record."""
-    status = TweetStatus.PROCESSED if data.hebrew_draft else TweetStatus.PENDING
+    requested_status = _parse_status(data.status)
+    status = requested_status or (TweetStatus.PROCESSED if data.hebrew_draft else TweetStatus.PENDING)
 
     tweet = Tweet(
         source_url=data.source_url,
@@ -131,7 +133,13 @@ def create_content(data: ContentCreate, db: Session = Depends(get_db)):
     )
 
     db.add(tweet)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "source_url" in str(exc).lower():
+            raise HTTPException(status_code=409, detail="Content with this source_url already exists") from exc
+        raise HTTPException(status_code=500, detail="Failed to create content") from exc
     db.refresh(tweet)
     return tweet
 

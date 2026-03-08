@@ -22,6 +22,17 @@ export function useContentList(params: ListParams) {
   });
 }
 
+export function useContentItem(id?: number | null) {
+  return useQuery({
+    queryKey: ["content", "item", id],
+    enabled: Boolean(id),
+    queryFn: async () => {
+      const { data } = await api.get<ContentItem>(`/api/content/${id}`);
+      return data;
+    },
+  });
+}
+
 export function useScheduledContent() {
   return useQuery({
     queryKey: ["content", "scheduled"],

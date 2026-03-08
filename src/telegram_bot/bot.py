@@ -48,6 +48,13 @@ class HFIBot:
         self.app.add_handler(CommandHandler("schedule", self.cmd_schedule))
         self.app.add_handler(CommandHandler("write", self.cmd_write))
 
+    def _is_authorized_chat(self, update: Update) -> bool:
+        """Allow command handling only from the configured chat."""
+        chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
+        if chat_id is None:
+            return False
+        return str(chat_id) == str(self.chat_id)
+
     async def _ensure_auth(self) -> dict[str, str]:
         if not self.jwt_token:
             response = await self.http.post("/api/auth/login", json={"password": self.api_password})
@@ -72,15 +79,24 @@ class HFIBot:
         return response
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized_chat(update):
+            logger.warning("Rejected /start from unauthorized chat")
+            return
         await update.message.reply_text("HFI Content Studio Bot. Use /brief for latest topics.")
 
     async def cmd_brief(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized_chat(update):
+            logger.warning("Rejected /brief from unauthorized chat")
+            return
         response = await self._request("POST", "/api/notifications/brief")
         stories = response.json().get("stories", [])
         msg = format_brief_message(stories, "on-demand")
         await update.message.reply_text(msg, parse_mode="HTML")
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized_chat(update):
+            logger.warning("Rejected /status from unauthorized chat")
+            return
         drafts = await self._request("GET", "/api/content/drafts?status=pending")
         scheduled = await self._request("GET", "/api/content/scheduled")
         published = await self._request("GET", "/api/content/published")
@@ -93,9 +109,15 @@ class HFIBot:
         await update.message.reply_text(msg)
 
     async def cmd_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized_chat(update):
+            logger.warning("Rejected /schedule from unauthorized chat")
+            return
         await update.message.reply_text("Brief schedule: 08:00 and 19:00. Alerts checked every 15 minutes.")
 
     async def cmd_write(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized_chat(update):
+            logger.warning("Rejected /write from unauthorized chat")
+            return
         source_text = " ".join(context.args) if getattr(context, "args", None) else ""
         if not source_text:
             await update.message.reply_text("Usage: /write <source text or URL>")
@@ -163,7 +185,7 @@ def format_brief_message(stories: List[dict], brief_type: str) -> str:
             lines.append(f"   Sources: {sources}")
         if summary:
             lines.append(f"   {summary}")
-        lines.append(f"   /write_{index}  /skip_{index}\n")
+        lines.append("   Use /write <source text or URL>\n")
 
     return "\n".join(lines)
 
@@ -179,5 +201,5 @@ def format_alert_message(alert: dict) -> str:
         lines.append(f"Sources: {sources}")
     if summary:
         lines.append(summary)
-    lines.append("\n/write  /translate  /skip")
+    lines.append("\nUse /write <source text or URL>")
     return "\n".join(lines)

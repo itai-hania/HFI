@@ -17,6 +17,7 @@ class ContentCreate(BaseModel):
     content_type: str = "translation"
     trend_topic: Optional[str] = None
     scheduled_at: Optional[datetime] = None
+    status: Optional[ContentStatus] = None
 
     @field_validator("source_url")
     @classmethod
