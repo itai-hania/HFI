@@ -2,8 +2,8 @@
 """
 Cross-Platform Service Launcher for HFI
 
-This script replaces start_services.sh to provide a consistent experience
-on both Windows and macOS/Linux systems.
+Canonical service launcher for HFI, designed to provide a consistent
+experience on both Windows and macOS/Linux systems.
 """
 
 import os

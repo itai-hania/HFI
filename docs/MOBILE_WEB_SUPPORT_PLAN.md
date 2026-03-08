@@ -24,7 +24,7 @@ Make the existing Streamlit dashboard usable and comfortable from a mobile brows
 3. Heavy use of multi-column layouts across views, which will compress badly on phone widths:  
    `src/dashboard/views/home.py`, `src/dashboard/views/content.py`, `src/dashboard/views/settings.py`, `src/dashboard/navigation.py`
 4. Local launch scripts bind to localhost by default, which blocks direct phone access over LAN:  
-   `start_services.py`, `start_services.sh`
+   `start_services.py`
 
 ## Success Criteria (Definition of Done)
 
@@ -63,7 +63,6 @@ Make the existing Streamlit dashboard usable and comfortable from a mobile brows
 
 1. Update launch commands to bind Streamlit on all interfaces:
    - `start_services.py` (`run_dashboard`)
-   - `start_services.sh` (Dashboard options)
 2. Add optional env-configurable host/port:
    - `HFI_DASHBOARD_HOST` (default `0.0.0.0`)
    - `HFI_DASHBOARD_PORT` (default `8501`)
@@ -192,4 +191,3 @@ Make the existing Streamlit dashboard usable and comfortable from a mobile brows
 3. `PR-3`: Home + navigation mobile behavior.
 4. `PR-4`: Content mobile behavior.
 5. `PR-5`: Settings mobile behavior + final QA checklist results.
-

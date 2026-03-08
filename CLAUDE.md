@@ -120,7 +120,6 @@ HFI/
 ├── docker-build.sh          # Docker build helper
 ├── docker-validate.sh       # Docker validation
 ├── start_services.py        # App entrypoint
-├── start_services.sh        # App entrypoint (shell)
 ├── .env                     # Environment configuration (not in git)
 ├── CLAUDE.md
 └── README.md
@@ -133,7 +132,7 @@ HFI/
 **NEVER drop files at the repository root.** The root is reserved exclusively for:
 - Project config/meta: `README.md`, `CLAUDE.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`, `requirements.txt`
 - Docker: `docker-compose.yml`, `docker-build.sh`, `docker-validate.sh`
-- App entrypoints: `start_services.py`, `start_services.sh`
+- App entrypoint: `start_services.py`
 
 ### Where each file type belongs
 
