@@ -1,5 +1,7 @@
 """Generation and translation endpoints."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import require_jwt
@@ -86,7 +88,7 @@ async def translate(request: TranslateRequest):
     if not original_text:
         raise HTTPException(status_code=400, detail="No source text found")
 
-    hebrew_text = service.translate_and_rewrite(original_text)
+    hebrew_text = await asyncio.to_thread(service.translate_and_rewrite, original_text)
     return TranslateResponse(
         hebrew_text=hebrew_text,
         original_text=original_text,

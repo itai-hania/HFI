@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from common.models import Base
+from common.models import Base, InspirationPost
 
 
 @pytest.fixture
@@ -114,3 +114,60 @@ class TestInspirationEndpoints:
         data = resp.json()
         assert len(data["posts"]) == 1
         assert data["posts"][0]["x_post_id"] == "111"
+
+    def test_search_posts_updates_existing_post_on_upsert(self, db_and_client):
+        db, client = db_and_client
+        client.post(
+            "/api/inspiration/accounts",
+            json={"username": "fintech_guru", "display_name": "FinTech Guru"},
+            headers={"Authorization": "Bearer test"},
+        )
+
+        with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
+            scraper = mock_get_scraper.return_value
+            scraper.search_by_user_engagement = AsyncMock(
+                return_value=[
+                    {
+                        "tweet_id": "111",
+                        "text": "Original text",
+                        "likes": 120,
+                        "retweets": 20,
+                        "views": 1000,
+                        "url": "https://x.com/a/status/111",
+                    }
+                ]
+            )
+            scraper.close = AsyncMock(return_value=None)
+            first = client.post(
+                "/api/inspiration/search",
+                json={"username": "fintech_guru", "min_likes": 100, "keyword": "btc"},
+                headers={"Authorization": "Bearer test"},
+            )
+        assert first.status_code == 200
+
+        with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
+            scraper = mock_get_scraper.return_value
+            scraper.search_by_user_engagement = AsyncMock(
+                return_value=[
+                    {
+                        "tweet_id": "111",
+                        "text": "Updated text",
+                        "likes": 560,
+                        "retweets": 60,
+                        "views": 12000,
+                        "url": "https://x.com/a/status/111",
+                    }
+                ]
+            )
+            scraper.close = AsyncMock(return_value=None)
+            second = client.post(
+                "/api/inspiration/search",
+                json={"username": "fintech_guru", "min_likes": 100, "keyword": "eth"},
+                headers={"Authorization": "Bearer test"},
+            )
+        assert second.status_code == 200
+
+        rows = db.query(InspirationPost).filter(InspirationPost.x_post_id == "111").all()
+        assert len(rows) == 1
+        assert rows[0].content == "Updated text"
+        assert rows[0].likes == 560

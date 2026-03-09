@@ -46,8 +46,11 @@ class TestGenerationEndpoints:
             assert variants[0]["angle"] == "news"
 
     def test_translate_text(self, client):
-        with patch("api.routes.generation.get_translation_service") as mock_ts:
-            mock_ts.return_value.translate_and_rewrite.return_value = "תרגום בעברית"
+        with patch("api.routes.generation.get_translation_service") as mock_ts, patch(
+            "api.routes.generation.asyncio.to_thread",
+            new_callable=AsyncMock,
+        ) as mock_to_thread:
+            mock_to_thread.return_value = "תרגום בעברית"
 
             resp = client.post(
                 "/api/generation/translate",
@@ -56,6 +59,10 @@ class TestGenerationEndpoints:
 
             assert resp.status_code == 200
             assert resp.json()["hebrew_text"] == "תרגום בעברית"
+            mock_to_thread.assert_awaited_once_with(
+                mock_ts.return_value.translate_and_rewrite,
+                "Fintech is disrupting traditional banking",
+            )
 
     def test_translate_url(self, client):
         with patch("api.routes.generation.get_translation_service") as mock_ts, patch(
