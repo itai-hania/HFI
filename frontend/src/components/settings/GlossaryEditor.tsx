@@ -69,6 +69,7 @@ export function GlossaryEditor() {
             }}
             placeholder="Hebrew"
             dir="rtl"
+            lang="he"
           />
           <Button
             variant="ghost"
