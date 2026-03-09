@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
+from urllib.parse import quote
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Response
 from fake_useragent import UserAgent
@@ -395,6 +396,146 @@ class TwitterScraper:
 
         except Exception as e:
             logger.error(f"❌ Failed to search tweets: {e}")
+            return []
+
+    async def search_by_user_engagement(
+        self,
+        username: str,
+        min_faves: int = 100,
+        keyword: str = "",
+        limit: int = 20,
+    ) -> List[Dict]:
+        """
+        Search X for high-engagement posts by user.
+
+        Returns a list of dicts with:
+        tweet_id, text, permalink, likes, retweets, views, timestamp, author_handle.
+        """
+        if not username:
+            return []
+
+        query = f"from:{username} min_faves:{int(min_faves)}"
+        if keyword and keyword.strip():
+            query = f"{query} {keyword.strip()}"
+
+        if not self.page:
+            await self.ensure_logged_in()
+
+        logger.info(f"🔎 Searching engagement posts: {query}")
+        search_url = f"https://x.com/search?q={quote(query)}&src=typed_query&f=top"
+
+        try:
+            await self.page.goto(search_url, timeout=45000)
+            await self._random_delay(1.5, 2.8)
+            await self.page.wait_for_selector('article[data-testid=\"tweet\"]', timeout=15000)
+
+            collected: Dict[str, Dict] = {}
+            max_scrolls = 10
+
+            for _ in range(max_scrolls):
+                rows = await self.page.evaluate(
+                    """
+                    () => {
+                      const parseCount = (value) => {
+                        if (!value) return 0;
+                        const clean = value.replace(/,/g, '').trim();
+                        const match = clean.match(/(\\d+(?:\\.\\d+)?)([KkMm])?/);
+                        if (!match) return 0;
+                        let num = parseFloat(match[1]);
+                        const suffix = (match[2] || '').toUpperCase();
+                        if (suffix === 'K') num *= 1000;
+                        if (suffix === 'M') num *= 1000000;
+                        return Math.round(num);
+                      };
+
+                      const readMetric = (article, testid, pattern) => {
+                        const el = article.querySelector(`[data-testid="${testid}"]`);
+                        if (!el) return 0;
+                        const label = el.getAttribute('aria-label') || el.textContent || '';
+                        const m = label.match(pattern);
+                        if (!m) return parseCount(label);
+                        return parseCount(m[1]);
+                      };
+
+                      const rows = [];
+                      const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+                      for (const article of articles) {
+                        const timeEl = article.querySelector('time');
+                        const link = timeEl?.closest('a') || article.querySelector('a[href*="/status/"]');
+                        const permalink = link?.href || '';
+                        const tweetId = permalink.includes('/status/') ? permalink.split('/status/')[1]?.split('?')[0] : '';
+                        if (!tweetId) continue;
+
+                        const textEl = article.querySelector('[data-testid="tweetText"]');
+                        const text = textEl?.innerText || '';
+
+                        const userSection = article.querySelector('div[data-testid="User-Name"]');
+                        let authorHandle = '';
+                        for (const span of userSection?.querySelectorAll('span') || []) {
+                          const t = span.textContent?.trim() || '';
+                          if (t.startsWith('@')) {
+                            authorHandle = t;
+                            break;
+                          }
+                        }
+
+                        const likes = readMetric(article, 'like', /(\\d[\\d,.]*[KkMm]?)\\s+likes?/i);
+                        const retweets = readMetric(article, 'retweet', /(\\d[\\d,.]*[KkMm]?)\\s+(reposts?|retweets?)/i);
+                        let views = 0;
+                        const analytics = article.querySelector('a[href*=\"/analytics\"]');
+                        if (analytics) {
+                          const label = analytics.getAttribute('aria-label') || analytics.textContent || '';
+                          const m = label.match(/(\\d[\\d,.]*[KkMm]?)\\s+views?/i);
+                          views = parseCount(m ? m[1] : label);
+                        }
+
+                        rows.push({
+                          tweet_id: tweetId,
+                          text,
+                          permalink,
+                          likes,
+                          retweets,
+                          views,
+                          timestamp: timeEl?.getAttribute('datetime') || null,
+                          author_handle: authorHandle,
+                        });
+                      }
+                      return rows;
+                    }
+                    """
+                )
+
+                changed = False
+                for row in rows:
+                    tweet_id = row.get("tweet_id")
+                    if not tweet_id:
+                        continue
+                    current = collected.get(tweet_id)
+                    # Keep the richer row if we observe updated metrics.
+                    if not current or (
+                        int(row.get("likes", 0)) + int(row.get("retweets", 0)) + int(row.get("views", 0))
+                        > int(current.get("likes", 0)) + int(current.get("retweets", 0)) + int(current.get("views", 0))
+                    ):
+                        collected[tweet_id] = row
+                        changed = True
+
+                high_engagement = [r for r in collected.values() if int(r.get("likes", 0)) >= int(min_faves)]
+                if len(high_engagement) >= limit:
+                    break
+
+                if not changed and len(collected) >= limit * 2:
+                    break
+
+                await self.page.evaluate("window.scrollBy(0, 1200)")
+                await self._random_delay(0.8, 1.6)
+
+            results = [r for r in collected.values() if int(r.get("likes", 0)) >= int(min_faves)]
+            results.sort(key=lambda item: int(item.get("likes", 0)), reverse=True)
+            logger.info(f"✅ Found {len(results)} posts for {username} with likes>={min_faves}")
+            return results[:limit]
+
+        except Exception as e:
+            logger.error(f"❌ Failed user engagement search for {username}: {e}")
             return []
 
     async def fetch_raw_thread(self, thread_url: str, max_scroll_attempts: int = 20, author_only: bool = True) -> Dict:

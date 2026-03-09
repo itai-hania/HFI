@@ -27,12 +27,13 @@ from sqlalchemy import (
     DateTime,
     Enum as SQLEnum,
     Index,
+    ForeignKey,
     event,
     Engine,
     JSON,
 )
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, validates
+from sqlalchemy.orm import sessionmaker, Session, validates, relationship
 from sqlalchemy.pool import StaticPool
 
 # Configure logging
@@ -299,6 +300,13 @@ class Tweet(Base):
         nullable=True,
         comment="When this tweet is scheduled for publishing"
     )
+    copy_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default='0',
+        comment="Number of times content was copied from UI/bot"
+    )
 
     # Timestamps
     created_at = Column(
@@ -345,6 +353,7 @@ class Tweet(Base):
             'generation_metadata': self.generation_metadata,
             'pipeline_batch_id': self.pipeline_batch_id,
             'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
+            'copy_count': self.copy_count,
             'trend_topic': self.trend_topic,
             'status': self.status.value,
             'error_message': self.error_message,
@@ -661,6 +670,97 @@ class StyleExample(Base):
         }
 
 
+class InspirationAccount(Base):
+    """Tracked inspiration accounts for high-engagement source discovery."""
+    __tablename__ = "inspiration_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(256), unique=True, nullable=False, index=True)
+    display_name = Column(String(256), nullable=True)
+    category = Column(String(100), nullable=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default='1', index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+    posts = relationship(
+        "InspirationPost",
+        back_populates="account",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class InspirationPost(Base):
+    """Cached high-engagement posts from inspiration account searches."""
+    __tablename__ = "inspiration_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(
+        Integer,
+        ForeignKey("inspiration_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    x_post_id = Column(String(64), unique=True, nullable=False, index=True)
+    content = Column(Text, nullable=True)
+    post_url = Column(String(1024), nullable=True)
+    likes = Column(Integer, nullable=False, default=0, server_default='0')
+    retweets = Column(Integer, nullable=False, default=0, server_default='0')
+    views = Column(Integer, nullable=False, default=0, server_default='0')
+    posted_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    fetched_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    query_key = Column(String(512), nullable=True, index=True)
+
+    account = relationship("InspirationAccount", back_populates="posts")
+
+    __table_args__ = (
+        Index("ix_inspiration_posts_likes", "likes"),
+        Index("ix_inspiration_posts_account_likes", "account_id", "likes"),
+        Index("ix_inspiration_posts_query_fetched", "query_key", "fetched_at"),
+    )
+
+
+class Notification(Base):
+    """Stored briefs and alerts for Telegram/web polling."""
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    type = Column(String(20), nullable=False, index=True)  # brief | alert
+    content = Column(JSON, nullable=False)
+    delivered = Column(Boolean, nullable=False, default=False, server_default='0', index=True)
+    delivered_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+
+class UserPreference(Base):
+    """Simple key/value preferences store for user-level settings."""
+    __tablename__ = "user_preferences"
+
+    key = Column(String(256), primary_key=True)
+    value = Column(JSON, nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+
 # ==================== Database Utilities ====================
 
 def create_tables(drop_existing: bool = False):
@@ -701,6 +801,7 @@ def create_tables(drop_existing: bool = False):
             ("tweets", "generation_metadata", "ALTER TABLE tweets ADD COLUMN generation_metadata TEXT"),
             ("tweets", "pipeline_batch_id", "ALTER TABLE tweets ADD COLUMN pipeline_batch_id VARCHAR(64)"),
             ("tweets", "scheduled_at", "ALTER TABLE tweets ADD COLUMN scheduled_at DATETIME"),
+            ("tweets", "copy_count", "ALTER TABLE tweets ADD COLUMN copy_count INTEGER DEFAULT 0"),
             ("style_examples", "approval_count", "ALTER TABLE style_examples ADD COLUMN approval_count INTEGER DEFAULT 0"),
             ("style_examples", "rejection_count", "ALTER TABLE style_examples ADD COLUMN rejection_count INTEGER DEFAULT 0"),
             ("tweets", "source_domain", "ALTER TABLE tweets ADD COLUMN source_domain VARCHAR(256)"),

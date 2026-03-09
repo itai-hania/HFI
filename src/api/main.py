@@ -8,13 +8,23 @@ import os
 import time
 import logging
 from collections import defaultdict
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from api.routes import trends, summaries
+from api.routes import (
+    trends,
+    summaries,
+    auth,
+    content,
+    generation,
+    inspiration,
+    settings,
+    notifications,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +51,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests: dict[str, list[float]] = defaultdict(list)
+        self._request_counter = 0
+        self._cleanup_every = 500
 
     async def dispatch(self, request, call_next):
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
+        self._request_counter += 1
+
+        if self._request_counter % self._cleanup_every == 0 and self.requests:
+            for ip in list(self.requests.keys()):
+                self.requests[ip] = [t for t in self.requests[ip] if now - t < self.window_seconds]
+                if not self.requests[ip]:
+                    self.requests.pop(ip, None)
+
         timestamps = [t for t in self.requests[client_ip] if now - t < self.window_seconds]
         if not timestamps:
             self.requests.pop(client_ip, None)
@@ -56,6 +76,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
         self.requests[client_ip] = timestamps + [now]
         return await call_next(request)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach baseline security headers to all API responses."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if not request.url.path.startswith("/api/docs") and not request.url.path.startswith("/api/redoc"):
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            )
+        if IS_PRODUCTION:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
 
 
 def _validate_origins(raw: str) -> list[str]:
@@ -82,11 +121,21 @@ def _validate_origins(raw: str) -> list[str]:
     return validated
 
 
+# Lifespan hook for startup schema readiness.
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    from common.models import create_tables
+
+    create_tables()
+    yield
+
+
 # Create FastAPI app
 app = FastAPI(
     title="HFI API",
     description="Hebrew FinTech Informant REST API",
     version="1.0.0",
+    lifespan=_lifespan,
     **docs_kwargs,
 )
 
@@ -104,9 +153,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Per-IP rate limiting (added last = outermost, runs first)
 app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
@@ -114,6 +165,12 @@ app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
 # Include routers
 app.include_router(trends.router)
 app.include_router(summaries.router)
+app.include_router(auth.router)
+app.include_router(content.router)
+app.include_router(generation.router)
+app.include_router(inspiration.router)
+app.include_router(settings.router)
+app.include_router(notifications.router)
 
 
 @app.get("/")

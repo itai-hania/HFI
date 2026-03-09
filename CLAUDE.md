@@ -1,6 +1,7 @@
 # HFI Project Guide for Claude AI
 
 > This document helps Claude AI understand the HFI project structure, current status, and how to assist effectively.
+> Root agent entrypoint: `AGENTS.md` points here.
 
 ---
 
@@ -8,12 +9,12 @@
 
 **Name:** Hebrew FinTech Informant (HFI)
 **Type:** Automated content creation pipeline
-**Tech Stack:** Python, Playwright, OpenAI GPT-4o, Streamlit, SQLite, Docker, Kubernetes, RSS Feed Parsing
-**Purpose:** Scrape English FinTech content from X (Twitter) + news sources (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg), rank by relevance, translate to Hebrew with style matching, enable human review, and (future) auto-publish
+**Tech Stack:** Python, FastAPI, Next.js, Playwright, OpenAI GPT-4o, SQLite, Telegram Bot API, Docker, Kubernetes, RSS Feed Parsing
+**Purpose:** Scrape English FinTech content from X (Twitter) + news sources, rank by relevance, translate/generate Hebrew content, manage content in a Next.js studio, and deliver briefs/alerts through Telegram
 
 ---
 
-## Current Status (as of 2026-02-15)
+## Current Status (as of 2026-03-08)
 
 ### Completion: ~95% (Beta Phase)
 
@@ -21,7 +22,9 @@
 - ✅ X Scraper service (Playwright-based X scraper with thread support)
 - ✅ News Scraper service (Multi-source RSS feeds with parallel fetching + smart ranking)
 - ✅ Processor service (GPT-4o translation + media downloads + content generation)
-- ✅ Dashboard (Streamlit modular UI with trend discovery, content generation, style learning)
+- ✅ API v2 (JWT auth, content CRUD, generation, inspiration, settings, notifications)
+- ✅ Frontend v2 (Next.js Content Studio with RTL UX and full content workflow)
+- ✅ Telegram bot service (briefs, alerts, commands + scheduler)
 - ✅ Database models (SQLAlchemy + SQLite)
 - ✅ Docker containers + Compose file
 - ✅ Kubernetes manifests (ready for deployment)
@@ -42,20 +45,24 @@
 ### Services
 
 ```
-┌─────────────┐      ┌────────────┐      ┌──────────────┐
-│  X Scraper  │─────▶│  Database  │◀─────│  Dashboard   │
-│ (Playwright)│      │  (SQLite)  │      │ (Streamlit)  │
-└─────────────┘      └────────────┘      └──────────────┘
-                           ▲                    │
-┌─────────────┐            │                    │
-│ News Scraper│────────────┤                    │
-│ (RSS + Rank)│            │                    │
-└─────────────┘            │                    │
-                           │                    │
-                    ┌──────────────┐            │
-                    │  Processor   │◀───────────┘
-                    │ (OpenAI GPT) │
-                    └──────────────┘
+┌───────────────────────┐        ┌────────────────────────┐
+│ Next.js Frontend      │        │ Telegram Bot           │
+│ (frontend/)           │        │ (src/telegram_bot/)    │
+└───────────┬───────────┘        └───────────┬────────────┘
+            │ REST (JWT)                      │ REST (JWT)
+            └───────────────────┬─────────────┘
+                                ▼
+                    ┌────────────────────────┐
+                    │ FastAPI API (src/api/) │
+                    └───────────┬────────────┘
+                                ▼
+                         ┌────────────┐
+                         │ SQLite DB  │
+                         └──────┬─────┘
+                                ▼
+                    ┌────────────────────────┐
+                    │ Scraper + Processor    │
+                    └────────────────────────┘
 ```
 
 ### Directory Structure
@@ -78,7 +85,9 @@ HFI/
 │   │   ├── style_manager.py      # Style example management
 │   │   ├── main.py
 │   │   └── Dockerfile
-│   └── dashboard/           # Streamlit UI (modular)
+│   ├── api/                 # FastAPI routes/schemas/dependencies
+│   ├── telegram_bot/        # Bot commands + scheduler
+│   └── dashboard/           # Legacy Streamlit UI (deprecated)
 │       ├── app.py           # ~63 lines — thin router
 │       ├── styles.py        # CSS constant
 │       ├── db_helpers.py    # DB helper functions
@@ -91,6 +100,8 @@ HFI/
 │       │   ├── content.py   # Content page (Acquire, Queue, Translation, Generate)
 │       │   └── settings.py  # Settings page
 │       └── Dockerfile
+├── frontend/                # Next.js Content Studio
+├── archive/                 # Archived legacy modules
 ├── config/
 │   ├── glossary.json        # EN→HE term translations
 │   └── style.txt            # Hebrew tweet examples
@@ -110,7 +121,6 @@ HFI/
 ├── docker-build.sh          # Docker build helper
 ├── docker-validate.sh       # Docker validation
 ├── start_services.py        # App entrypoint
-├── start_services.sh        # App entrypoint (shell)
 ├── .env                     # Environment configuration (not in git)
 ├── CLAUDE.md
 └── README.md
@@ -121,9 +131,9 @@ HFI/
 ## 🗂️ Project Structure Rules
 
 **NEVER drop files at the repository root.** The root is reserved exclusively for:
-- Project config/meta: `README.md`, `CLAUDE.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`, `requirements.txt`
+- Project config/meta: `README.md`, `CLAUDE.md`, `AGENTS.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`, `requirements.txt`
 - Docker: `docker-compose.yml`, `docker-build.sh`, `docker-validate.sh`
-- App entrypoints: `start_services.py`, `start_services.sh`
+- App entrypoint: `start_services.py`
 
 ### Where each file type belongs
 
@@ -139,7 +149,7 @@ HFI/
 
 ### Rules
 1. **No new `.py` files at root** — they belong in `src/`, `tests/`, or `tools/`.
-2. **No new `.md` files at root** — they belong in `docs/` (exception: `README.md` and `CLAUDE.md`).
+2. **No new `.md` files at root** — they belong in `docs/` (exceptions: `README.md`, `CLAUDE.md`, and `AGENTS.md`).
 3. **No PDF / reference documents at root** — they belong in `docs/`.
 4. **Stale one-off scripts must live in `tools/`**, not scattered anywhere else.
 5. When in doubt, ask: *which concern does this serve?* → put it in the matching folder.
@@ -777,6 +787,6 @@ When helping:
 
 ---
 
-**Last Updated:** 2026-03-04
-**Version:** 1.6
+**Last Updated:** 2026-03-09
+**Version:** 1.7
 **Maintained by:** HFI Project Team
