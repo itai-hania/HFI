@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { InspirationPost } from "@/lib/types";
+import { textDir } from "@/lib/utils";
 
 function safeHref(value: string | null | undefined) {
   if (!value) return null;
@@ -24,7 +25,7 @@ export function PostCard({ post }: { post: InspirationPost }) {
   return (
     <Card className="lift-hover">
       <CardContent className="space-y-3 py-4">
-        <p className="text-sm leading-6 text-left text-[var(--ink)]" dir="ltr">
+        <p className="text-sm leading-6 text-[var(--ink)]" dir={textDir(post.content)}>
           {post.content}
         </p>
 

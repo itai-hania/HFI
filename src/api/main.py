@@ -146,7 +146,7 @@ if IS_PRODUCTION:
 
 # Configure CORS — locked down with validated origins
 allowed_origins = _validate_origins(
-    os.getenv('CORS_ORIGINS', 'http://localhost:3000')
+    os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:13000,http://localhost:13000')
 )
 
 app.add_middleware(

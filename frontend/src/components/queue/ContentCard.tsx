@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ContentItem } from "@/lib/types";
+import { textDir } from "@/lib/utils";
 
 function safeHref(value: string) {
   try {
@@ -47,7 +48,7 @@ export function ContentCard({
           {item.scheduled_at ? <Badge>{format(new Date(item.scheduled_at), "dd/MM HH:mm")}</Badge> : null}
         </div>
 
-        <p className="text-right leading-7" dir="rtl">
+        <p className="leading-7" dir={textDir(item.hebrew_draft || item.original_text)}>
           {item.hebrew_draft || item.original_text}
         </p>
 

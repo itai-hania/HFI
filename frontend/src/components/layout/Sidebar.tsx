@@ -20,7 +20,7 @@ export function Sidebar({ onNavigate, onLogout }: { onNavigate?: () => void; onL
   const pathname = usePathname();
 
   return (
-    <aside className="surface-panel flex h-full w-80 flex-col border-l border-[var(--border)] px-4 py-6">
+    <aside className="surface-panel flex h-full w-80 flex-col border-r border-[var(--border)] px-4 py-6">
       <div className="mb-8 rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-4 py-4">
         <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--muted)]">Hebrew FinTech</p>
         <h1 className="font-display mt-2 text-2xl font-semibold text-[var(--ink)]">Content Studio</h1>
