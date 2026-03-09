@@ -1,6 +1,7 @@
 # HFI Project Guide for Claude AI
 
 > This document helps Claude AI understand the HFI project structure, current status, and how to assist effectively.
+> Root agent entrypoint: `AGENTS.md` points here.
 
 ---
 
@@ -130,7 +131,7 @@ HFI/
 ## 🗂️ Project Structure Rules
 
 **NEVER drop files at the repository root.** The root is reserved exclusively for:
-- Project config/meta: `README.md`, `CLAUDE.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`, `requirements.txt`
+- Project config/meta: `README.md`, `CLAUDE.md`, `AGENTS.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`, `requirements.txt`
 - Docker: `docker-compose.yml`, `docker-build.sh`, `docker-validate.sh`
 - App entrypoint: `start_services.py`
 
@@ -148,7 +149,7 @@ HFI/
 
 ### Rules
 1. **No new `.py` files at root** — they belong in `src/`, `tests/`, or `tools/`.
-2. **No new `.md` files at root** — they belong in `docs/` (exception: `README.md` and `CLAUDE.md`).
+2. **No new `.md` files at root** — they belong in `docs/` (exceptions: `README.md`, `CLAUDE.md`, and `AGENTS.md`).
 3. **No PDF / reference documents at root** — they belong in `docs/`.
 4. **Stale one-off scripts must live in `tools/`**, not scattered anywhere else.
 5. When in doubt, ask: *which concern does this serve?* → put it in the matching folder.
@@ -786,6 +787,6 @@ When helping:
 
 ---
 
-**Last Updated:** 2026-03-04
-**Version:** 1.6
+**Last Updated:** 2026-03-09
+**Version:** 1.7
 **Maintained by:** HFI Project Team
