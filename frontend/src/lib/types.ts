@@ -26,6 +26,7 @@ export interface BriefStory {
   title: string;
   summary: string;
   sources: string[];
+  source_urls: string[];
   source_count: number;
 }
 
