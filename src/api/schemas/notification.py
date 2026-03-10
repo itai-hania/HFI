@@ -10,6 +10,7 @@ class BriefStory(BaseModel):
     title: str
     summary: str
     sources: List[str]
+    source_urls: List[str] = []
     source_count: int
 
 
