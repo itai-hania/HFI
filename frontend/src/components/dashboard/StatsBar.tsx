@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BarChart3, Clock3, FileText, Send } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -5,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const ICONS = [FileText, Clock3, Send, BarChart3];
 const ACCENTS = ["#ec4899", "#8b5cf6", "#22d3ee", "#34d399"];
+const LINKS = ["/queue?tab=drafts", "/queue?tab=scheduled", "/queue?tab=published", "/library"];
 
 export function StatsBar({
   stats,
@@ -27,39 +29,45 @@ export function StatsBar({
         const Icon = ICONS[index];
         const progress = Math.min(100, Math.round((item.value / maxValue) * 100));
         return (
-          <Card key={item.label} className="lift-hover overflow-hidden">
-            <CardContent className="space-y-4 py-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-[var(--muted)]">{item.label}</p>
-                  {loading ? (
-                    <Skeleton className="mt-2 h-7 w-14" />
-                  ) : (
-                    <p className="mt-2 text-3xl font-semibold leading-none">{item.value}</p>
-                  )}
-                </div>
-                <div
-                  className="rounded-xl border p-2.5 text-[var(--muted)]"
-                  style={{
-                    borderColor: `${ACCENTS[index]}66`,
-                    backgroundColor: `${ACCENTS[index]}1a`,
-                    color: ACCENTS[index],
-                  }}
-                >
-                  <Icon size={18} />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+          <Link
+            key={item.label}
+            href={LINKS[index]}
+            aria-label={`View ${item.value} ${item.label.toLowerCase()}`}
+          >
+            <Card className="lift-hover cursor-pointer overflow-hidden h-full">
+              <CardContent className="space-y-4 py-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-[var(--muted)]">{item.label}</p>
+                    {loading ? (
+                      <Skeleton className="mt-2 h-7 w-14" />
+                    ) : (
+                      <p className="mt-2 text-3xl font-semibold leading-none">{item.value}</p>
+                    )}
+                  </div>
                   <div
-                    className="h-full rounded-full transition-[width] duration-300"
-                    style={{ width: `${loading ? 30 : progress}%`, backgroundColor: ACCENTS[index] }}
-                  />
+                    className="rounded-xl border p-2.5 text-[var(--muted)]"
+                    style={{
+                      borderColor: `${ACCENTS[index]}66`,
+                      backgroundColor: `${ACCENTS[index]}1a`,
+                      color: ACCENTS[index],
+                    }}
+                  >
+                    <Icon size={18} />
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+
+                <div className="space-y-1.5">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-300"
+                      style={{ width: `${loading ? 30 : progress}%`, backgroundColor: ACCENTS[index] }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         );
       })}
     </section>

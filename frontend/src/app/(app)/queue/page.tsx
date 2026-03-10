@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { ContentCard } from "@/components/queue/ContentCard";
@@ -24,7 +25,8 @@ const TABS = [
 ];
 
 export default function QueuePage() {
-  const [tab, setTab] = useState("drafts");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get("tab") || "drafts");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
