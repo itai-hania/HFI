@@ -404,6 +404,8 @@ class TwitterScraper:
         min_faves: int = 100,
         keyword: str = "",
         limit: int = 20,
+        since: str | None = None,
+        until: str | None = None,
     ) -> List[Dict]:
         """
         Search X for high-engagement posts by user.
@@ -417,6 +419,10 @@ class TwitterScraper:
         query = f"from:{username} min_faves:{int(min_faves)}"
         if keyword and keyword.strip():
             query = f"{query} {keyword.strip()}"
+        if since:
+            query = f"{query} since:{since}"
+        if until:
+            query = f"{query} until:{until}"
 
         if not self.page:
             await self.ensure_logged_in()
