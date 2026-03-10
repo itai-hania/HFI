@@ -72,54 +72,56 @@ export function BriefCard({
         )}
       >
         <div className="overflow-hidden">
-          <CardContent className="space-y-4 pt-0">
-            <p className="text-sm leading-6 text-[var(--muted)]">{story.summary}</p>
+          {expanded ? (
+            <CardContent className="space-y-4 pt-0">
+              <p className="text-sm leading-6 text-[var(--muted)]">{story.summary}</p>
 
-            {story.source_urls && story.source_urls.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Sources</p>
-                <div className="flex flex-col gap-1">
-                  {story.source_urls.map((url, i) => {
-                    const href = safeHref(url);
-                    const domain = story.sources[i] || (href ? new URL(href).hostname : "Source");
-                    if (!href) return null;
-                    return (
-                      <a
-                        key={`${url}-${i}`}
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--ink)] hover:underline transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-sm w-fit"
-                      >
-                        <ExternalLink size={13} />
-                        {domain}
-                      </a>
-                    );
-                  })}
+              {story.source_urls && story.source_urls.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Sources</p>
+                  <div className="flex flex-col gap-1">
+                    {story.source_urls.map((url, i) => {
+                      const href = safeHref(url);
+                      const domain = story.sources[i] || (href ? new URL(href).hostname : "Source");
+                      if (!href) return null;
+                      return (
+                        <a
+                          key={`${url}-${i}`}
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--ink)] hover:underline transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-sm w-fit"
+                        >
+                          <ExternalLink size={13} />
+                          {domain}
+                        </a>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="flex gap-2">
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  router.push(`/create?source=trend&id=${index + 1}&text=${encodeURIComponent(story.title)}`);
-                }}
-              >
-                Write
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTranslate(story);
-                }}
-              >
-                Translate
-              </Button>
-            </div>
-          </CardContent>
+              <div className="flex gap-2">
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/create?source=trend&id=${index + 1}&text=${encodeURIComponent(story.title)}`);
+                  }}
+                >
+                  Write
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTranslate(story);
+                  }}
+                >
+                  Translate
+                </Button>
+              </div>
+            </CardContent>
+          ) : null}
         </div>
       </div>
     </Card>
