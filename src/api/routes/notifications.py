@@ -65,7 +65,11 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
             .order_by(Notification.created_at.desc())
             .first()
         )
-        if latest and latest.created_at and latest.created_at >= now - _BRIEF_CACHE_TTL:
+        latest_created_at = latest.created_at if latest else None
+        if latest_created_at and latest_created_at.tzinfo is None:
+            # SQLite often returns naive datetimes even for timezone-aware columns.
+            latest_created_at = latest_created_at.replace(tzinfo=timezone.utc)
+        if latest_created_at and latest_created_at >= now - _BRIEF_CACHE_TTL:
             stories_payload = (latest.content or {}).get("stories", [])
             stories = [BriefStory.model_validate(item) for item in stories_payload if isinstance(item, dict)]
             if stories:
