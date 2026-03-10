@@ -80,3 +80,10 @@ temp/
 
 # Local dev tools
 tools/token-counter/
+
+# Next.js
+.next/
+frontend/.next/
+
+# Superpowers skill artifacts
+docs/superpowers/
