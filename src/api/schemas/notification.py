@@ -3,13 +3,14 @@
 from datetime import datetime
 from typing import Any, Dict, List
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BriefStory(BaseModel):
     title: str
     summary: str
     sources: List[str]
+    source_urls: List[str] = Field(default_factory=list)
     source_count: int
 
 

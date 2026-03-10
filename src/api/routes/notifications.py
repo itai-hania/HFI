@@ -1,6 +1,5 @@
 """Brief and alert notification endpoints."""
 
-import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -28,32 +27,6 @@ router = APIRouter(
 _BRIEF_CACHE_TTL = timedelta(minutes=10)
 
 
-def _get_translation_service():
-    """Initialize translator once per request (if configured)."""
-    if not os.getenv("OPENAI_API_KEY"):
-        return None
-    try:
-        from processor.processor import ProcessorConfig, TranslationService
-
-        return TranslationService(ProcessorConfig())
-    except Exception:
-        return None
-
-
-def _summarize_to_hebrew(title: str, description: str, service=None) -> str:
-    """Best-effort short Hebrew summary with graceful fallback."""
-    source_text = f"{title}. {description or ''}".strip()
-
-    if service is None:
-        return source_text[:280]
-
-    try:
-        translated = service.translate_and_rewrite(source_text)
-        return translated[:280]
-    except Exception:
-        return source_text[:280]
-
-
 @router.post("/brief", response_model=BriefResponse)
 def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get_db)):
     """Generate brief stories from latest news and store notification."""
@@ -77,7 +50,6 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
 
     scraper = NewsScraper()
     articles = scraper.get_latest_news(limit_per_source=10, total_limit=8)
-    translator = _get_translation_service()
 
     stories = []
     for article in articles:
@@ -87,17 +59,16 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
 
         source = article.get("source") or "Unknown"
         source_count = int(article.get("source_count") or 1)
-        summary = _summarize_to_hebrew(
-            title=title,
-            description=article.get("description") or "",
-            service=translator,
-        )
+        description = article.get("description") or ""
+        summary = (description if description else title)[:280]
+        url = article.get("url") or ""
 
         stories.append(
             BriefStory(
                 title=title,
                 summary=summary,
                 sources=[source],
+                source_urls=[url] if url else [],
                 source_count=source_count,
             )
         )

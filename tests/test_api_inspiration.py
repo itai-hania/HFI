@@ -171,3 +171,27 @@ class TestInspirationEndpoints:
         assert len(rows) == 1
         assert rows[0].content == "Updated text"
         assert rows[0].likes == 560
+
+    def test_search_with_date_filters(self, db_and_client):
+        _, client = db_and_client
+
+        with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
+            scraper = mock_get_scraper.return_value
+            scraper.search_by_user_engagement = AsyncMock(return_value=[])
+            scraper.close = AsyncMock(return_value=None)
+
+            resp = client.post(
+                "/api/inspiration/search",
+                json={
+                    "username": "test_user",
+                    "min_likes": 100,
+                    "since": "2025-01-01",
+                    "until": "2025-12-31",
+                },
+                headers={"Authorization": "Bearer test"},
+            )
+
+        assert resp.status_code == 200
+        call_kwargs = scraper.search_by_user_engagement.call_args.kwargs
+        assert call_kwargs["since"] == "2025-01-01"
+        assert call_kwargs["until"] == "2025-12-31"

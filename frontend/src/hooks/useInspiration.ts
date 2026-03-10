@@ -39,7 +39,14 @@ export function useDeleteInspirationAccount() {
 
 export function useSearchInspiration() {
   return useMutation({
-    mutationFn: async (payload: { username: string; min_likes: number; keyword?: string; limit?: number }) => {
+    mutationFn: async (payload: {
+      username: string;
+      min_likes: number;
+      keyword?: string;
+      limit?: number;
+      since?: string;
+      until?: string;
+    }) => {
       const { data } = await api.post<InspirationSearchResponse>("/api/inspiration/search", payload);
       return data;
     },

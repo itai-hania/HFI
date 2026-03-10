@@ -78,3 +78,59 @@ class TestNotificationEndpoints:
         resp = client.patch(f"/api/notifications/{notif.id}/delivered", headers={"Authorization": "Bearer test"})
         assert resp.status_code == 200
         assert resp.json()["delivered"] is True
+
+    def test_brief_includes_source_urls(self, db_and_client):
+        _, client = db_and_client
+        with patch("api.routes.notifications.NewsScraper.get_latest_news") as mock_news:
+            mock_news.return_value = [
+                {
+                    "title": "SEC approves Bitcoin ETF",
+                    "description": "Major approval",
+                    "source": "Bloomberg",
+                    "source_count": 3,
+                    "url": "https://bloomberg.com/news/sec-bitcoin-etf",
+                }
+            ]
+            resp = client.post("/api/notifications/brief", headers={"Authorization": "Bearer test"})
+
+        assert resp.status_code == 200
+        story = resp.json()["stories"][0]
+        assert "source_urls" in story
+        assert story["source_urls"] == ["https://bloomberg.com/news/sec-bitcoin-etf"]
+
+    def test_cached_brief_includes_source_urls(self, db_and_client):
+        db, client = db_and_client
+        with patch("api.routes.notifications.NewsScraper.get_latest_news") as mock_news:
+            mock_news.return_value = [
+                {
+                    "title": "PayPal stablecoin",
+                    "description": "PYUSD launch",
+                    "source": "TechCrunch",
+                    "source_count": 2,
+                    "url": "https://techcrunch.com/paypal-stablecoin",
+                }
+            ]
+            first = client.post("/api/notifications/brief", headers={"Authorization": "Bearer test"})
+        assert first.status_code == 200
+
+        second = client.post("/api/notifications/brief", headers={"Authorization": "Bearer test"})
+        assert second.status_code == 200
+        story = second.json()["stories"][0]
+        assert story["source_urls"] == ["https://techcrunch.com/paypal-stablecoin"]
+
+    def test_brief_summary_is_english_not_translated(self, db_and_client):
+        _, client = db_and_client
+        with patch("api.routes.notifications.NewsScraper.get_latest_news") as mock_news:
+            mock_news.return_value = [
+                {
+                    "title": "Stripe raises $6.5B",
+                    "description": "Stripe valuation reaches $50B after new round",
+                    "source": "WSJ",
+                    "source_count": 1,
+                    "url": "https://wsj.com/stripe",
+                }
+            ]
+            resp = client.post("/api/notifications/brief", headers={"Authorization": "Bearer test"})
+
+        story = resp.json()["stories"][0]
+        assert story["summary"] == "Stripe valuation reaches $50B after new round"

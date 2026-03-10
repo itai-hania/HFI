@@ -57,6 +57,8 @@ class InspirationSearchRequest(BaseModel):
     min_likes: int = Field(100, ge=0)
     keyword: str = ""
     limit: int = Field(20, ge=1, le=100)
+    since: Optional[str] = Field(None, description="Date filter since YYYY-MM-DD")
+    until: Optional[str] = Field(None, description="Date filter until YYYY-MM-DD")
 
     @field_validator("username")
     @classmethod

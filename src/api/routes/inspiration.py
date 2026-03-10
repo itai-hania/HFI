@@ -80,8 +80,8 @@ def remove_account(account_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-def _build_query_key(username: str, min_likes: int, keyword: str) -> str:
-    return f"{username.lower()}::{min_likes}::{keyword.strip().lower()}"
+def _build_query_key(username: str, min_likes: int, keyword: str, since: str = "", until: str = "") -> str:
+    return f"{username.lower()}::{min_likes}::{keyword.strip().lower()}::{since}::{until}"
 
 
 def _parse_dt(value):
@@ -124,7 +124,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
         db.commit()
         db.refresh(account)
 
-    query_key = _build_query_key(payload.username, payload.min_likes, payload.keyword)
+    query_key = _build_query_key(payload.username, payload.min_likes, payload.keyword, payload.since or "", payload.until or "")
     now = datetime.now(timezone.utc)
     cutoff = now - _CACHE_TTL
 
@@ -149,6 +149,8 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
             min_faves=payload.min_likes,
             keyword=payload.keyword,
             limit=payload.limit,
+            since=payload.since,
+            until=payload.until,
         )
     finally:
         await scraper.close()
