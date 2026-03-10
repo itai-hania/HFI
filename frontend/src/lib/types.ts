@@ -28,6 +28,8 @@ export interface BriefStory {
   sources: string[];
   source_urls: string[];
   source_count: number;
+  published_at?: string | null;
+  relevance_score?: number;
 }
 
 export interface BriefResponse {

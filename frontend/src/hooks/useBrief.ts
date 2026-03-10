@@ -12,5 +12,7 @@ export function useBrief() {
       const { data } = await api.post<BriefResponse>("/api/notifications/brief");
       return data;
     },
+    refetchInterval: 300_000,
+    refetchOnWindowFocus: true,
   });
 }

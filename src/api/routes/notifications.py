@@ -24,7 +24,7 @@ router = APIRouter(
     dependencies=[Depends(require_jwt)],
 )
 
-_BRIEF_CACHE_TTL = timedelta(minutes=10)
+_BRIEF_CACHE_TTL = timedelta(minutes=5)
 
 
 @router.post("/brief", response_model=BriefResponse)
@@ -49,7 +49,7 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
                 return BriefResponse(stories=stories)
 
     scraper = NewsScraper()
-    articles = scraper.get_latest_news(limit_per_source=10, total_limit=8)
+    articles = scraper.get_brief_news(total_limit=8, max_age_hours=48)
 
     stories = []
     for article in articles:
@@ -58,22 +58,35 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
             continue
 
         source = article.get("source") or "Unknown"
-        source_count = int(article.get("source_count") or 1)
+        sources = article.get("sources") or [source]
+        sources = [str(item) for item in sources if item]
+        if not sources:
+            sources = [source]
+        source_count = int(article.get("source_count") or len(set(sources)) or 1)
         description = article.get("description") or ""
         summary = (description if description else title)[:280]
-        url = article.get("url") or ""
+        source_urls = article.get("source_urls") or []
+        if not source_urls:
+            url = article.get("url") or ""
+            source_urls = [url] if url else []
+        source_urls = [str(item) for item in source_urls if item]
+        relevance_score = int(article.get("relevance_score") or article.get("score") or 0)
+        published_at = article.get("published_at")
 
         stories.append(
             BriefStory(
                 title=title,
                 summary=summary,
-                sources=[source],
-                source_urls=[url] if url else [],
+                sources=sources,
+                source_urls=source_urls,
                 source_count=source_count,
+                published_at=published_at,
+                relevance_score=relevance_score,
             )
         )
 
-    payload = {"stories": [s.model_dump() for s in stories]}
+    # Persist JSON-safe values (e.g., datetimes as ISO strings) in the JSON column.
+    payload = {"stories": [s.model_dump(mode="json") for s in stories]}
     row = Notification(type="brief", content=payload, delivered=False, created_at=now)
     db.add(row)
     db.commit()
