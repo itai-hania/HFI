@@ -31,13 +31,21 @@ export function BriefCard({
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
+  const toggleExpanded = () => setExpanded((prev) => !prev);
 
   return (
     <Card className="lift-hover h-full">
       <CardHeader
         className="cursor-pointer select-none hover:bg-[rgba(255,255,255,0.04)] transition-colors duration-200 motion-reduce:transition-none rounded-t-3xl"
-        onClick={() => setExpanded((prev) => !prev)}
+        onClick={toggleExpanded}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            toggleExpanded();
+          }
+        }}
         role="button"
+        tabIndex={0}
         aria-expanded={expanded}
         aria-label={`${expanded ? "Collapse" : "Expand"} brief #${index + 1}: ${story.title}`}
       >
@@ -77,7 +85,7 @@ export function BriefCard({
                     if (!href) return null;
                     return (
                       <a
-                        key={url}
+                        key={`${url}-${i}`}
                         href={href}
                         target="_blank"
                         rel="noreferrer"

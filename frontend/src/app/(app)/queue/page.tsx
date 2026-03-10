@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
@@ -23,12 +23,24 @@ const TABS = [
   { key: "scheduled", label: "Scheduled" },
   { key: "published", label: "Published" },
 ];
+const VALID_TAB_KEYS = new Set(TABS.map((tab) => tab.key));
+
+function resolveTab(value: string | null) {
+  return value && VALID_TAB_KEYS.has(value) ? value : "drafts";
+}
 
 export default function QueuePage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState(searchParams.get("tab") || "drafts");
+  const tabParam = searchParams.get("tab");
+  const [tab, setTab] = useState(() => resolveTab(tabParam));
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const next = resolveTab(tabParam);
+    setTab((current) => (current === next ? current : next));
+    setPage(1);
+  }, [tabParam]);
 
   const drafts = useContentList({ page, limit: 20, search, status: tab === "drafts" ? undefined : undefined });
   const scheduled = useScheduledContent();

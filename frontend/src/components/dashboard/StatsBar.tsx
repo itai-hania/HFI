@@ -32,6 +32,7 @@ export function StatsBar({
           <Link
             key={item.label}
             href={LINKS[index]}
+            className="block h-full rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             aria-label={`View ${item.value} ${item.label.toLowerCase()}`}
           >
             <Card className="lift-hover cursor-pointer overflow-hidden h-full">

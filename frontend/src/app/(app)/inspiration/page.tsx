@@ -1,29 +1,99 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { PostCard } from "@/components/inspiration/PostCard";
 import { SearchForm } from "@/components/inspiration/SearchForm";
-import { useInspirationAccounts, useSearchInspiration } from "@/hooks/useInspiration";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  useInspirationAccounts,
+  useAddInspirationAccount,
+  useDeleteInspirationAccount,
+  useSearchInspiration,
+} from "@/hooks/useInspiration";
+
+const PAGE_SIZE = 5;
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultSince() {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return toDateInputValue(d);
+}
+
+function defaultUntil() {
+  return toDateInputValue(new Date());
+}
 
 export default function InspirationPage() {
   const accountsQuery = useInspirationAccounts();
+  const addAccount = useAddInspirationAccount();
+  const deleteAccount = useDeleteInspirationAccount();
   const searchMutation = useSearchInspiration();
 
+  const [newUsername, setNewUsername] = useState("");
   const [username, setUsername] = useState("");
   const [minLikes, setMinLikes] = useState(200);
   const [keyword, setKeyword] = useState("");
+  const [since, setSince] = useState(defaultSince);
+  const [until, setUntil] = useState(defaultUntil);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const posts = useMemo(() => searchMutation.data?.posts || [], [searchMutation.data]);
+  const sortedPosts = useMemo(() => [...posts].sort((a, b) => b.likes - a.likes), [posts]);
+  const visiblePosts = sortedPosts.slice(0, visibleCount);
+  const remaining = sortedPosts.length - visibleCount;
 
-  const handleSubmit = async () => {
+  const handleAddAccount = async () => {
+    const cleaned = newUsername.trim().replace(/^@/, "");
+    if (!cleaned) return;
+    try {
+      await addAccount.mutateAsync({ username: cleaned });
+      setNewUsername("");
+      toast.success(`Added @${cleaned}`);
+    } catch {
+      toast.error("Failed to add account");
+    }
+  };
+
+  const handleDeleteAccount = async (id: number, name: string) => {
+    try {
+      await deleteAccount.mutateAsync(id);
+      toast.success(`Removed @${name}`);
+    } catch {
+      toast.error("Failed to remove account");
+    }
+  };
+
+  const handleSearch = async () => {
+    const cleanedUsername = username.trim().replace(/^@/, "");
+    if (!cleanedUsername) {
+      toast.error("Enter a username to search");
+      return;
+    }
+    if (since && until && since > until) {
+      toast.error("From date must be before to date");
+      return;
+    }
+
+    setVisibleCount(PAGE_SIZE);
     try {
       await searchMutation.mutateAsync({
-        username,
+        username: cleanedUsername,
         min_likes: minLikes,
         keyword,
         limit: 30,
+        since: since || undefined,
+        until: until || undefined,
       });
       toast.success("Search complete");
     } catch {
@@ -38,6 +108,52 @@ export default function InspirationPage() {
         <p className="mt-2 text-sm text-[var(--muted)]">Find high-engagement posts to reuse as sources.</p>
       </header>
 
+      <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)]/60 p-4 md:p-5 space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <Input
+            value={newUsername}
+            onChange={(event) => setNewUsername(event.target.value)}
+            placeholder="@username"
+            className="w-full sm:max-w-xs"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleAddAccount();
+            }}
+          />
+          <Button onClick={handleAddAccount} disabled={addAccount.isPending || !newUsername.trim()}>
+            + Add
+          </Button>
+        </div>
+
+        {(accountsQuery.data || []).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {(accountsQuery.data || []).map((account) => (
+              <span
+                key={account.id}
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.04)] px-3 py-1 text-xs text-[var(--muted)]"
+              >
+                <button
+                  type="button"
+                  onClick={() => setUsername(account.username)}
+                  className="cursor-pointer hover:text-[var(--ink)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-sm"
+                  aria-label={`Use @${account.username} in search`}
+                >
+                  @{account.username}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteAccount(account.id, account.username)}
+                  className="cursor-pointer rounded-full p-1 hover:bg-[rgba(255,255,255,0.1)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  aria-label={`Remove @${account.username} from tracked accounts`}
+                  disabled={deleteAccount.isPending}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
       <SearchForm
         accounts={accountsQuery.data || []}
         username={username}
@@ -46,7 +162,11 @@ export default function InspirationPage() {
         setMinLikes={setMinLikes}
         keyword={keyword}
         setKeyword={setKeyword}
-        onSubmit={handleSubmit}
+        since={since}
+        setSince={setSince}
+        until={until}
+        setUntil={setUntil}
+        onSubmit={handleSearch}
         loading={searchMutation.isPending}
       />
 
@@ -57,14 +177,21 @@ export default function InspirationPage() {
           No posts yet. Run a search.
         </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {posts
-            .slice()
-            .sort((a, b) => b.likes - a.likes)
-            .map((post) => (
+        <>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {visiblePosts.map((post) => (
               <PostCard key={post.id} post={post} />
             ))}
-        </div>
+          </div>
+
+          {remaining > 0 && (
+            <div className="flex justify-center">
+              <Button variant="secondary" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+                See more ({remaining} remaining)
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
