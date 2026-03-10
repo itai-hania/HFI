@@ -1,7 +1,21 @@
 import axios from "axios";
 
+function resolveApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // Support the local v2 setup (frontend :13000 -> API :18001) without
+  // breaking the existing default dev/docker flow on :8000.
+  if (typeof window !== "undefined" && window.location.port === "13000") {
+    return "http://127.0.0.1:18001";
+  }
+
+  return "http://localhost:8000";
+}
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+  baseURL: resolveApiBaseUrl(),
 });
 
 api.interceptors.request.use((config) => {

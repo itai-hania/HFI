@@ -34,7 +34,7 @@ export function AngleSelector({ value, onChange }: { value: string; onChange: (v
             type="button"
             variant={value === angle.key ? "primary" : "secondary"}
             onClick={() => onChange(angle.key)}
-            className="h-auto min-h-[44px] flex-col items-start gap-0.5 py-2 text-right"
+            className="h-auto min-h-[44px] flex-col items-start gap-0.5 py-2 text-left"
           >
             <span>{angle.label}</span>
             <span className={value === angle.key ? "text-[rgba(255,250,252,0.88)]" : "text-[var(--muted)]"}>

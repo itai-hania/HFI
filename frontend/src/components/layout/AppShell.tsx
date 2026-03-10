@@ -54,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="absolute inset-0 bg-black/60"
             aria-label="Close menu"
           />
-          <div className="absolute right-0 top-0 h-full w-80 max-w-[88vw]">
+          <div className="absolute left-0 top-0 h-full w-80 max-w-[88vw]">
             <Sidebar onLogout={handleLogout} onNavigate={() => setOpen(false)} />
           </div>
         </div>

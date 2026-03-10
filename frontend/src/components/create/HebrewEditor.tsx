@@ -52,6 +52,7 @@ export function HebrewEditor({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         dir="rtl"
+        lang="he"
         className="min-h-[220px] text-base leading-8"
       />
       <p className="text-xs text-[var(--muted)]">Keep it concise, factual, and aligned with your publishing tone guide.</p>

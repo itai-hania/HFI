@@ -38,7 +38,7 @@ export function StyleExampleManager() {
 
   return (
     <div className="space-y-3">
-      <Textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="Hebrew style example" dir="rtl" />
+      <Textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="Hebrew style example" dir="rtl" lang="he" />
       <Input
         placeholder="topic tags (comma separated)"
         value={tags}

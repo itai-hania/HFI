@@ -39,7 +39,7 @@ export function VariantCards({
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="line-clamp-4 min-h-20 text-right text-sm leading-7" dir="rtl">
+            <p className="line-clamp-4 min-h-20 text-sm leading-7" dir="rtl">
               {variant.content}
             </p>
             <div className="flex items-center justify-between text-xs text-[var(--muted)]">
