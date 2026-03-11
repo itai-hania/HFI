@@ -16,7 +16,7 @@ import logging
 import re
 import time
 from calendar import timegm
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
@@ -164,6 +164,7 @@ class NewsScraper:
         - Only stories with parseable publish timestamps are considered.
         - Stories older than max_age_hours are excluded.
         - Source health is validated per run; unhealthy sources are ignored.
+        - Recency bonus applies only to <=24h stories; 24-48h stories can still rank via source breadth/health.
         """
         source_list = list(self.FEEDS.keys())
         now_utc = datetime.now(timezone.utc)
@@ -180,16 +181,42 @@ class NewsScraper:
                 ): source
                 for source in source_list
             }
-            for future in as_completed(futures, timeout=self._FEED_TIMEOUT + 7):
-                source = futures[future]
-                try:
-                    diagnostics[source] = future.result()
-                except Exception as exc:
+            pending_sources = set(source_list)
+            try:
+                for future in as_completed(futures, timeout=self._FEED_TIMEOUT + 7):
+                    source = futures[future]
+                    pending_sources.discard(source)
+                    try:
+                        diagnostics[source] = future.result()
+                    except Exception as exc:
+                        diagnostics[source] = {
+                            "source": source,
+                            "fetch_ok": False,
+                            "healthy": False,
+                            "reason": f"fetch_exception:{exc}",
+                            "health_score": 0.0,
+                            "latest_age_hours": None,
+                            "fresh_ratio_48h": 0.0,
+                            "total_entries": 0,
+                            "parseable_entries": 0,
+                            "fresh_entries": 0,
+                            "articles": [],
+                        }
+            except FuturesTimeoutError:
+                logger.warning(
+                    "⚠️ Brief fetch timed out after %ss; unfinished_sources=%s",
+                    self._FEED_TIMEOUT + 7,
+                    ",".join(sorted(pending_sources)) if pending_sources else "none",
+                )
+                for future, source in futures.items():
+                    if source not in pending_sources:
+                        continue
+                    future.cancel()
                     diagnostics[source] = {
                         "source": source,
                         "fetch_ok": False,
                         "healthy": False,
-                        "reason": f"fetch_exception:{exc}",
+                        "reason": "feed_timeout",
                         "health_score": 0.0,
                         "latest_age_hours": None,
                         "fresh_ratio_48h": 0.0,
@@ -233,10 +260,15 @@ class NewsScraper:
             if not diag.get("healthy"):
                 continue
             for item in diag.get("articles", []):
-                if item.get("age_hours") is None:
+                age_hours = item.get("age_hours")
+                if age_hours is None:
                     continue
-                if float(item["age_hours"]) <= float(max_age_hours):
+                published_at = self._normalize_datetime(item.get("published_at"))
+                if not published_at:
+                    continue
+                if float(age_hours) <= float(max_age_hours):
                     enriched = dict(item)
+                    enriched["published_at"] = published_at
                     enriched["source_health"] = float(diag.get("health_score", 0.0))
                     fresh_candidates.append(enriched)
 
@@ -245,7 +277,12 @@ class NewsScraper:
         ranked_clusters.sort(key=lambda c: c["final_score"], reverse=True)
         selected_clusters = self._select_brief_clusters(ranked_clusters, total_limit=total_limit)
 
-        stories = [self._cluster_to_story(cluster) for cluster in selected_clusters]
+        stories: List[Dict[str, Any]] = []
+        for cluster in selected_clusters:
+            story = self._cluster_to_story(cluster)
+            if story.get("published_at") is None:
+                continue
+            stories.append(story)
 
         selected_ages = [
             float(story["age_hours"])
@@ -260,7 +297,7 @@ class NewsScraper:
             median_age = sorted_ages[mid] if n % 2 else (sorted_ages[mid - 1] + sorted_ages[mid]) / 2
 
         logger.info(
-            "Brief diagnostics: total_fetched=%d filtered_missing_ts=%d filtered_old=%d "
+            "✅ Brief diagnostics: total_fetched=%d filtered_missing_ts=%d filtered_old=%d "
             "unhealthy_sources=%s selected=%d median_age_hours=%s",
             total_fetched,
             filtered_missing_ts,
@@ -272,7 +309,7 @@ class NewsScraper:
 
         for source, diag in diagnostics.items():
             logger.info(
-                "Brief source status: source=%s used=%s reason=%s health=%.2f latest_age=%s fresh_ratio=%.2f",
+                "✅ Brief source status: source=%s used=%s reason=%s health=%.2f latest_age=%s fresh_ratio=%.2f",
                 source,
                 bool(diag.get("healthy")),
                 diag.get("reason", "ok"),
@@ -407,6 +444,7 @@ class NewsScraper:
                 continue
 
             matched_cluster: Optional[Dict[str, Any]] = None
+            # Group near-duplicate headlines from different sources into one topic cluster.
             for cluster in clusters:
                 if any(cls._titles_similar(title, (item.get("title") or "")) for item in cluster["items"]):
                     matched_cluster = cluster
@@ -432,6 +470,7 @@ class NewsScraper:
                 category = item.get("category") or "Finance"
                 category_counts[category] = category_counts.get(category, 0) + 1
 
+            # Pre-compute cluster metadata once so scoring/selection can stay simple.
             representative = cls._pick_cluster_representative(items)
             unique_sources = sorted({item.get("source") for item in items if item.get("source")})
             avg_source_health = (
@@ -451,6 +490,7 @@ class NewsScraper:
 
     @staticmethod
     def _recency_points(age_hours: float) -> int:
+        """Recency bonus only for <=24h stories; older stories rely on other scoring factors."""
         if age_hours <= 3:
             return 40
         if age_hours <= 6:
@@ -469,6 +509,7 @@ class NewsScraper:
         avg_source_health = float(cluster.get("avg_source_health", 0.0))
         cluster_item_count = int(cluster.get("cluster_item_count", 1))
 
+        # Blend topic breadth, freshness, source reliability, and article momentum.
         cross_source_points = 25 * min(source_count, 4)
         recency_points = cls._recency_points(age_hours)
         source_health_points = round(15 * avg_source_health)
@@ -521,6 +562,7 @@ class NewsScraper:
         enforce_diversity = has_finance and has_tech
 
         if enforce_diversity:
+            # Seed with best finance + tech topics, then fill remaining slots by score.
             best_finance = next((c for c in ranked_clusters if c.get("category") == "Finance"), None)
             best_tech = next((c for c in ranked_clusters if c.get("category") == "Tech"), None)
             seeds = [seed for seed in (best_finance, best_tech) if seed is not None]
@@ -550,11 +592,7 @@ class NewsScraper:
         sources: List[str] = list(cluster.get("unique_sources", []))
         source_to_url: Dict[str, str] = cluster.get("source_to_url", {})
         source_urls = [source_to_url[src] for src in sources if src in source_to_url and source_to_url[src]]
-        published_at = representative.get("published_at")
-        if isinstance(published_at, datetime) and published_at.tzinfo is None:
-            published_at = published_at.replace(tzinfo=timezone.utc)
-        if isinstance(published_at, datetime):
-            published_at = published_at.astimezone(timezone.utc)
+        published_at = cls._normalize_datetime(representative.get("published_at"))
 
         return {
             "title": representative.get("title", ""),
@@ -605,7 +643,7 @@ class NewsScraper:
         try:
             import requests
 
-            logger.info("Brief fetch: source=%s", source_name)
+            logger.info("✅ Brief fetch: source=%s", source_name)
             resp = requests.get(feed_url, timeout=self._FEED_TIMEOUT, headers={'User-Agent': 'HFI/1.0'})
             if resp.status_code != 200:
                 return {
@@ -624,7 +662,7 @@ class NewsScraper:
 
             feed = feedparser.parse(resp.content)
             if feed.bozo:
-                logger.warning("Brief parse warning for %s: %s", source_name, feed.bozo_exception)
+                logger.warning("⚠️ Brief parse warning for %s: %s", source_name, feed.bozo_exception)
 
             category = self._source_category(source_name)
             for entry in feed.entries[:limit_per_source]:
@@ -687,7 +725,7 @@ class NewsScraper:
                 "articles": articles,
             }
         except Exception as exc:
-            logger.error("Brief fetch error for %s: %s", source_name, exc)
+            logger.error("❌ Brief fetch error for %s: %s", source_name, exc)
             return {
                 "source": source_name,
                 "fetch_ok": False,

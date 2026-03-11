@@ -175,6 +175,9 @@ HFI/
   - `NewsScraper` - Fetches from multiple RSS sources
 - **Key Methods:**
   - `get_latest_news(limit_per_source, total_limit)` - Fetches and ranks articles
+  - `get_brief_news(total_limit, max_age_hours, limit_per_source)` - Strict-fresh brief pipeline with source health gating + clustering
+  - `_fetch_single_feed_for_brief(source_name, limit_per_source, max_age_hours, now_utc)` - Per-source freshness diagnostics and article extraction
+  - `_cluster_brief_articles(articles)` / `_score_brief_cluster(cluster)` - Multi-source grouping + relevance scoring used by `/api/notifications/brief`
   - `_rank_articles(articles)` - Scores by cross-source keyword overlap
   - `_extract_keywords(title)` - Extracts significant words for ranking
 - **News Sources:**
@@ -675,6 +678,7 @@ python main.py
 from scraper.news_scraper import NewsScraper
 scraper = NewsScraper()
 articles = scraper.get_latest_news(limit_per_source=5, total_limit=10)
+brief_stories = scraper.get_brief_news(total_limit=8, max_age_hours=48)
 ```
 
 ### Processor

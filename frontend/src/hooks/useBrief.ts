@@ -13,6 +13,7 @@ export function useBrief() {
       return data;
     },
     refetchInterval: 300_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }

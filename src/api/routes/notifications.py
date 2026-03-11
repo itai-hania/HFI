@@ -24,7 +24,7 @@ router = APIRouter(
     dependencies=[Depends(require_jwt)],
 )
 
-_BRIEF_CACHE_TTL = timedelta(minutes=5)
+_BRIEF_CACHE_TTL = timedelta(minutes=10)
 
 
 @router.post("/brief", response_model=BriefResponse)

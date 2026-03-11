@@ -1,5 +1,6 @@
 """Tests for strict-fresh brief ranking in NewsScraper."""
 
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta, timezone
 from time import gmtime
 
@@ -187,6 +188,104 @@ def test_brief_news_enforces_48h_cutoff(monkeypatch):
     assert len(stories) == 1
     assert stories[0]["title"] == "Fresh policy update"
     assert float(stories[0]["age_hours"]) <= 48
+
+
+def test_brief_news_timeout_returns_empty_instead_of_raising(monkeypatch):
+    scraper = NewsScraper()
+    now = datetime.now(timezone.utc)
+
+    def fake_fetch(source_name, limit_per_source, max_age_hours, now_utc):
+        return {
+            "source": source_name,
+            "fetch_ok": True,
+            "healthy": True,
+            "reason": "ok",
+            "health_score": 0.9,
+            "latest_age_hours": 1.0,
+            "fresh_ratio_48h": 1.0,
+            "total_entries": 1,
+            "parseable_entries": 1,
+            "fresh_entries": 1,
+            "articles": [
+                {
+                    "title": f"{source_name} fresh story",
+                    "description": "fresh",
+                    "source": source_name,
+                    "url": f"https://example.com/{source_name}",
+                    "published_at": now - timedelta(hours=1),
+                    "age_hours": 1.0,
+                    "category": "Finance",
+                }
+            ],
+        }
+
+    def fake_as_completed(_futures, timeout=None):
+        raise FuturesTimeoutError()
+
+    monkeypatch.setattr(scraper, "_fetch_single_feed_for_brief", fake_fetch)
+    monkeypatch.setattr("scraper.news_scraper.as_completed", fake_as_completed)
+
+    stories = scraper.get_brief_news(total_limit=8, max_age_hours=48)
+    assert stories == []
+
+
+def test_brief_news_skips_articles_without_parseable_published_at(monkeypatch):
+    scraper = NewsScraper()
+    now = datetime.now(timezone.utc)
+
+    def fake_fetch(source_name, limit_per_source, max_age_hours, now_utc):
+        if source_name == "Bloomberg":
+            return {
+                "source": "Bloomberg",
+                "fetch_ok": True,
+                "healthy": True,
+                "reason": "ok",
+                "health_score": 0.95,
+                "latest_age_hours": 1.0,
+                "fresh_ratio_48h": 1.0,
+                "total_entries": 2,
+                "parseable_entries": 2,
+                "fresh_entries": 2,
+                "articles": [
+                    {
+                        "title": "Missing timestamp should be excluded",
+                        "description": "missing timestamp",
+                        "source": "Bloomberg",
+                        "url": "https://bloomberg.com/missing-timestamp",
+                        "published_at": None,
+                        "age_hours": 2.0,
+                        "category": "Finance",
+                    },
+                    {
+                        "title": "Valid timestamp should remain",
+                        "description": "valid timestamp",
+                        "source": "Bloomberg",
+                        "url": "https://bloomberg.com/valid-timestamp",
+                        "published_at": now - timedelta(hours=1),
+                        "age_hours": 1.0,
+                        "category": "Finance",
+                    },
+                ],
+            }
+        return {
+            "source": source_name,
+            "fetch_ok": False,
+            "healthy": False,
+            "reason": "no_parseable_entries",
+            "health_score": 0.0,
+            "latest_age_hours": None,
+            "fresh_ratio_48h": 0.0,
+            "total_entries": 0,
+            "parseable_entries": 0,
+            "fresh_entries": 0,
+            "articles": [],
+        }
+
+    monkeypatch.setattr(scraper, "_fetch_single_feed_for_brief", fake_fetch)
+    stories = scraper.get_brief_news(total_limit=8, max_age_hours=48)
+    assert len(stories) == 1
+    assert stories[0]["title"] == "Valid timestamp should remain"
+    assert stories[0]["published_at"] is not None
 
 
 def test_cluster_merges_cross_source_similar_titles():
