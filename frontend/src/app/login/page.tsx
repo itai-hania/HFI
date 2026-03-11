@@ -8,10 +8,8 @@ import api from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { setToken } = useAuth();
@@ -21,12 +19,12 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { data } = await api.post<{ access_token: string }>("/api/auth/login", { password });
+      const { data } = await api.post<{ access_token: string }>("/api/auth/login");
       setToken(data.access_token);
       toast.success("Signed in");
       router.push("/");
     } catch {
-      toast.error("Wrong password");
+      toast.error("Sign in failed");
     } finally {
       setLoading(false);
     }
@@ -38,20 +36,12 @@ export default function LoginPage() {
         <CardHeader>
           <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Welcome back</p>
           <CardTitle className="font-display mt-2 text-3xl leading-tight">HFI Content Studio</CardTitle>
-          <p className="mt-2 text-sm text-[var(--muted)]">Sign in to access your editorial command center.</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">Continue to access your editorial command center.</p>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleLogin}>
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              dir="ltr"
-              autoComplete="current-password"
-            />
-            <Button type="submit" className="w-full" disabled={loading || !password.trim()}>
-              {loading ? "Signing in..." : "Login"}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Signing in..." : "Continue"}
             </Button>
           </form>
         </CardContent>
