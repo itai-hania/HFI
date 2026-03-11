@@ -1,9 +1,10 @@
 """Schemas for generation and translation APIs."""
 
 from typing import Optional, List
-from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, model_validator, field_validator
+
+from common.url_validation import URLValidationError, validate_https_url
 
 
 class GeneratePostRequest(BaseModel):
@@ -27,12 +28,31 @@ class TranslateRequest(BaseModel):
     def _validate_url(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
-        parsed = urlparse(value.strip())
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("url must be a valid http/https URL")
-        if parsed.username or parsed.password:
-            raise ValueError("url must not include credentials")
-        return value.strip()
+        try:
+            return validate_https_url(value)
+        except URLValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @model_validator(mode="after")
+    def _validate_source(self):
+        if not self.text and not self.url:
+            raise ValueError("Provide text or url")
+        return self
+
+
+class SourceResolveRequest(BaseModel):
+    text: Optional[str] = None
+    url: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        try:
+            return validate_https_url(value)
+        except URLValidationError as exc:
+            raise ValueError(str(exc)) from exc
 
     @model_validator(mode="after")
     def _validate_source(self):
@@ -62,3 +82,16 @@ class TranslateResponse(BaseModel):
     hebrew_text: str
     original_text: str
     source_type: Optional[str] = None
+    title: Optional[str] = None
+    canonical_url: Optional[str] = None
+    source_domain: Optional[str] = None
+    preview_text: Optional[str] = None
+
+
+class SourceResolveResponse(BaseModel):
+    source_type: str
+    original_text: str
+    title: Optional[str] = None
+    canonical_url: Optional[str] = None
+    source_domain: Optional[str] = None
+    preview_text: str

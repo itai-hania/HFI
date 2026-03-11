@@ -10,9 +10,12 @@ from api.schemas.generation import (
     GeneratePostResponse,
     GenerateThreadRequest,
     GenerateThreadResponse,
+    SourceResolveRequest,
+    SourceResolveResponse,
     TranslateRequest,
     TranslateResponse,
 )
+from common.source_resolver import SourceResolverError, resolve_source_input
 
 router = APIRouter(
     prefix="/api/generation",
@@ -34,14 +37,6 @@ def get_translation_service():
 
     config = ProcessorConfig()
     return TranslationService(config)
-
-
-def get_scraper():
-    """Factory kept separate for test patching."""
-    from scraper.scraper import TwitterScraper
-
-    return TwitterScraper(headless=True)
-
 
 @router.post("/post", response_model=GeneratePostResponse)
 def generate_post(request: GeneratePostRequest):
@@ -67,30 +62,34 @@ def generate_thread(request: GenerateThreadRequest):
     return GenerateThreadResponse(tweets=tweets)
 
 
+@router.post("/source/resolve", response_model=SourceResolveResponse)
+async def resolve_source(request: SourceResolveRequest):
+    """Resolve text or URL source into canonical generation input."""
+    try:
+        resolved = await resolve_source_input(text=request.text, url=request.url)
+    except SourceResolverError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return SourceResolveResponse(**resolved.to_dict())
+
+
 @router.post("/translate", response_model=TranslateResponse)
 async def translate(request: TranslateRequest):
-    """Translate text directly or scrape then translate from a URL."""
+    """Translate text directly or resolve text from URL, then translate."""
     service = get_translation_service()
 
-    original_text = request.text or ""
-    source_type = "text"
+    try:
+        resolved = await resolve_source_input(text=request.text, url=request.url)
+    except SourceResolverError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if request.url:
-        source_type = "url"
-        scraper = get_scraper()
-        try:
-            await scraper.ensure_logged_in()
-            tweet_data = await scraper.get_tweet_content(request.url)
-            original_text = (tweet_data or {}).get("text", "")
-        finally:
-            await scraper.close()
-
-    if not original_text:
-        raise HTTPException(status_code=400, detail="No source text found")
-
-    hebrew_text = await asyncio.to_thread(service.translate_and_rewrite, original_text)
+    hebrew_text = await asyncio.to_thread(service.translate_and_rewrite, resolved.original_text)
     return TranslateResponse(
         hebrew_text=hebrew_text,
-        original_text=original_text,
-        source_type=source_type,
+        original_text=resolved.original_text,
+        source_type=resolved.source_type,
+        title=resolved.title,
+        canonical_url=resolved.canonical_url,
+        source_domain=resolved.source_domain,
+        preview_text=resolved.preview_text,
     )

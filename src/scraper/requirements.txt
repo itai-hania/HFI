@@ -1,6 +1,6 @@
 playwright==1.40.0
 fake-useragent==1.5.1
-python-dotenv==1.0.0
+python-dotenv==1.0.1
 sqlalchemy==2.0.25
 feedparser==6.0.10
 beautifulsoup4==4.12.3

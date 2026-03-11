@@ -1,10 +1,11 @@
 """Schemas for content CRUD APIs."""
 
 from datetime import datetime
-from typing import Optional, List, Literal
-from urllib.parse import urlparse
+from typing import Any, Optional, List, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+from common.url_validation import URLValidationError, validate_https_url
 
 
 ContentStatus = Literal["pending", "processed", "approved", "published", "failed"]
@@ -18,16 +19,15 @@ class ContentCreate(BaseModel):
     trend_topic: Optional[str] = None
     scheduled_at: Optional[datetime] = None
     status: Optional[ContentStatus] = None
+    generation_metadata: Optional[dict[str, Any]] = None
 
     @field_validator("source_url")
     @classmethod
     def _validate_source_url(cls, value: str) -> str:
-        parsed = urlparse(value.strip())
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("source_url must be a valid http/https URL")
-        if parsed.username or parsed.password:
-            raise ValueError("source_url must not include credentials")
-        return value.strip()
+        try:
+            return validate_https_url(value)
+        except URLValidationError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class ContentUpdate(BaseModel):
@@ -35,6 +35,7 @@ class ContentUpdate(BaseModel):
     status: Optional[ContentStatus] = None
     scheduled_at: Optional[datetime] = None
     trend_topic: Optional[str] = None
+    generation_metadata: Optional[dict[str, Any]] = None
 
 
 class ContentResponse(BaseModel):
@@ -50,6 +51,7 @@ class ContentResponse(BaseModel):
     trend_topic: Optional[str] = None
     copy_count: int
     scheduled_at: Optional[datetime] = None
+    generation_metadata: Optional[dict[str, Any]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

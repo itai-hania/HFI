@@ -157,17 +157,22 @@ class TestURLValidation:
         valid, err = validate_x_url("https://twitter.com/user/status/123456")
         assert valid is True
 
+    def test_valid_mobile_x_url(self):
+        from dashboard.validators import validate_x_url
+        valid, err = validate_x_url("https://mobile.x.com/user/status/123456")
+        assert valid is True
+
     def test_reject_non_x_domain(self):
         from dashboard.validators import validate_x_url
         valid, err = validate_x_url("https://evil.com/user/status/123")
         assert valid is False
-        assert "x.com or twitter.com" in err
+        assert "Invalid X/Twitter status URL" in err
 
     def test_reject_javascript_url(self):
         from dashboard.validators import validate_safe_url
         valid, err = validate_safe_url("javascript:alert(1)")
         assert valid is False
-        assert "Dangerous" in err
+        assert "https" in err.lower()
 
     def test_reject_data_url(self):
         from dashboard.validators import validate_safe_url
@@ -205,7 +210,7 @@ class TestURLValidation:
         from dashboard.validators import validate_x_url
         valid, err = validate_x_url("http://x.com/user/status/123")
         assert valid is False
-        assert "HTTPS" in err
+        assert "https" in err.lower()
 
     def test_media_domain_allowed(self):
         from dashboard.validators import validate_media_domain
@@ -227,7 +232,7 @@ class TestURLValidation:
         from dashboard.validators import validate_safe_url
         valid, err = validate_safe_url("http://example.com/article")
         assert valid is False
-        assert "HTTPS" in err
+        assert "https" in err.lower()
 
 
 # ==================== Rate Limiter Tests ====================

@@ -3,7 +3,8 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import or_
+from fastapi.responses import JSONResponse
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,31 @@ def _parse_status(status: Optional[str]) -> Optional[TweetStatus]:
         return TweetStatus(status)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid status: {status}") from exc
+
+
+def _queue_summary_payload(db: Session) -> dict[str, int]:
+    """Build queue counts by workflow status and scheduled flag."""
+    counts = {status.value: 0 for status in TweetStatus}
+    rows = db.query(Tweet.status, func.count(Tweet.id)).group_by(Tweet.status).all()
+    for status, count in rows:
+        if status is not None:
+            counts[str(status.value)] = int(count)
+
+    scheduled_count = int(
+        db.query(func.count(Tweet.id))
+        .filter(Tweet.scheduled_at.isnot(None))
+        .scalar()
+        or 0
+    )
+
+    return {
+        "pending": counts[TweetStatus.PENDING.value],
+        "processed": counts[TweetStatus.PROCESSED.value],
+        "approved": counts[TweetStatus.APPROVED.value],
+        "scheduled": scheduled_count,
+        "published": counts[TweetStatus.PUBLISHED.value],
+        "failed": counts[TweetStatus.FAILED.value],
+    }
 
 
 @router.get("/drafts", response_model=ContentListResponse)
@@ -107,6 +133,12 @@ def list_published(
     return ContentListResponse(items=items, total=total, page=page, per_page=limit)
 
 
+@router.get("/queue/summary")
+def queue_summary(db: Session = Depends(get_db)):
+    """Return compact queue counters for Telegram and dashboard widgets."""
+    return _queue_summary_payload(db)
+
+
 @router.get("/{content_id}", response_model=ContentResponse)
 def get_content(content_id: int, db: Session = Depends(get_db)):
     """Get a single content item by id."""
@@ -127,6 +159,7 @@ def create_content(data: ContentCreate, db: Session = Depends(get_db)):
         original_text=data.original_text,
         hebrew_draft=data.hebrew_draft,
         content_type=data.content_type,
+        generation_metadata=data.generation_metadata,
         trend_topic=data.trend_topic,
         scheduled_at=data.scheduled_at,
         status=status,
@@ -138,7 +171,11 @@ def create_content(data: ContentCreate, db: Session = Depends(get_db)):
     except IntegrityError as exc:
         db.rollback()
         if "source_url" in str(exc).lower():
-            raise HTTPException(status_code=409, detail="Content with this source_url already exists") from exc
+            existing = db.query(Tweet.id).filter(Tweet.source_url == data.source_url).first()
+            detail: dict[str, object] = {"detail": "Content with this source_url already exists"}
+            if existing:
+                detail["existing_id"] = int(existing[0])
+            return JSONResponse(status_code=409, content=detail)
         raise HTTPException(status_code=500, detail="Failed to create content") from exc
     db.refresh(tweet)
     return tweet
@@ -173,6 +210,25 @@ def delete_content(content_id: int, db: Session = Depends(get_db)):
     db.delete(tweet)
     db.commit()
     return Response(status_code=204)
+
+
+@router.post("/{content_id}/approve", response_model=ContentResponse)
+def approve_content(content_id: int, db: Session = Depends(get_db)):
+    """Approve a draft when Hebrew content exists."""
+    tweet = db.get(Tweet, content_id)
+    if not tweet:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    if tweet.status in {TweetStatus.PUBLISHED, TweetStatus.FAILED}:
+        raise HTTPException(status_code=400, detail=f"Cannot approve content in status: {tweet.status.value}")
+
+    if not (tweet.hebrew_draft or "").strip():
+        raise HTTPException(status_code=400, detail="Cannot approve content without hebrew_draft")
+
+    tweet.status = TweetStatus.APPROVED
+    db.commit()
+    db.refresh(tweet)
+    return tweet
 
 
 @router.post("/{content_id}/copy", response_model=ContentResponse)

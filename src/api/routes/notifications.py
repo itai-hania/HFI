@@ -27,6 +27,18 @@ router = APIRouter(
 _BRIEF_CACHE_TTL = timedelta(minutes=10)
 
 
+def _to_brief_response(row: Notification | None) -> BriefResponse:
+    if row is None:
+        raise HTTPException(status_code=404, detail="No stored brief found")
+
+    stories_payload = (row.content or {}).get("stories", [])
+    stories = [BriefStory.model_validate(item) for item in stories_payload if isinstance(item, dict)]
+    if not stories:
+        raise HTTPException(status_code=404, detail="No stored brief found")
+
+    return BriefResponse(stories=stories)
+
+
 @router.post("/brief", response_model=BriefResponse)
 def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get_db)):
     """Generate brief stories from latest news and store notification."""
@@ -43,10 +55,7 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
             # SQLite often returns naive datetimes even for timezone-aware columns.
             latest_created_at = latest_created_at.replace(tzinfo=timezone.utc)
         if latest_created_at and latest_created_at >= now - _BRIEF_CACHE_TTL:
-            stories_payload = (latest.content or {}).get("stories", [])
-            stories = [BriefStory.model_validate(item) for item in stories_payload if isinstance(item, dict)]
-            if stories:
-                return BriefResponse(stories=stories)
+            return _to_brief_response(latest)
 
     scraper = NewsScraper()
     articles = scraper.get_brief_news(total_limit=8, max_age_hours=48)
@@ -92,6 +101,18 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
     db.commit()
 
     return BriefResponse(stories=stories)
+
+
+@router.get("/brief/latest", response_model=BriefResponse)
+def latest_brief(db: Session = Depends(get_db)):
+    """Return latest persisted brief payload without regeneration."""
+    latest = (
+        db.query(Notification)
+        .filter(Notification.type == "brief")
+        .order_by(Notification.created_at.desc())
+        .first()
+    )
+    return _to_brief_response(latest)
 
 
 @router.get("/alerts", response_model=NotificationListResponse)

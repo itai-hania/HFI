@@ -9,12 +9,15 @@ import time
 import logging
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from common.env_utils import ensure_no_duplicate_env_keys, require_env_vars
 from api.routes import (
     trends,
     summaries,
@@ -27,6 +30,19 @@ from api.routes import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DOTENV_PATH = _PROJECT_ROOT / ".env"
+API_REQUIRED_ENV_VARS = ("DASHBOARD_PASSWORD", "JWT_SECRET")
+
+load_dotenv(_DOTENV_PATH)
+
+
+def validate_api_startup_env() -> None:
+    """Fail-fast API runtime validation."""
+    if not os.getenv("PYTEST_CURRENT_TEST"):
+        ensure_no_duplicate_env_keys(_DOTENV_PATH)
+    require_env_vars(API_REQUIRED_ENV_VARS, scope="api")
 
 # Determine environment
 IS_PRODUCTION = os.getenv('ENVIRONMENT', '').lower() == 'production'
@@ -126,6 +142,7 @@ def _validate_origins(raw: str) -> list[str]:
 async def _lifespan(_app: FastAPI):
     from common.models import create_tables
 
+    validate_api_startup_env()
     create_tables()
     yield
 
@@ -160,7 +177,11 @@ app.add_middleware(
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Per-IP rate limiting (added last = outermost, runs first)
-app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
+app.add_middleware(
+    RateLimitMiddleware,
+    max_requests=max(1, int(os.getenv("API_RATE_LIMIT_MAX_REQUESTS", "100"))),
+    window_seconds=max(1, int(os.getenv("API_RATE_LIMIT_WINDOW_SECONDS", "60"))),
+)
 
 # Include routers
 app.include_router(trends.router)

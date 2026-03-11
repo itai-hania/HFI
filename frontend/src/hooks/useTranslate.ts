@@ -9,13 +9,20 @@ interface TranslatePayload {
   url?: string;
 }
 
+interface TranslateResponse {
+  hebrew_text: string;
+  original_text: string;
+  source_type?: string;
+  title?: string;
+  canonical_url?: string;
+  source_domain?: string;
+  preview_text?: string;
+}
+
 export function useTranslate() {
   return useMutation({
     mutationFn: async (payload: TranslatePayload) => {
-      const { data } = await api.post<{ hebrew_text: string; original_text: string; source_type?: string }>(
-        "/api/generation/translate",
-        payload,
-      );
+      const { data } = await api.post<TranslateResponse>("/api/generation/translate", payload);
       return data;
     },
   });
