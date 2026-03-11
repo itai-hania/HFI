@@ -59,6 +59,13 @@ def client():
 
 
 class TestAuthEndpoints:
+    def test_login_without_password(self, client):
+        resp = client.post("/api/auth/login")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+
     def test_login_success(self, client):
         resp = client.post("/api/auth/login", json={"password": "testpass123"})
         assert resp.status_code == 200

@@ -3,6 +3,7 @@
 import os
 import secrets
 import time
+import logging
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,6 +12,7 @@ from api.dependencies import create_access_token, require_jwt, JWT_EXPIRY_HOURS
 from api.schemas.auth import LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 _LOGIN_WINDOW_SECONDS = 60
 _LOGIN_MAX_ATTEMPTS = 10
 _failed_attempts: dict[str, list[float]] = defaultdict(list)
@@ -48,20 +50,29 @@ def _record_failed_attempt(client_ip: str):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(http_request: Request, request: LoginRequest):
-    """Authenticate with dashboard password and return JWT token."""
+def login(http_request: Request, request: LoginRequest | None = None):
+    """Authenticate and return JWT token.
+
+    Password validation is optional to support passwordless web login.
+    Legacy clients can still send password payloads.
+    """
     client_ip = http_request.client.host if http_request.client else "unknown"
-    _check_login_rate_limit(client_ip)
+    provided_password = (request.password or "").strip() if request else ""
+    configured_password = os.getenv("DASHBOARD_PASSWORD", "").strip()
 
-    password = os.getenv("DASHBOARD_PASSWORD", "").strip()
-    if not password:
-        raise HTTPException(status_code=503, detail="Authentication is not configured")
+    # Keep legacy password-based auth behavior when password is explicitly supplied.
+    if provided_password:
+        _check_login_rate_limit(client_ip)
+        if configured_password and not secrets.compare_digest(
+            provided_password.encode("utf-8"),
+            configured_password.encode("utf-8"),
+        ):
+            _record_failed_attempt(client_ip)
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        _failed_attempts.pop(client_ip, None)
+    elif configured_password:
+        logger.warning("⚠️ Passwordless login used while DASHBOARD_PASSWORD is configured")
 
-    if not secrets.compare_digest(request.password.encode("utf-8"), password.encode("utf-8")):
-        _record_failed_attempt(client_ip)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    _failed_attempts.pop(client_ip, None)
     token = create_access_token(subject="hfi-user")
     return TokenResponse(access_token=token, expires_in=JWT_EXPIRY_HOURS * 3600)
 

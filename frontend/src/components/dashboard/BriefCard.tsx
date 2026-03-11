@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { format } from "date-fns";
 import { ChevronDown, ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,13 @@ function safeHref(value: string | null | undefined) {
   }
 }
 
+function formatPublishedAt(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return format(parsed, "dd/MM/yyyy HH:mm");
+}
+
 export function BriefCard({
   story,
   index,
@@ -32,6 +40,7 @@ export function BriefCard({
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const toggleExpanded = () => setExpanded((prev) => !prev);
+  const publishedAtLabel = formatPublishedAt(story.published_at);
 
   return (
     <Card className="lift-hover h-full">
@@ -63,6 +72,9 @@ export function BriefCard({
           </div>
         </div>
         <CardTitle className="mt-2 text-xl leading-snug">{story.title}</CardTitle>
+        {publishedAtLabel ? (
+          <p className="mt-1 text-xs text-[var(--muted)]">Published: {publishedAtLabel}</p>
+        ) : null}
       </CardHeader>
 
       <div

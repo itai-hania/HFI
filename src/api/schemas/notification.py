@@ -12,6 +12,8 @@ class BriefStory(BaseModel):
     sources: List[str]
     source_urls: List[str] = Field(default_factory=list)
     source_count: int
+    published_at: datetime | None = None
+    relevance_score: int = 0
 
 
 class BriefResponse(BaseModel):
