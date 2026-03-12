@@ -58,6 +58,19 @@ jobs:
           PY
 
           curl -fsS -o /dev/null http://127.0.0.1/
+          for _ in $(seq 1 45); do
+            if REPO_ROOT="${GITHUB_WORKSPACE}" \
+              ENV_FILE_PATH="${ENV_FILE}" \
+              APP_VERSION="${APP_VERSION}" \
+              docker compose \
+                --project-name hfi-prod \
+                --env-file "${ENV_FILE}" \
+                -f deploy/docker-compose.prod.yml \
+                ps --status running --services | grep -qx telegram-bot; then
+              break
+            fi
+            sleep 2
+          done
 
           REPO_ROOT="${GITHUB_WORKSPACE}" \
           ENV_FILE_PATH="${ENV_FILE}" \

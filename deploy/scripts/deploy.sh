@@ -134,11 +134,23 @@ wait_for_api_health() {
 }
 
 check_telegram_bot_running() {
+  local max_attempts="${1:-45}"
+  local sleep_seconds="${2:-2}"
+  local attempt=1
   local running_services
-  running_services="$(compose ps --status running --services)"
-  if ! grep -qx "telegram-bot" <<<"$running_services"; then
-    fail "telegram-bot is not running"
-  fi
+
+  while (( attempt <= max_attempts )); do
+    running_services="$(compose ps --status running --services || true)"
+    if grep -qx "telegram-bot" <<<"$running_services"; then
+      log "Ready: telegram-bot running"
+      return 0
+    fi
+    sleep "$sleep_seconds"
+    attempt=$((attempt + 1))
+  done
+
+  compose logs --tail 120 telegram-bot || true
+  fail "telegram-bot is not running"
 }
 
 main() {
