@@ -111,6 +111,15 @@ OPENAI_API_KEY=sk-proj-...
 DATABASE_URL=sqlite:///data/hfi.db
 ```
 
+For worktree-safe local development, create shared env files once and symlink each worktree to them:
+
+```bash
+python3 tools/bootstrap_worktree_env.py
+python3 tools/check_env.py
+```
+
+This keeps the canonical local files in `~/.config/hfi/root.env` and `~/.config/hfi/frontend.env.local`, then links `.env` and `frontend/.env.local` from each worktree.
+
 ### 3. Install Dependencies
 
 ```bash
@@ -345,6 +354,15 @@ HFI/
 | `SCRAPER_HEADLESS` | Run browser headless | No | `true` |
 | `SCRAPER_MAX_TRENDS` | Max trends to scrape | No | `5` |
 | `PROCESSOR_POLL_INTERVAL` | Seconds between polls | No | `30` |
+
+### Worktree-Safe Env Setup
+
+Use `python3 tools/bootstrap_worktree_env.py` once per machine to create and maintain shared env files outside the repo:
+
+- `~/.config/hfi/root.env` for the Python services and bot
+- `~/.config/hfi/frontend.env.local` for the Next.js frontend
+
+Then run `python3 tools/check_env.py` in any worktree to catch missing keys or API URL drift between `.env` and `frontend/.env.local`.
 
 ### Customization Files
 
