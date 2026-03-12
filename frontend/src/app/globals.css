@@ -28,6 +28,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   color: var(--ink);
@@ -36,6 +42,8 @@ body {
     radial-gradient(circle at 88% 14%, rgba(79, 70, 229, 0.2), transparent 32%),
     linear-gradient(150deg, #07080f 0%, #090b13 45%, #0e1220 100%);
   min-height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   text-rendering: optimizeLegibility;
   line-height: 1.5;
 }
