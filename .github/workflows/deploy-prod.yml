@@ -42,7 +42,7 @@ jobs:
           ENV_FILE: ${{ github.workspace }}/.env.prod
           APP_VERSION: ${{ env.APP_VERSION }}
         run: |
-          curl -fsS http://127.0.0.1/api/health >/tmp/hfi-health.json
+          curl -fsS http://127.0.0.1/health >/tmp/hfi-health.json
           python3 - <<'PY'
           import json
           import os

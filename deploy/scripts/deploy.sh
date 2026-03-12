@@ -90,7 +90,7 @@ wait_for_http() {
 
 validate_api_health() {
   local payload
-  payload="$(curl -fsS http://127.0.0.1/api/health)"
+  payload="$(curl -fsS http://127.0.0.1/health)"
 
   python3 - "$payload" "$APP_VERSION" <<'PY'
 import json
@@ -165,7 +165,7 @@ main() {
   compose up -d --build --remove-orphans
 
   wait_for_http "http://127.0.0.1/" "frontend via proxy"
-  wait_for_http "http://127.0.0.1/api/health" "API via proxy"
+  wait_for_http "http://127.0.0.1/health" "API via proxy"
 
   validate_api_health
   check_telegram_bot_running
