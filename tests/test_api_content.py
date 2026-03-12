@@ -65,6 +65,7 @@ class TestContentEndpoints:
                 "original_text": "Test fintech news",
                 "hebrew_draft": "חדשות פינטק",
                 "content_type": "translation",
+                "generation_metadata": {"origin": "telegram"},
             },
             headers=self._auth_header(client),
         )
@@ -72,6 +73,7 @@ class TestContentEndpoints:
         data = resp.json()
         assert data["original_text"] == "Test fintech news"
         assert data["hebrew_draft"] == "חדשות פינטק"
+        assert data["generation_metadata"] == {"origin": "telegram"}
 
     def test_create_content_respects_explicit_status(self, db_and_client):
         _, client = db_and_client
@@ -103,6 +105,9 @@ class TestContentEndpoints:
 
         second = client.post("/api/content", json=payload, headers=self._auth_header(client))
         assert second.status_code == 409
+        detail = second.json()
+        assert detail["detail"] == "Content with this source_url already exists"
+        assert isinstance(detail["existing_id"], int)
 
     def test_get_content_by_id(self, db_and_client):
         db, client = db_and_client
@@ -157,3 +162,56 @@ class TestContentEndpoints:
         resp = client.post(f"/api/content/{tweet.id}/copy", headers=self._auth_header(client))
         assert resp.status_code == 200
         assert resp.json()["copy_count"] == 1
+
+    def test_queue_summary(self, db_and_client):
+        db, client = db_and_client
+        db.add(Tweet(source_url="https://x.com/t/10", original_text="a", status=TweetStatus.PENDING))
+        db.add(Tweet(source_url="https://x.com/t/11", original_text="b", status=TweetStatus.PROCESSED))
+        db.add(Tweet(source_url="https://x.com/t/12", original_text="c", status=TweetStatus.PUBLISHED))
+        db.commit()
+
+        resp = client.get("/api/content/queue/summary", headers=self._auth_header(client))
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pending"] == 1
+        assert payload["processed"] == 1
+        assert payload["published"] == 1
+
+    def test_approve_requires_hebrew_text(self, db_and_client):
+        db, client = db_and_client
+        tweet = Tweet(source_url="https://x.com/t/13", original_text="No draft", status=TweetStatus.PROCESSED)
+        db.add(tweet)
+        db.commit()
+
+        resp = client.post(f"/api/content/{tweet.id}/approve", headers=self._auth_header(client))
+        assert resp.status_code == 400
+
+    def test_approve_marks_status_approved(self, db_and_client):
+        db, client = db_and_client
+        tweet = Tweet(
+            source_url="https://x.com/t/14",
+            original_text="Has draft",
+            hebrew_draft="טיוטה",
+            status=TweetStatus.PROCESSED,
+        )
+        db.add(tweet)
+        db.commit()
+
+        resp = client.post(f"/api/content/{tweet.id}/approve", headers=self._auth_header(client))
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
+
+    def test_approve_rejects_bad_state(self, db_and_client):
+        db, client = db_and_client
+        tweet = Tweet(
+            source_url="https://x.com/t/15",
+            original_text="Already published",
+            hebrew_draft="טיוטה",
+            status=TweetStatus.PUBLISHED,
+        )
+        db.add(tweet)
+        db.commit()
+
+        resp = client.post(f"/api/content/{tweet.id}/approve", headers=self._auth_header(client))
+        assert resp.status_code == 400
+        assert "Cannot approve content in status" in resp.json()["detail"]

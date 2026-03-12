@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
-    """Optional password login request (legacy-compatible)."""
+    """Password login request."""
     password: str | None = Field(default=None, min_length=1)
 
 

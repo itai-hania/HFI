@@ -59,12 +59,15 @@ def client():
 
 
 class TestAuthEndpoints:
-    def test_login_without_password(self, client):
+    def test_login_without_password_is_rejected(self, client):
         resp = client.post("/api/auth/login")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Invalid credentials"
+
+    def test_login_with_blank_password_is_rejected(self, client):
+        resp = client.post("/api/auth/login", json={"password": "   "})
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Invalid credentials"
 
     def test_login_success(self, client):
         resp = client.post("/api/auth/login", json={"password": "testpass123"})
@@ -133,10 +136,10 @@ class TestAuthEndpoints:
         auth_routes._failed_attempts.clear()
         auth_routes._failed_attempts_checks = 0
 
-        with TestClient(app) as client:
-            resp = client.post("/api/auth/login", json={"password": "testpass123"})
-            assert resp.status_code == 503
-            assert resp.json()["detail"] == "JWT authentication is not configured"
+        with pytest.raises(RuntimeError) as exc:
+            with TestClient(app):
+                pass
+        assert "Missing required api environment variables: JWT_SECRET" in str(exc.value)
 
 
 def test_rate_limit_middleware_returns_429():

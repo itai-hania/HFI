@@ -51,27 +51,23 @@ def _record_failed_attempt(client_ip: str):
 
 @router.post("/login", response_model=TokenResponse)
 def login(http_request: Request, request: LoginRequest | None = None):
-    """Authenticate and return JWT token.
-
-    Password validation is optional to support passwordless web login.
-    Legacy clients can still send password payloads.
-    """
+    """Authenticate and return JWT token."""
     client_ip = http_request.client.host if http_request.client else "unknown"
-    provided_password = (request.password or "").strip() if request else ""
     configured_password = os.getenv("DASHBOARD_PASSWORD", "").strip()
+    if not configured_password:
+        logger.error("Login attempted while DASHBOARD_PASSWORD is not configured")
+        raise HTTPException(status_code=503, detail="API authentication is not configured")
 
-    # Keep legacy password-based auth behavior when password is explicitly supplied.
-    if provided_password:
-        _check_login_rate_limit(client_ip)
-        if configured_password and not secrets.compare_digest(
-            provided_password.encode("utf-8"),
-            configured_password.encode("utf-8"),
-        ):
-            _record_failed_attempt(client_ip)
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        _failed_attempts.pop(client_ip, None)
-    elif configured_password:
-        logger.warning("⚠️ Passwordless login used while DASHBOARD_PASSWORD is configured")
+    _check_login_rate_limit(client_ip)
+    provided_password = (request.password or "").strip() if request else ""
+    if not provided_password or not secrets.compare_digest(
+        provided_password.encode("utf-8"),
+        configured_password.encode("utf-8"),
+    ):
+        _record_failed_attempt(client_ip)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    _failed_attempts.pop(client_ip, None)
 
     token = create_access_token(subject="hfi-user")
     return TokenResponse(access_token=token, expires_in=JWT_EXPIRY_HOURS * 3600)

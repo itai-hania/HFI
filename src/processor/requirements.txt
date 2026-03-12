@@ -12,9 +12,9 @@ openai==1.10.0
 sqlalchemy==2.0.25
 
 # Python dotenv for environment variable management
-# Version: 1.0.0 - Load .env files into environment
+# Version: 1.0.1 - Load .env files into environment
 # Why: Secure credential management, separates config from code
-python-dotenv==1.0.0
+python-dotenv==1.0.1
 
 # Requests for HTTP downloads (images)
 # Version: 2.31.0 - Stable, widely used HTTP library

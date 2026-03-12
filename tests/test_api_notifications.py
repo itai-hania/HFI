@@ -42,6 +42,11 @@ def db_and_client():
 
 
 class TestNotificationEndpoints:
+    def test_latest_brief_404_when_empty(self, db_and_client):
+        _, client = db_and_client
+        resp = client.get("/api/notifications/brief/latest", headers={"Authorization": "Bearer test"})
+        assert resp.status_code == 404
+
     def test_generate_brief(self, db_and_client):
         _, client = db_and_client
         published_at = datetime.now(timezone.utc)
@@ -252,3 +257,59 @@ class TestNotificationEndpoints:
         assert story["published_at"] is None
         assert story["relevance_score"] == 0
         mock_news.assert_not_called()
+
+    def test_empty_cached_brief_regenerates_instead_of_returning_404(self, db_and_client):
+        db, client = db_and_client
+        now = datetime.now(timezone.utc)
+        db.add(
+            Notification(
+                type="brief",
+                content={"stories": []},
+                delivered=False,
+                created_at=now,
+            )
+        )
+        db.commit()
+
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+            mock_news.return_value = [
+                {
+                    "title": "Fresh fallback story",
+                    "description": "Generated after empty cache",
+                    "source": "Bloomberg",
+                    "sources": ["Bloomberg"],
+                    "source_urls": ["https://bloomberg.com/fresh-fallback"],
+                    "source_count": 1,
+                }
+            ]
+            resp = client.post("/api/notifications/brief", headers={"Authorization": "Bearer test"})
+
+        assert resp.status_code == 200
+        assert resp.json()["stories"][0]["title"] == "Fresh fallback story"
+        mock_news.assert_called_once()
+
+    def test_latest_brief_returns_persisted_payload(self, db_and_client):
+        db, client = db_and_client
+        db.add(
+            Notification(
+                type="brief",
+                content={
+                    "stories": [
+                        {
+                            "title": "Latest cached story",
+                            "summary": "cached summary",
+                            "sources": ["Bloomberg"],
+                            "source_urls": ["https://bloomberg.com/latest"],
+                            "source_count": 1,
+                        }
+                    ]
+                },
+                delivered=False,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        db.commit()
+
+        resp = client.get("/api/notifications/brief/latest", headers={"Authorization": "Bearer test"})
+        assert resp.status_code == 200
+        assert resp.json()["stories"][0]["title"] == "Latest cached story"

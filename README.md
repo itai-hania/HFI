@@ -134,7 +134,7 @@ pip install -r src/telegram_bot/requirements.txt
 ### 4. Initialize Database
 
 ```bash
-python init_db.py
+python tools/init_db.py
 ```
 
 ### 5. First Run - Login to X
@@ -157,13 +157,15 @@ python main.py
 
 ### 6. Run Services
 
-**Terminal 1 - API:**
+Use this as the canonical local path for bot + studio development:
+
+**Terminal 1 - API (required):**
 ```bash
 cd src/api
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Terminal 2 - Frontend:**
+**Terminal 2 - Frontend (required):**
 ```bash
 cd frontend
 npm install
@@ -171,15 +173,21 @@ npm run dev
 # http://localhost:3000
 ```
 
-**Terminal 3 - Processor:**
+**Terminal 3 - Telegram Bot (required for bot workflow):**
+```bash
+# One-time (recommended): install package so module imports work cleanly
+pip install -e .
+
+# Then run the bot
+python -m telegram_bot.main
+```
+
+Run exactly one bot poller process for a token. Do not run local polling and Docker polling at the same time.
+
+**Optional Terminal 4 - Processor:**
 ```bash
 cd src/processor
 python main.py
-```
-
-**Terminal 4 - Telegram Bot (optional):**
-```bash
-python -m telegram_bot.main
 ```
 
 ### Cross-Platform Launcher
@@ -197,8 +205,16 @@ This provides an interactive menu to start services without platform-specific co
 
 1. Create a bot with BotFather and copy `TELEGRAM_BOT_TOKEN`.
 2. Get your chat ID and set `TELEGRAM_CHAT_ID`.
-3. Ensure `DASHBOARD_PASSWORD` and `API_BASE_URL` are set.
-4. Run `python -m telegram_bot.main`.
+3. Ensure `DASHBOARD_PASSWORD`, `API_BASE_URL`, `JWT_SECRET`, and `FRONTEND_BASE_URL` are set.
+4. Optional: set `BRIEF_TIMES=08:00,19:00` and `ALERT_CHECK_INTERVAL_MINUTES=15`.
+5. Start API + frontend + bot with the steps above (one bot process only).
+6. In Telegram, verify commands in this order:
+   - `/start`
+   - `/brief`
+   - `/story 1`
+   - `/write 1`
+
+If `/write 1` reports no cached brief, run `/brief` again and retry `/write 1`.
 
 ### Using Content Studio
 
@@ -212,6 +228,8 @@ This provides an interactive menu to start services without platform-specific co
 ## Docker Deployment
 
 ### Local Development with Docker Compose
+
+Docker bot polling is secondary to local polling. Never run Docker and local bot pollers simultaneously with the same `TELEGRAM_BOT_TOKEN`.
 
 ```bash
 # Build and start all services (frontend + api + processor + scraper + telegram bot)
@@ -321,6 +339,9 @@ HFI/
 | `NEXT_PUBLIC_API_URL` | Frontend API base URL | No | `http://localhost:8000` |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token | No | - |
 | `TELEGRAM_CHAT_ID` | Telegram chat id | No | - |
+| `FRONTEND_BASE_URL` | Frontend URL used by Telegram draft links | No | `http://localhost:3000` |
+| `BRIEF_TIMES` | Comma-separated brief times in HH:MM UTC | No | `08:00,19:00` |
+| `ALERT_CHECK_INTERVAL_MINUTES` | Alert polling interval in minutes | No | `15` |
 | `SCRAPER_HEADLESS` | Run browser headless | No | `true` |
 | `SCRAPER_MAX_TRENDS` | Max trends to scrape | No | `5` |
 | `PROCESSOR_POLL_INTERVAL` | Seconds between polls | No | `30` |
@@ -446,7 +467,7 @@ pytest --cov=src tests/
 | **Database locked** | Only one processor instance allowed. Check `ps aux \| grep processor` |
 | **No tweets found** | Run scraper first: `cd src/scraper && python main.py` |
 | **yt-dlp fails** | Install ffmpeg: `brew install ffmpeg` (Mac) or `apt install ffmpeg` (Linux) |
-| **Dashboard blank** | Ensure database exists: `ls -la data/hfi.db`, run `python init_db.py` |
+| **Dashboard blank** | Ensure database exists: `ls -la data/hfi.db`, run `python tools/init_db.py` |
 | **News scraper fails** | Check RSS feed connectivity: `curl -I https://finance.yahoo.com/news/rssindex` |
 | **total_limit error** | Restart Streamlit to clear module cache: `pkill -f streamlit && streamlit run app.py` (Mac/Linux) or use Task Manager (Windows) |
 
