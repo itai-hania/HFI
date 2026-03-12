@@ -1,0 +1,73 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: hfi-prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+
+      - name: Validate prod env file
+        run: |
+          test -f .env.prod
+          perms=$(stat -c '%a' .env.prod)
+          if [ "$perms" != "600" ]; then
+            echo "::error::.env.prod must have permissions 600 (current: $perms)"
+            exit 1
+          fi
+
+      - name: Set build version
+        run: echo "APP_VERSION=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+
+      - name: Deploy
+        env:
+          ENV_FILE: ${{ github.workspace }}/.env.prod
+          APP_VERSION: ${{ env.APP_VERSION }}
+        run: deploy/scripts/deploy.sh
+
+      - name: Post-deploy smoke checks
+        env:
+          ENV_FILE: ${{ github.workspace }}/.env.prod
+          APP_VERSION: ${{ env.APP_VERSION }}
+        run: |
+          curl -fsS http://127.0.0.1/api/health >/tmp/hfi-health.json
+          python3 - <<'PY'
+          import json
+          import os
+          with open('/tmp/hfi-health.json', 'r', encoding='utf-8') as handle:
+              payload = json.load(handle)
+          if payload.get('status') != 'healthy':
+              raise SystemExit(f"API unhealthy: {payload}")
+          expected = os.environ['APP_VERSION']
+          if payload.get('build_version') != expected:
+              raise SystemExit(
+                  f"build_version mismatch: got {payload.get('build_version')}, expected {expected}"
+              )
+          PY
+
+          curl -fsS -o /dev/null http://127.0.0.1/
+
+          REPO_ROOT="${GITHUB_WORKSPACE}" \
+          ENV_FILE_PATH="${ENV_FILE}" \
+          APP_VERSION="${APP_VERSION}" \
+          docker compose \
+            --project-name hfi-prod \
+            --env-file "${ENV_FILE}" \
+            -f deploy/docker-compose.prod.yml \
+            ps --status running --services | grep -qx telegram-bot
+
+      - name: Cleanup old images
+        if: always()
+        run: docker image prune -f --filter "until=168h"

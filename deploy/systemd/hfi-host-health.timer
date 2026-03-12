@@ -1,0 +1,11 @@
+[Unit]
+Description=Run HFI host health checks every 15 minutes
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=15m
+Persistent=true
+Unit=hfi-host-health.service
+
+[Install]
+WantedBy=timers.target

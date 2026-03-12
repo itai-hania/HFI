@@ -1,0 +1,8 @@
+[Unit]
+Description=HFI host resource and service health check
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hfi/app
+Environment=ENV_FILE=/opt/hfi/app/.env.prod
+ExecStart=/usr/bin/env bash /opt/hfi/app/deploy/scripts/host_health_check.sh

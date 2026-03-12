@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_PATH = _PROJECT_ROOT / ".env"
 API_REQUIRED_ENV_VARS = ("DASHBOARD_PASSWORD", "JWT_SECRET")
+PRODUCTION_REQUIRED_ENV_VARS = ("APP_VERSION", "CORS_ORIGINS")
 
 load_dotenv(_DOTENV_PATH)
 
@@ -43,9 +44,15 @@ def validate_api_startup_env() -> None:
     if not os.getenv("PYTEST_CURRENT_TEST"):
         ensure_no_duplicate_env_keys(_DOTENV_PATH)
     require_env_vars(API_REQUIRED_ENV_VARS, scope="api")
+    if IS_PRODUCTION:
+        require_env_vars(PRODUCTION_REQUIRED_ENV_VARS, scope="api production")
+        if not _validate_origins(os.getenv("CORS_ORIGINS", "")):
+            raise RuntimeError("No valid HTTPS CORS_ORIGINS configured for production")
 
 # Determine environment
 IS_PRODUCTION = os.getenv('ENVIRONMENT', '').lower() == 'production'
+APP_VERSION = (os.getenv("APP_VERSION") or "dev").strip() or "dev"
+ENFORCE_HTTPS_REDIRECT = os.getenv("API_ENFORCE_HTTPS_REDIRECT", "false").strip().lower() == "true"
 
 # Disable docs in production
 docs_kwargs = {}
@@ -156,8 +163,8 @@ app = FastAPI(
     **docs_kwargs,
 )
 
-# HTTPS enforcement in production (added first = innermost)
-if IS_PRODUCTION:
+# HTTPS enforcement (optional). Keep disabled behind internal reverse proxies.
+if IS_PRODUCTION and ENFORCE_HTTPS_REDIRECT:
     from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
     app.add_middleware(HTTPSRedirectMiddleware)
 
@@ -200,6 +207,7 @@ def root():
     return {
         "name": "HFI API",
         "version": "1.0.0",
+        "build_version": APP_VERSION,
         "status": "running",
     }
 
@@ -215,6 +223,7 @@ def health_check():
     response = {
         "status": "healthy" if db_status == 'healthy' else "unhealthy",
         "database": {"status": db_status},
+        "build_version": APP_VERSION,
     }
 
     if db_status == 'healthy':

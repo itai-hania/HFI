@@ -1,0 +1,10 @@
+[Unit]
+Description=Run HFI nightly backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=hfi-backup.service
+
+[Install]
+WantedBy=timers.target

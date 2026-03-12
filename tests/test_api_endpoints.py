@@ -128,6 +128,9 @@ class TestRootEndpoints:
         data = response.json()
         assert data['name'] == 'HFI API'
         assert data['version'] == '1.0.0'
+        assert 'build_version' in data
+        assert isinstance(data['build_version'], str)
+        assert data['build_version']
         assert data['status'] == 'running'
 
     def test_health_check(self, client):
@@ -137,6 +140,9 @@ class TestRootEndpoints:
 
         data = response.json()
         assert data['status'] == 'healthy'
+        assert 'build_version' in data
+        assert isinstance(data['build_version'], str)
+        assert data['build_version']
         assert 'database' in data
 
 
