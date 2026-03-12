@@ -66,3 +66,31 @@ async def test_run_startup_self_checks_raises_on_login_failure():
 
     with pytest.raises(httpx.HTTPStatusError):
         await bot.run_startup_self_checks()
+
+
+@pytest.mark.asyncio
+async def test_send_scheduled_brief_caches_last_brief_for_follow_up_commands():
+    bot = HFIBot.__new__(HFIBot)
+    bot.chat_id = "12345"
+    bot._chat_states = {}
+    bot.app = SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()))
+    stories = [
+        {
+            "title": "Scheduled ETF story",
+            "summary": "Summary",
+            "source_urls": ["https://example.com/story"],
+        }
+    ]
+    bot._request = AsyncMock(
+        return_value=_json_response(
+            200,
+            {"stories": stories},
+            "POST",
+            "/api/notifications/brief",
+        )
+    )
+
+    await bot.send_scheduled_brief()
+
+    assert bot._chat_states["12345"].last_brief == stories
+    bot.app.bot.send_message.assert_awaited_once()

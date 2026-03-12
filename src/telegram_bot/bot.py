@@ -236,6 +236,9 @@ class HFIBot:
 
     def _state_for(self, update: Update) -> ChatState:
         key = self._chat_key(update)
+        return self._state_for_chat_key(key)
+
+    def _state_for_chat_key(self, key: str) -> ChatState:
         if key not in self._chat_states:
             self._chat_states[key] = ChatState()
         return self._chat_states[key]
@@ -824,6 +827,7 @@ class HFIBot:
         if not stories:
             return
 
+        self._state_for_chat_key(str(self.chat_id)).last_brief = stories
         msg = format_brief_message(stories, "scheduled")
         try:
             await self.app.bot.send_message(chat_id=self.chat_id, text=msg)

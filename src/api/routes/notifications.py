@@ -55,7 +55,11 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
             # SQLite often returns naive datetimes even for timezone-aware columns.
             latest_created_at = latest_created_at.replace(tzinfo=timezone.utc)
         if latest_created_at and latest_created_at >= now - _BRIEF_CACHE_TTL:
-            return _to_brief_response(latest)
+            try:
+                return _to_brief_response(latest)
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    raise
 
     scraper = NewsScraper()
     articles = scraper.get_brief_news(total_limit=8, max_age_hours=48)
