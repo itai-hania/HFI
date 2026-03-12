@@ -141,7 +141,7 @@ ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/deploy.sh
 Verify:
 
 ```bash
-curl -fsS http://127.0.0.1/health
+docker exec hfi-api python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read().decode())"
 curl -I http://127.0.0.1/
 docker compose --env-file .env.prod -f deploy/docker-compose.prod.yml ps
 ```
@@ -277,7 +277,7 @@ ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/host_health_check.sh
 
 - App opens from a tailnet device at your Tailscale URL
 - App is not reachable from public internet
-- `curl http://127.0.0.1/health` returns `status=healthy`
+- `docker exec hfi-api ... /health ...` returns `status=healthy`
 - Telegram bot answers `/start`, `/brief`, `/write`
 - Push to `main` triggers successful deployment workflow
 - Reboot restores stack (`hfi-prod.service`) and Tailscale serve

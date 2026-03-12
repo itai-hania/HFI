@@ -42,7 +42,7 @@ jobs:
           ENV_FILE: ${{ github.workspace }}/.env.prod
           APP_VERSION: ${{ env.APP_VERSION }}
         run: |
-          curl -fsS http://127.0.0.1/health >/tmp/hfi-health.json
+          docker exec hfi-api python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read().decode())" >/tmp/hfi-health.json
           python3 - <<'PY'
           import json
           import os

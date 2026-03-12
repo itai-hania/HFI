@@ -88,9 +88,14 @@ wait_for_http() {
   fail "Timed out waiting for ${label} (${url})"
 }
 
+fetch_api_health_payload() {
+  compose exec -T api \
+    python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read().decode())"
+}
+
 validate_api_health() {
   local payload
-  payload="$(curl -fsS http://127.0.0.1/health)"
+  payload="$(fetch_api_health_payload)"
 
   python3 - "$payload" "$APP_VERSION" <<'PY'
 import json
@@ -109,6 +114,23 @@ if build_version != expected_version:
         f"build_version mismatch: got {build_version!r}, expected {expected_version!r}"
     )
 PY
+}
+
+wait_for_api_health() {
+  local max_attempts="${1:-60}"
+  local sleep_seconds="${2:-2}"
+  local attempt=1
+
+  while (( attempt <= max_attempts )); do
+    if validate_api_health >/dev/null 2>&1; then
+      log "Ready: API service health"
+      return 0
+    fi
+    sleep "$sleep_seconds"
+    attempt=$((attempt + 1))
+  done
+
+  fail "Timed out waiting for API service health"
 }
 
 check_telegram_bot_running() {
@@ -164,10 +186,11 @@ main() {
   log "Deploying build ${APP_VERSION}"
   compose up -d --build --remove-orphans
 
-  wait_for_http "http://127.0.0.1/" "frontend via proxy"
-  wait_for_http "http://127.0.0.1/health" "API via proxy"
+  # Reload proxy so Caddyfile updates are always picked up across deploys.
+  compose up -d --no-deps --force-recreate proxy
 
-  validate_api_health
+  wait_for_http "http://127.0.0.1/" "frontend via proxy"
+  wait_for_api_health
   check_telegram_bot_running
 
   printf '%s\n' "$APP_VERSION" > "$current_sha_file"
