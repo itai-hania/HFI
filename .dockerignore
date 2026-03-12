@@ -43,8 +43,7 @@ data/
 *.png
 *.gif
 
-# Configuration (mounted as volumes or ConfigMaps)
-config/
+# Configuration
 .env
 .env.local
 
