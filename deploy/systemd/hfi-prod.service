@@ -1,0 +1,18 @@
+[Unit]
+Description=HFI production Docker Compose stack
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/hfi/app
+Environment=ENV_FILE=/opt/hfi/app/.env.prod
+ExecStart=/usr/bin/env bash /opt/hfi/app/deploy/scripts/deploy.sh
+ExecReload=/usr/bin/env bash /opt/hfi/app/deploy/scripts/deploy.sh
+ExecStop=/usr/bin/docker compose --env-file /opt/hfi/app/.env.prod -f /opt/hfi/app/deploy/docker-compose.prod.yml down
+TimeoutStartSec=900
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

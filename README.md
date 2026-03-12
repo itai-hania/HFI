@@ -259,6 +259,27 @@ open http://localhost:3000
 docker-compose down
 ```
 
+### Production - Azure VM (Private via Tailscale)
+
+Production now has a dedicated private deployment path (single VM, Docker Compose, no public ingress):
+
+- Canonical prod Compose: `deploy/docker-compose.prod.yml`
+- Deployment scripts: `deploy/scripts/`
+- CI/CD workflow: `.github/workflows/deploy-prod.yml`
+- Full runbook: `docs/deploy/azure-private-production-runbook.md`
+
+Typical VM deploy command:
+
+```bash
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/deploy.sh
+```
+
+Manual scraper run in production:
+
+```bash
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/run_scraper_manual.sh
+```
+
 ### Production - Kubernetes (K3s)
 
 Full K8s deployment available. See `k8s/README.md` for:

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run HFI monthly restore validation
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+Unit=hfi-restore-check.service
+
+[Install]
+WantedBy=timers.target

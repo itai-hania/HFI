@@ -1,0 +1,157 @@
+version: '3.9'
+
+x-json-logging: &json-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  proxy:
+    image: caddy:2.8-alpine
+    container_name: hfi-proxy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:80:80"
+    volumes:
+      - ${REPO_ROOT:-.}/deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - hfi-private
+    logging: *json-logging
+    mem_limit: 128m
+
+  api:
+    build:
+      context: ${REPO_ROOT:-.}
+      dockerfile: src/api/Dockerfile
+    container_name: hfi-api
+    env_file:
+      - ${ENV_FILE_PATH:-.env.prod}
+    environment:
+      DATABASE_URL: sqlite:////app/data/hfi.db
+      ENVIRONMENT: production
+      APP_VERSION: ${APP_VERSION}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    volumes:
+      - ${HOST_DATA_DIR:-/opt/hfi/data}:/app/data
+    restart: unless-stopped
+    networks:
+      - hfi-private
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *json-logging
+    mem_limit: 512m
+
+  frontend:
+    build:
+      context: ${REPO_ROOT:-.}
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    container_name: hfi-frontend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - hfi-private
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((r)=>{if(!r.ok){process.exit(1)}}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *json-logging
+    mem_limit: 384m
+
+  processor:
+    build:
+      context: ${REPO_ROOT:-.}
+      dockerfile: src/processor/Dockerfile
+    container_name: hfi-processor
+    env_file:
+      - ${ENV_FILE_PATH:-.env.prod}
+    environment:
+      DATABASE_URL: sqlite:////app/data/hfi.db
+      ENVIRONMENT: production
+      APP_VERSION: ${APP_VERSION}
+    volumes:
+      - ${HOST_DATA_DIR:-/opt/hfi/data}:/app/data
+      - ${REPO_ROOT:-.}/config:/app/config:ro
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - hfi-private
+    logging: *json-logging
+    mem_limit: 512m
+
+  telegram-bot:
+    build:
+      context: ${REPO_ROOT:-.}
+      dockerfile: src/telegram_bot/Dockerfile
+    container_name: hfi-telegram-bot
+    env_file:
+      - ${ENV_FILE_PATH:-.env.prod}
+    environment:
+      API_BASE_URL: http://api:8000
+      ENVIRONMENT: production
+      APP_VERSION: ${APP_VERSION}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hfi-private
+    logging: *json-logging
+    mem_limit: 256m
+
+  scraper:
+    build:
+      context: ${REPO_ROOT:-.}
+      dockerfile: src/scraper/Dockerfile
+    container_name: hfi-scraper
+    env_file:
+      - ${ENV_FILE_PATH:-.env.prod}
+    environment:
+      DATABASE_URL: sqlite:////app/data/hfi.db
+      ENVIRONMENT: production
+      APP_VERSION: ${APP_VERSION}
+    volumes:
+      - ${HOST_DATA_DIR:-/opt/hfi/data}:/app/data
+      - ${REPO_ROOT:-.}/config:/app/config:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - hfi-private
+    profiles:
+      - manual
+    restart: "no"
+    logging: *json-logging
+    mem_limit: 768m
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+networks:
+  hfi-private:
+    driver: bridge
