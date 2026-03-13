@@ -89,3 +89,24 @@ export interface StyleExample {
   rejection_count: number;
   created_at: string;
 }
+
+export interface AlertContent {
+  title: string;
+  summary: string;
+  sources: string[];
+  source_count: number;
+  url?: string | null;
+}
+
+export interface AlertItem {
+  id: number;
+  type: string;
+  content: AlertContent;
+  delivered: boolean;
+  delivered_at?: string | null;
+  created_at: string;
+}
+
+export interface AlertsResponse {
+  alerts: AlertItem[];
+}
