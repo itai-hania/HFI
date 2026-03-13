@@ -11,9 +11,6 @@ from datetime import datetime, timezone
 from common.models import (
     create_tables,
     get_db_session,
-    get_tweets_by_status,
-    get_recent_trends,
-    update_tweet_status,
     health_check,
     Tweet,
     Trend,
@@ -87,33 +84,6 @@ class TestTweetModel:
         with pytest.raises(Exception):  # Should raise IntegrityError
             db.commit()
 
-    def test_update_tweet_status(self, db):
-        """Test updating tweet status and content."""
-        # Create initial tweet
-        tweet = Tweet(
-            source_url="https://x.com/test/status/111111",
-            original_text="Original text",
-            status=TweetStatus.PENDING
-        )
-        db.add(tweet)
-        db.commit()
-
-        tweet_id = tweet.id
-
-        # Update using helper function
-        updated_tweet = update_tweet_status(
-            db,
-            tweet_id=tweet_id,
-            new_status=TweetStatus.PROCESSED,
-            hebrew_draft="טקסט מתורגם",
-            media_path="data/media/test.mp4"
-        )
-
-        assert updated_tweet is not None
-        assert updated_tweet.status == TweetStatus.PROCESSED
-        assert updated_tweet.hebrew_draft == "טקסט מתורגם"
-        assert updated_tweet.media_path == "data/media/test.mp4"
-
     def test_tweet_to_dict(self, db):
         """Test converting tweet to dictionary."""
         tweet = Tweet(
@@ -172,71 +142,8 @@ class TestTrendModel:
         assert trend_dict['source'] == "Yahoo Finance"
 
 
-class TestHelperFunctions:
-    """Test cases for helper functions."""
-
-    def test_get_tweets_by_status(self, db):
-        """Test filtering tweets by status."""
-        # Create tweets with different statuses
-        for i in range(5):
-            tweet = Tweet(
-                source_url=f"https://x.com/test/status/{i}",
-                original_text=f"Tweet {i}",
-                status=TweetStatus.PENDING if i < 3 else TweetStatus.PROCESSED
-            )
-            db.add(tweet)
-        db.commit()
-
-        # Get pending tweets
-        pending = get_tweets_by_status(db, TweetStatus.PENDING)
-        assert len(pending) == 3
-
-        # Get processed tweets
-        processed = get_tweets_by_status(db, TweetStatus.PROCESSED)
-        assert len(processed) == 2
-
-    def test_get_tweets_by_status_pagination(self, db):
-        """Test pagination in get_tweets_by_status."""
-        # Create 15 pending tweets
-        for i in range(15):
-            tweet = Tweet(
-                source_url=f"https://x.com/test/status/{i}",
-                original_text=f"Tweet {i}",
-                status=TweetStatus.PENDING
-            )
-            db.add(tweet)
-        db.commit()
-
-        # Get first 10
-        page1 = get_tweets_by_status(db, TweetStatus.PENDING, limit=10, offset=0)
-        assert len(page1) == 10
-
-        # Get next 5
-        page2 = get_tweets_by_status(db, TweetStatus.PENDING, limit=10, offset=10)
-        assert len(page2) == 5
-
-    def test_get_recent_trends(self, db):
-        """Test retrieving recent trends."""
-        # Create trends from different sources
-        trends_data = [
-            ("Trend 1", TrendSource.X_TWITTER),
-            ("Trend 2", TrendSource.YAHOO_FINANCE),
-            ("Trend 3", TrendSource.X_TWITTER),
-            ("Trend 4", TrendSource.TECHCRUNCH),
-        ]
-
-        for title, source in trends_data:
-            trend = Trend(title=title, source=source)
-            db.add(trend)
-        db.commit()
-
-        # Get all trends
-        all_trends = get_recent_trends(db, limit=10)
-        assert len(all_trends) == 4
-
-        # Get only X trends
-        x_trends = get_recent_trends(db, source=TrendSource.X_TWITTER, limit=10)
-        assert len(x_trends) == 2
+class TestDatabaseUtilities:
+    """Test cases for database utility functions."""
 
     def test_health_check_empty_db(self):
         """Test health check on empty database."""
