@@ -293,6 +293,5 @@ class TestHandleExtraction:
         assert scraper._extract_handle_from_url("") == ""
 
 
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

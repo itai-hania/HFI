@@ -38,7 +38,11 @@ export function PostCard({ post }: { post: InspirationPost }) {
         <div className="flex gap-2">
           <Button
             onClick={() =>
-              router.push(`/create?source=inspiration&text=${encodeURIComponent(post.content || "")}`)
+              router.push(
+                `/create?text=${encodeURIComponent(post.content || "")}${
+                  post.post_url ? `&url=${encodeURIComponent(post.post_url)}` : ""
+                }`,
+              )
             }
           >
             Use as Source

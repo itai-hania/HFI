@@ -13,6 +13,7 @@ Key Features:
 
 import asyncio
 import json
+import os
 import random
 import logging
 from pathlib import Path
@@ -24,12 +25,16 @@ from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from fake_useragent import UserAgent
 import re
 
+from scraper.errors import SessionExpiredError
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+_VALID_BROWSERS = {"chromium", "firefox", "webkit"}
 
 
 class TwitterScraper:
@@ -48,6 +53,10 @@ class TwitterScraper:
         self.headless = headless
         self.max_interactions = max_interactions
         self.interaction_count = 0
+
+        self.browser_type = os.environ.get("SCRAPER_BROWSER", "chromium").lower()
+        if self.browser_type not in _VALID_BROWSERS:
+            self.browser_type = "chromium"
 
         # Paths
         self.session_dir = Path(__file__).parent.parent.parent / "data" / "session"
@@ -75,11 +84,11 @@ class TwitterScraper:
         await asyncio.sleep(delay)
 
     async def _init_browser(self, use_session: bool = True):
-        """Initialize Playwright browser with Firefox (more stable on macOS)"""
+        """Initialize Playwright browser (configurable via SCRAPER_BROWSER env var)"""
         self.playwright = await async_playwright().start()
 
-        # Launch Firefox browser
-        self.browser = await self.playwright.firefox.launch(headless=self.headless)
+        launcher = getattr(self.playwright, self.browser_type)
+        self.browser = await launcher.launch(headless=self.headless)
 
         # Create context with session if available
         if use_session and self.session_file.exists():
@@ -92,20 +101,19 @@ class TwitterScraper:
 
         self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
 
-        # Stealth mode: Patch navigator.webdriver to avoid bot detection
-        await self.page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            // Hide automation indicators
-            window.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-        """)
+        # Stealth mode: browser-appropriate anti-detection scripts
+        if self.browser_type == "chromium":
+            await self.page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            """)
+        else:
+            await self.page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            """)
 
         # Set up cleanup for handlers
         self._handlers = []
@@ -128,6 +136,7 @@ class TwitterScraper:
 
         If no session exists, launches browser in headful mode for manual login.
         Saves session state after successful login.
+        In headless mode, raises SessionExpiredError instead of blocking on input().
         """
         if self.session_file.exists():
             logger.info("Session file exists, attempting to use saved session...")
@@ -135,16 +144,28 @@ class TwitterScraper:
 
             # Verify session is valid by checking home page
             try:
-                await self.page.goto('https://x.com/home', timeout=30000)
+                await self.page.goto('https://x.com/home', timeout=15000)
                 await self.page.wait_for_selector('[data-testid="primaryColumn"]', timeout=10000)
                 logger.info("✅ Session valid - logged in successfully")
                 return
             except Exception as e:
                 logger.warning(f"Session expired or invalid: {e}")
                 await self.close()
-                self.session_file.unlink()  # Delete invalid session
+                if self.session_file.exists():
+                    self.session_file.unlink()
+                if self.headless:
+                    raise SessionExpiredError(
+                        "X session expired. Run 'python tools/refresh_session.py' "
+                        "locally, then copy data/session/storage_state.json to the server."
+                    ) from e
 
-        # No valid session - need manual login
+        if self.headless:
+            raise SessionExpiredError(
+                "X session expired or missing. Run 'python tools/refresh_session.py' "
+                "locally, then copy data/session/storage_state.json to the server."
+            )
+
+        # Non-headless manual login path
         logger.info("⚠️  No valid session found. Starting manual login process...")
         logger.info("📝 Please log in manually in the browser window that will open...")
 
@@ -434,6 +455,7 @@ class TwitterScraper:
             await self.page.goto(search_url, timeout=45000)
             await self._random_delay(1.5, 2.8)
             await self.page.wait_for_selector('article[data-testid=\"tweet\"]', timeout=15000)
+            await self._validate_page_loaded()
 
             collected: Dict[str, Dict] = {}
             max_scrolls = 10
@@ -584,16 +606,17 @@ class TwitterScraper:
             async def handle_response(response: Response):
                 url = response.url
                 if "video.twimg.com" in url and (".mp4" in url or ".m3u8" in url):
-                    self.video_streams[url] = url
+                    match = re.search(r'ext_tw_video/(\d+)/', url)
+                    if match:
+                        self.video_streams[match.group(1)] = url
+                    else:
+                        self.video_streams[url] = url
 
             self.page.on("response", handle_response)
 
             await self.page.goto(thread_url, timeout=60000)
-
-            if "login" in self.page.url or "signin" in self.page.url:
-                raise Exception("Not authenticated - redirected to login.")
-
             await self.page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
+            await self._validate_page_loaded()
 
             target_handle = self._extract_handle_from_url(thread_url)
 
@@ -610,6 +633,8 @@ class TwitterScraper:
                 tweets_to_return = filtered_tweets
             else:
                 tweets_to_return = all_tweets
+
+            tweets_to_return = self._merge_video_streams(tweets_to_return)
 
             # Find author info from first matching tweet
             author_name = ""
@@ -794,7 +819,19 @@ class TwitterScraper:
                 for (const span of userSection?.querySelectorAll("span") || []) {
                   const text = span.textContent?.trim() || "";
                   if (text.startsWith("@")) authorHandle = text;
-                  else if (!authorName) authorName = text;
+                  else if (!authorName && text && !text.includes("\u00b7")) authorName = text;
+                }
+                if (!authorHandle && permalink) {
+                  const handleMatch = permalink.match(/(?:x\\.com|twitter\\.com)\\/([^/]+)\\/status/);
+                  if (handleMatch) authorHandle = "@" + handleMatch[1];
+                }
+                if (!authorHandle) {
+                  const userLink = userSection?.querySelector('a[href^="/"]');
+                  if (userLink) {
+                    const href = userLink.getAttribute("href") || "";
+                    const parts = href.split("/").filter(Boolean);
+                    if (parts.length >= 1) authorHandle = "@" + parts[0];
+                  }
                 }
                 
                 // Get tweet text
@@ -828,53 +865,72 @@ class TwitterScraper:
         """Extract handle from URL e.g. https://x.com/handle/status/..."""
         # Simple extraction
         # Matches https://x.com/[handle]/status/...
-        match = re.search(r'x\.com/([^/]+)/status', url)
+        match = re.search(r'(?:x\.com|twitter\.com)/([^/]+)/status', url)
         if match:
             return f"@{match.group(1)}"
         return ""
 
     def filter_author_tweets_only(self, tweets: List[Dict], target_handle: str) -> List[Dict]:
         """
-        Filter collected tweets to only include consecutive author tweets.
-        Sorts by timestamp, starts from root, stops at first non-author tweet.
-
-        Args:
-            tweets: List of tweet dicts
-            target_handle: Target author handle (e.g., "@elonmusk" or "elonmusk")
-
-        Returns:
-            Filtered list of only the target author's consecutive tweets
+        Filter to target author's thread tweets.
+        Tolerates single interspersed non-author tweets (quoted tweets, UI artifacts)
+        but stops at 2+ consecutive non-author tweets (end of thread).
         """
         if not tweets or not target_handle:
             return tweets
-
-        # Normalize target
         target = target_handle.lower().lstrip('@')
-
-        # Sort by timestamp
         sorted_tweets = sorted(tweets, key=lambda t: t.get('timestamp') or '')
-
-        # Find root tweet (first by target author)
         root_idx = -1
         for idx, t in enumerate(sorted_tweets):
             author = t.get('author_handle', '').lower().lstrip('@')
             if author == target:
                 root_idx = idx
                 break
-
         if root_idx == -1:
-            return []  # No tweets by target found
-
-        # Collect consecutive author tweets starting from root
+            return []
         result = []
+        consecutive_non_author = 0
         for t in sorted_tweets[root_idx:]:
             author = t.get('author_handle', '').lower().lstrip('@')
             if author == target:
                 result.append(t)
+                consecutive_non_author = 0
             else:
-                break  # Stop at first non-author tweet
-
+                consecutive_non_author += 1
+                if consecutive_non_author >= 2:
+                    break
         return result
+
+    async def _validate_page_loaded(self):
+        """Check page loaded correctly (not rate-limited, not redirected to login)."""
+        url = self.page.url.lower()
+        if "login" in url or "signin" in url or "/flow/login" in url:
+            raise SessionExpiredError("Redirected to login page - session expired.")
+        title = await self.page.title()
+        title_lower = (title or "").lower()
+        if "rate limit" in title_lower or "rate_limit" in url:
+            raise Exception("X rate limit detected. Wait before retrying.")
+        has_content = await self.page.query_selector('[data-testid="primaryColumn"]')
+        if not has_content:
+            await asyncio.sleep(1)
+            has_content = await self.page.query_selector('[data-testid="primaryColumn"]')
+            if not has_content:
+                logger.warning("Page loaded but primaryColumn not found - possible X error page")
+
+    def _merge_video_streams(self, tweets: List[Dict]) -> List[Dict]:
+        """Replace empty video src with captured stream URLs."""
+        if not hasattr(self, 'video_streams') or not self.video_streams:
+            return tweets
+        for tweet in tweets:
+            tweet_id = tweet.get("tweet_id", "")
+            stream_url = self.video_streams.get(tweet_id)
+            if not stream_url:
+                continue
+            for media_item in tweet.get("media", []):
+                if media_item.get("type") == "video" and not media_item.get("src"):
+                    media_item["src"] = stream_url
+                    break
+        return tweets
 
     async def close(self):
         """Clean up resources"""

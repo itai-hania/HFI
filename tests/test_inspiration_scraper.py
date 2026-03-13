@@ -14,6 +14,9 @@ class TestInspirationScraper:
             scraper = TwitterScraper(headless=True)
 
         page = AsyncMock()
+        page.url = "https://x.com/search?q=from%3Afintech_guru"
+        page.title = AsyncMock(return_value="Search / X")
+        page.query_selector = AsyncMock(return_value=True)
         page.evaluate = AsyncMock(
             return_value=[
                 {
