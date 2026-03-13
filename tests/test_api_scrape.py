@@ -407,3 +407,73 @@ class TestContentFromThread:
         })
         assert resp.status_code == 401
         app.dependency_overrides[require_jwt] = lambda: "test-user"
+
+    def test_consolidated_duplicate_returns_409(self, db_and_client):
+        """Scraping the same thread URL twice in consolidated mode returns 409."""
+        db, client = db_and_client
+        mock_scraper = AsyncMock()
+        mock_scraper.fetch_raw_thread.return_value = MOCK_THREAD_RESULT
+
+        with patch("api.routes.scrape.get_scraper", new_callable=AsyncMock, return_value=mock_scraper):
+            resp1 = client.post("/api/content/from-thread", json={
+                "url": "https://x.com/user/status/200",
+                "mode": "consolidated",
+                "auto_translate": False,
+            })
+            assert resp1.status_code == 200
+
+            resp2 = client.post("/api/content/from-thread", json={
+                "url": "https://x.com/user/status/200",
+                "mode": "consolidated",
+                "auto_translate": False,
+            })
+            assert resp2.status_code == 409
+            assert "already saved" in resp2.json()["detail"]
+
+    def test_separate_duplicate_skips_existing(self, db_and_client):
+        """Scraping the same thread twice in separate mode returns existing items."""
+        db, client = db_and_client
+        mock_scraper = AsyncMock()
+        mock_scraper.fetch_raw_thread.return_value = MOCK_THREAD_RESULT
+
+        with patch("api.routes.scrape.get_scraper", new_callable=AsyncMock, return_value=mock_scraper):
+            resp1 = client.post("/api/content/from-thread", json={
+                "url": "https://x.com/user/status/300",
+                "mode": "separate",
+                "auto_translate": False,
+            })
+            assert resp1.status_code == 200
+            first_ids = [item["id"] for item in resp1.json()["saved_items"]]
+
+            resp2 = client.post("/api/content/from-thread", json={
+                "url": "https://x.com/user/status/300",
+                "mode": "separate",
+                "auto_translate": False,
+            })
+            assert resp2.status_code == 200
+            second_ids = [item["id"] for item in resp2.json()["saved_items"]]
+            assert first_ids == second_ids
+
+    def test_saved_items_include_text_fields(self, db_and_client):
+        """saved_items include original_text and hebrew_draft for bot/frontend preview."""
+        db, client = db_and_client
+        mock_scraper = AsyncMock()
+        mock_scraper.fetch_raw_thread.return_value = MOCK_THREAD_RESULT
+
+        mock_translator = MagicMock()
+        mock_translator.translate_long_text.return_value = "תוכן בעברית"
+
+        with patch("api.routes.scrape.get_scraper", new_callable=AsyncMock, return_value=mock_scraper), \
+             patch("api.routes.scrape.get_translation_service", return_value=mock_translator):
+            resp = client.post("/api/content/from-thread", json={
+                "url": "https://x.com/user/status/400",
+                "mode": "consolidated",
+                "auto_translate": True,
+            })
+
+        assert resp.status_code == 200
+        item = resp.json()["saved_items"][0]
+        assert "original_text" in item
+        assert "hebrew_draft" in item
+        assert item["hebrew_draft"] == "תוכן בעברית"
+        assert "fintech" in item["original_text"]
