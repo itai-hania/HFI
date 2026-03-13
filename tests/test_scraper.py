@@ -387,6 +387,39 @@ class TestVideoStreamMerge:
         assert result[0]["media"][0]["src"] == "img.jpg"
 
 
+class TestPageValidation:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_detect_rate_limit_page(self):
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/search"
+        mock_page.title = AsyncMock(return_value="Rate limit exceeded")
+        mock_page.query_selector = AsyncMock(return_value=None)
+        self.scraper.page = mock_page
+        with pytest.raises(Exception, match="(?i)rate.limit"):
+            asyncio.run(self.scraper._validate_page_loaded())
+
+    def test_detect_login_redirect(self):
+        from scraper.errors import SessionExpiredError
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/i/flow/login"
+        self.scraper.page = mock_page
+        with pytest.raises(SessionExpiredError):
+            asyncio.run(self.scraper._validate_page_loaded())
+
+    def test_valid_page_passes(self):
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/user/status/123"
+        mock_page.title = AsyncMock(return_value="User on X")
+        mock_page.query_selector = AsyncMock(return_value=True)
+        self.scraper.page = mock_page
+        asyncio.run(self.scraper._validate_page_loaded())  # Should not raise
+
+
 def test_scraper_can_be_instantiated():
     """Integration smoke test - verify scraper can be created."""
     try:

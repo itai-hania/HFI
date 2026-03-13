@@ -455,6 +455,7 @@ class TwitterScraper:
             await self.page.goto(search_url, timeout=45000)
             await self._random_delay(1.5, 2.8)
             await self.page.wait_for_selector('article[data-testid=\"tweet\"]', timeout=15000)
+            await self._validate_page_loaded()
 
             collected: Dict[str, Dict] = {}
             max_scrolls = 10
@@ -610,11 +611,8 @@ class TwitterScraper:
             self.page.on("response", handle_response)
 
             await self.page.goto(thread_url, timeout=60000)
-
-            if "login" in self.page.url or "signin" in self.page.url:
-                raise Exception("Not authenticated - redirected to login.")
-
             await self.page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
+            await self._validate_page_loaded()
 
             target_handle = self._extract_handle_from_url(thread_url)
 
@@ -765,13 +763,10 @@ class TwitterScraper:
             self.page.on("response", handle_response)
             
             await self.page.goto(thread_url, timeout=60000)
-            
-            # Check if logged in (url shouldn't redirect to login)
-            if "login" in self.page.url or "signin" in self.page.url:
-                raise Exception("Not authenticated - redirected to login.")
-                
+
             # Wait for tweets
             await self.page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
+            await self._validate_page_loaded()
             
             target_handle = self._extract_handle_from_url(thread_url)
 
@@ -1049,6 +1044,22 @@ class TwitterScraper:
                 break  # Stop at first non-author tweet
 
         return result
+
+    async def _validate_page_loaded(self):
+        """Check page loaded correctly (not rate-limited, not redirected to login)."""
+        url = self.page.url.lower()
+        if "login" in url or "signin" in url or "/flow/login" in url:
+            raise SessionExpiredError("Redirected to login page - session expired.")
+        title = await self.page.title()
+        title_lower = (title or "").lower()
+        if "rate limit" in title_lower or "rate_limit" in url:
+            raise Exception("X rate limit detected. Wait before retrying.")
+        has_content = await self.page.query_selector('[data-testid="primaryColumn"]')
+        if not has_content:
+            await asyncio.sleep(1)
+            has_content = await self.page.query_selector('[data-testid="primaryColumn"]')
+            if not has_content:
+                logger.warning("Page loaded but primaryColumn not found - possible X error page")
 
     def _merge_video_streams(self, tweets: List[Dict]) -> List[Dict]:
         """Replace empty video src with captured stream URLs."""
