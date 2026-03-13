@@ -4,9 +4,11 @@
 
 **Goal:** Fix the broken thread scraping and inspiration features so they work reliably on the production Azure VM.
 
-**Architecture:** Fix the scraper foundation (URL handling, session management, DOM selectors), then fix the API layer (timeouts, error handling, session checks), then fix the frontend (error states, provenance, session indicators). TDD throughout.
+**Architecture:** Fix the scraper foundation (URL handling, session management, DOM selectors, browser engine), then fix the API layer (timeouts, error handling, session checks), then fix the frontend (error states, provenance, session indicators). TDD throughout.
 
 **Tech Stack:** Python (Playwright, FastAPI, SQLAlchemy), TypeScript (Next.js, React Query), pytest
+
+**Total Tasks:** 19 (original 15 + 4 merged from scraper hardening plan)
 
 ---
 
@@ -1283,10 +1285,408 @@ git commit -m "chore: final integration verification for thread/inspiration stab
 
 ---
 
-Plan complete and saved to `docs/plans/2026-03-13-thread-scraping-inspiration-stabilization-plan.md`. Two execution options:
+---
 
-**1. Subagent-Driven (this session)** — I dispatch a fresh subagent per task, review between tasks, fast iteration
+### Task 16: Switch from Firefox to Chromium (env-configurable)
 
-**2. Parallel Session (separate)** — Open new session with executing-plans, batch execution with checkpoints
+**Files:**
+- Modify: `src/scraper/scraper.py:40-70` (constructor), `src/scraper/scraper.py:77-123` (`_init_browser`)
+- Test: `tests/test_scraper.py` (add browser selection test)
 
-Which approach?
+**Step 1: Write the failing test**
+
+```python
+class TestBrowserSelection:
+    def test_default_browser_is_chromium(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "chromium"
+
+    def test_browser_type_from_env(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua, \
+             patch.dict("os.environ", {"SCRAPER_BROWSER": "firefox"}):
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "firefox"
+
+    def test_invalid_browser_falls_back_to_chromium(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua, \
+             patch.dict("os.environ", {"SCRAPER_BROWSER": "safari"}):
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "chromium"
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_scraper.py::TestBrowserSelection -v`
+Expected: FAIL — `scraper.browser_type` doesn't exist
+
+**Step 3: Implement**
+
+In `src/scraper/scraper.py` `__init__` (line ~48), add:
+
+```python
+import os
+# ...
+_VALID_BROWSERS = {"chromium", "firefox", "webkit"}
+
+class TwitterScraper:
+    def __init__(self, headless: bool = True, max_interactions: int = 50):
+        # ... existing code ...
+        self.browser_type = os.environ.get("SCRAPER_BROWSER", "chromium").lower()
+        if self.browser_type not in _VALID_BROWSERS:
+            self.browser_type = "chromium"
+```
+
+In `_init_browser` (line ~82), replace:
+
+```python
+self.browser = await self.playwright.firefox.launch(headless=self.headless)
+```
+
+With:
+
+```python
+launcher = getattr(self.playwright, self.browser_type)
+self.browser = await launcher.launch(headless=self.headless)
+```
+
+Update the stealth script in `_init_browser` to only set `window.chrome` for chromium:
+
+```python
+if self.browser_type == "chromium":
+    await self.page.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        window.chrome = { runtime: {} };
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+    """)
+else:
+    await self.page.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+    """)
+```
+
+**Step 4: Run tests**
+
+Run: `pytest tests/test_scraper.py -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add src/scraper/scraper.py tests/test_scraper.py
+git commit -m "feat(scraper): switch default browser to Chromium, env-configurable"
+```
+
+---
+
+### Task 17: Add rate-limit detection and page-load validation
+
+**Files:**
+- Modify: `src/scraper/scraper.py` (add `_validate_page_loaded` method, call it after navigation)
+- Test: `tests/test_scraper.py`
+
+**Step 1: Write the failing test**
+
+```python
+class TestPageValidation:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_detect_rate_limit_page(self):
+        """Should raise when X shows rate limit / error page."""
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/search"
+        mock_page.title = AsyncMock(return_value="Rate limit exceeded")
+        mock_page.query_selector = AsyncMock(return_value=None)
+        self.scraper.page = mock_page
+
+        with pytest.raises(Exception, match="rate.limit"):
+            asyncio.run(self.scraper._validate_page_loaded())
+
+    def test_detect_login_redirect(self):
+        """Should raise SessionExpiredError when redirected to login."""
+        from scraper.errors import SessionExpiredError
+
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/i/flow/login"
+        self.scraper.page = mock_page
+
+        with pytest.raises(SessionExpiredError):
+            asyncio.run(self.scraper._validate_page_loaded())
+
+    def test_valid_page_passes(self):
+        """Should not raise on normal X page."""
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/user/status/123"
+        mock_page.title = AsyncMock(return_value="User on X")
+        mock_page.query_selector = AsyncMock(return_value=True)  # primaryColumn exists
+        self.scraper.page = mock_page
+
+        # Should not raise
+        asyncio.run(self.scraper._validate_page_loaded())
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_scraper.py::TestPageValidation -v`
+Expected: FAIL — `_validate_page_loaded` doesn't exist
+
+**Step 3: Implement `_validate_page_loaded`**
+
+Add to `src/scraper/scraper.py`:
+
+```python
+async def _validate_page_loaded(self):
+    """Check if the page loaded correctly (not rate-limited, not redirected to login)."""
+    url = self.page.url.lower()
+
+    if "login" in url or "signin" in url or "/flow/login" in url:
+        raise SessionExpiredError("Redirected to login page — session expired.")
+
+    title = await self.page.title()
+    title_lower = (title or "").lower()
+    if "rate limit" in title_lower or "rate_limit" in url:
+        raise Exception("X rate limit detected. Wait before retrying.")
+
+    # Check for error pages (X shows minimal page with no primary column)
+    has_content = await self.page.query_selector('[data-testid="primaryColumn"]')
+    if not has_content:
+        # Give it one more second and retry
+        await asyncio.sleep(1)
+        has_content = await self.page.query_selector('[data-testid="primaryColumn"]')
+        if not has_content:
+            logger.warning("Page loaded but primaryColumn not found — possible X error page")
+```
+
+Call `_validate_page_loaded()` after `page.goto()` in both `fetch_raw_thread` and `search_by_user_engagement`, replacing the inline login redirect checks.
+
+**Step 4: Run tests**
+
+Run: `pytest tests/test_scraper.py -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add src/scraper/scraper.py tests/test_scraper.py
+git commit -m "feat(scraper): add page validation with rate-limit and login redirect detection"
+```
+
+---
+
+### Task 18: Fix thread author filtering to handle quoted tweets
+
+**Files:**
+- Modify: `src/scraper/scraper.py:975-1016` (`filter_author_tweets_only`)
+- Test: `tests/test_scraper.py`
+
+**Step 1: Write the failing test**
+
+```python
+class TestFilterAuthorQuotedTweets:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_quoted_tweet_does_not_break_thread(self):
+        """A quoted tweet (different author) between thread tweets should not stop collection."""
+        tweets = [
+            {"tweet_id": "1", "author_handle": "@alice", "text": "Thread start", "timestamp": "2026-01-01T00:00:00Z"},
+            {"tweet_id": "2", "author_handle": "@bob", "text": "Quoted/reply", "timestamp": "2026-01-01T00:00:30Z"},
+            {"tweet_id": "3", "author_handle": "@alice", "text": "Thread continues", "timestamp": "2026-01-01T00:01:00Z"},
+            {"tweet_id": "4", "author_handle": "@alice", "text": "Thread end", "timestamp": "2026-01-01T00:02:00Z"},
+        ]
+        result = self.scraper.filter_author_tweets_only(tweets, "@alice")
+        # Current behavior: stops at tweet 2, returns only tweet 1
+        # Expected behavior: skips tweet 2 (quoted), returns tweets 1, 3, 4
+        assert len(result) == 3
+        assert [t["tweet_id"] for t in result] == ["1", "3", "4"]
+
+    def test_genuine_end_of_thread(self):
+        """Multiple consecutive non-author tweets should still end collection."""
+        tweets = [
+            {"tweet_id": "1", "author_handle": "@alice", "text": "Thread 1", "timestamp": "2026-01-01T00:00:00Z"},
+            {"tweet_id": "2", "author_handle": "@alice", "text": "Thread 2", "timestamp": "2026-01-01T00:01:00Z"},
+            {"tweet_id": "3", "author_handle": "@bob", "text": "Reply 1", "timestamp": "2026-01-01T00:02:00Z"},
+            {"tweet_id": "4", "author_handle": "@charlie", "text": "Reply 2", "timestamp": "2026-01-01T00:03:00Z"},
+            {"tweet_id": "5", "author_handle": "@alice", "text": "Separate tweet", "timestamp": "2026-01-01T00:10:00Z"},
+        ]
+        result = self.scraper.filter_author_tweets_only(tweets, "@alice")
+        # 2+ consecutive non-author tweets = end of thread
+        assert len(result) == 2
+        assert [t["tweet_id"] for t in result] == ["1", "2"]
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_scraper.py::TestFilterAuthorQuotedTweets -v`
+Expected: FAIL — `test_quoted_tweet_does_not_break_thread` returns 1 tweet instead of 3
+
+**Step 3: Fix `filter_author_tweets_only`**
+
+Replace the current method (lines 975-1016):
+
+```python
+def filter_author_tweets_only(self, tweets: List[Dict], target_handle: str) -> List[Dict]:
+    """
+    Filter collected tweets to only include the target author's thread tweets.
+    Tolerates single interspersed non-author tweets (quoted tweets, UI artifacts)
+    but stops at 2+ consecutive non-author tweets (end of thread).
+    """
+    if not tweets or not target_handle:
+        return tweets
+
+    target = target_handle.lower().lstrip('@')
+    sorted_tweets = sorted(tweets, key=lambda t: t.get('timestamp') or '')
+
+    # Find root tweet (first by target author)
+    root_idx = -1
+    for idx, t in enumerate(sorted_tweets):
+        author = t.get('author_handle', '').lower().lstrip('@')
+        if author == target:
+            root_idx = idx
+            break
+
+    if root_idx == -1:
+        return []
+
+    result = []
+    consecutive_non_author = 0
+
+    for t in sorted_tweets[root_idx:]:
+        author = t.get('author_handle', '').lower().lstrip('@')
+        if author == target:
+            result.append(t)
+            consecutive_non_author = 0
+        else:
+            consecutive_non_author += 1
+            if consecutive_non_author >= 2:
+                break  # 2+ consecutive non-author = end of thread
+
+    return result
+```
+
+**Step 4: Run tests**
+
+Run: `pytest tests/test_scraper.py -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add src/scraper/scraper.py tests/test_scraper.py
+git commit -m "fix(scraper): handle quoted tweets in thread author filtering"
+```
+
+---
+
+### Task 19: Deprecate `fetch_thread`, keep only `fetch_raw_thread`
+
+**Files:**
+- Modify: `src/scraper/scraper.py:712-769` (mark deprecated, delegate to `fetch_raw_thread`)
+- Test: `tests/test_scraper.py`
+
+**Step 1: Write the test**
+
+```python
+import warnings
+
+class TestFetchThreadDeprecation:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_fetch_thread_emits_deprecation_warning(self):
+        """fetch_thread should emit DeprecationWarning."""
+        self.scraper.fetch_raw_thread = AsyncMock(return_value={
+            "tweets": [{"text": "hi", "tweet_id": "1"}],
+            "author_handle": "@user",
+        })
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = asyncio.run(self.scraper.fetch_thread("https://x.com/user/status/1"))
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "fetch_raw_thread" in str(w[0].message)
+
+    def test_fetch_thread_delegates_to_raw(self):
+        """fetch_thread should delegate to fetch_raw_thread and return tweets list."""
+        thread_data = {
+            "tweets": [
+                {"text": "tweet 1", "tweet_id": "1"},
+                {"text": "tweet 2", "tweet_id": "2"},
+            ],
+            "author_handle": "@user",
+        }
+        self.scraper.fetch_raw_thread = AsyncMock(return_value=thread_data)
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            result = asyncio.run(self.scraper.fetch_thread("https://x.com/user/status/1"))
+        assert isinstance(result, list)
+        assert len(result) == 2
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_scraper.py::TestFetchThreadDeprecation -v`
+Expected: FAIL — no deprecation warning emitted
+
+**Step 3: Replace `fetch_thread` with a thin deprecated wrapper**
+
+Replace the entire `fetch_thread` method (lines 712-769):
+
+```python
+async def fetch_thread(self, thread_url: str, max_scroll_attempts: int = 50) -> List[Dict]:
+    """
+    DEPRECATED: Use fetch_raw_thread() instead.
+    This method is kept for backward compatibility and delegates to fetch_raw_thread.
+    Returns List[Dict] (just the tweets) for backward compatibility.
+    """
+    import warnings
+    warnings.warn(
+        "fetch_thread() is deprecated. Use fetch_raw_thread() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    result = await self.fetch_raw_thread(thread_url, max_scroll_attempts=max_scroll_attempts, author_only=True)
+    return result.get("tweets", [])
+```
+
+This removes ~50 lines of duplicated scroll/collect logic and the orphaned `_scroll_and_collect` method can also be removed if nothing else calls it.
+
+**Step 4: Run tests**
+
+Run: `pytest tests/test_scraper.py -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add src/scraper/scraper.py tests/test_scraper.py
+git commit -m "refactor(scraper): deprecate fetch_thread, delegate to fetch_raw_thread"
+```
+
+---
+
+## Execution Order Summary
+
+| Phase | Tasks | Focus |
+|-------|-------|-------|
+| **Foundation** | 1, 2, 3, 4, 16 | Scraper core: errors, URLs, selectors, browser, session handling |
+| **Scraper Quality** | 13, 17, 18, 19 | Video streams, rate-limit detection, quoted tweets, deprecation |
+| **API Layer** | 5, 6, 7, 8 | Health endpoint, timeouts, session checks, thread resolution |
+| **Frontend** | 9, 10, 11 | PostCard provenance, error states, session indicator |
+| **Tooling** | 12 | Session refresh script |
+| **Verification** | 14, 15 | Full test suite, Docker build |
