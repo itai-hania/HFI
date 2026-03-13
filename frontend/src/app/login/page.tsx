@@ -4,6 +4,8 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { AxiosError } from "axios";
+
 import api from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -25,8 +27,25 @@ export default function LoginPage() {
       setToken(data.access_token);
       toast.success("Signed in");
       router.push("/");
-    } catch {
-      toast.error("Sign in failed");
+    } catch (err) {
+      if (err instanceof AxiosError) {
+        const status = err.response?.status;
+        const detail = err.response?.data?.detail;
+
+        if (status === 401) {
+          toast.error("Wrong password");
+        } else if (status === 429) {
+          toast.error("Too many attempts — try again in a minute");
+        } else if (status === 503) {
+          toast.error("Dashboard password not configured on server");
+        } else if (!err.response) {
+          toast.error("Cannot reach server — check your connection");
+        } else {
+          toast.error(detail || `Server error (${status})`);
+        }
+      } else {
+        toast.error("Something went wrong");
+      }
     } finally {
       setLoading(false);
     }

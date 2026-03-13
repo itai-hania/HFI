@@ -1,21 +1,20 @@
-# HFI Azure Private Production Runbook
+# HFI Azure Production Runbook
 
-Date: 2026-03-12
-Scope: single-VM private deployment (Tailscale-only ingress) in `israelcentral`.
+Date: 2026-03-13
+Scope: single-VM deployment with Caddy auto-HTTPS in `israelcentral`.
 
 ## 1. What You Will Run
 
 - Runtime: Docker Compose from `deploy/docker-compose.prod.yml`
 - Always on: `proxy`, `frontend`, `api`, `processor`, `telegram-bot`
 - Manual only: `scraper` (run on demand)
-- Private access: `tailscale serve` HTTPS -> `127.0.0.1:80`
+- HTTPS: Caddy auto-TLS via Let's Encrypt on Azure DNS hostname
 - CI/CD: GitHub Actions self-hosted runner on the VM
 
 ## 2. Prerequisites
 
 - Azure subscription + `az` CLI logged in
 - GitHub repo admin access (to register self-hosted runner)
-- Tailscale tailnet + reusable auth key
 - A local SSH public key (`~/.ssh/id_ed25519.pub`)
 
 ## 3. Provision Azure Resources
@@ -49,6 +48,44 @@ Get the VM public IP:
 ```bash
 VM_IP=$(az vm show -d -g "$RG" -n "$VM_NAME" --query publicIps -o tsv)
 echo "$VM_IP"
+```
+
+Add a DNS label and open HTTPS ports:
+
+```bash
+# Stable hostname: hfi-prod.israelcentral.cloudapp.azure.com
+az network public-ip update \
+  --resource-group "$RG" \
+  --name "${VM_NAME}PublicIP" \
+  --dns-name hfi-prod
+
+# Allow HTTP (Let's Encrypt ACME challenge + redirect to HTTPS)
+az network nsg rule create \
+  --resource-group "$RG" \
+  --nsg-name "${VM_NAME}NSG" \
+  --name AllowHTTP \
+  --priority 1010 \
+  --access Allow \
+  --direction Inbound \
+  --protocol Tcp \
+  --destination-port-ranges 80
+
+# Allow HTTPS (main app traffic)
+az network nsg rule create \
+  --resource-group "$RG" \
+  --nsg-name "${VM_NAME}NSG" \
+  --name AllowHTTPS \
+  --priority 1020 \
+  --access Allow \
+  --direction Inbound \
+  --protocol Tcp \
+  --destination-port-ranges 443
+```
+
+Verify DNS resolves:
+
+```bash
+nslookup hfi-prod.israelcentral.cloudapp.azure.com
 ```
 
 ## 4. Bootstrap VM Runtime
@@ -99,39 +136,14 @@ Edit `.env.prod` and set at least:
 - `OPENAI_API_KEY`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
-- `FRONTEND_BASE_URL` (your Tailscale HTTPS URL)
-- `CORS_ORIGINS` (same Tailscale HTTPS URL)
+- `FRONTEND_BASE_URL=https://hfi-prod.israelcentral.cloudapp.azure.com`
+- `CORS_ORIGINS=https://hfi-prod.israelcentral.cloudapp.azure.com`
 - `NEXT_PUBLIC_API_URL=/api`
 - `API_BASE_URL=http://api:8000`
 - `API_ENFORCE_HTTPS_REDIRECT=false`
 - `HOST_DATA_DIR=/opt/hfi/data`
 
-## 6. Set Up Tailscale Private Access
-
-Install and join tailnet on the VM:
-
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --auth-key <TAILSCALE_AUTH_KEY> --ssh
-tailscale status
-```
-
-Enable private HTTPS publishing:
-
-```bash
-sudo tailscale serve --bg --https=443 http://127.0.0.1:80
-tailscale serve status
-```
-
-Find your private URL:
-
-```bash
-tailscale status --self
-```
-
-Use that URL for both `FRONTEND_BASE_URL` and `CORS_ORIGINS` in `.env.prod`.
-
-## 7. First Deployment (Manual)
+## 6. First Deployment (Manual)
 
 ```bash
 cd /opt/hfi/app
@@ -142,11 +154,11 @@ Verify:
 
 ```bash
 docker exec hfi-api python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read().decode())"
-curl -I http://127.0.0.1/
+curl -I https://hfi-prod.israelcentral.cloudapp.azure.com/health
 docker compose --env-file .env.prod -f deploy/docker-compose.prod.yml ps
 ```
 
-## 8. Enable Auto-Restart on Reboot (systemd)
+## 7. Enable Auto-Restart on Reboot (systemd)
 
 ```bash
 sudo cp deploy/systemd/*.service /etc/systemd/system/
@@ -154,7 +166,6 @@ sudo cp deploy/systemd/*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 
 sudo systemctl enable --now hfi-prod.service
-sudo systemctl enable --now tailscale-serve.service
 sudo systemctl enable --now hfi-backup.timer
 sudo systemctl enable --now hfi-restore-check.timer
 sudo systemctl enable --now hfi-host-health.timer
@@ -163,7 +174,7 @@ sudo systemctl status hfi-prod.service
 sudo systemctl list-timers --all | grep hfi-
 ```
 
-## 9. Configure GitHub Actions Self-Hosted Runner
+## 8. Configure GitHub Actions Self-Hosted Runner
 
 On GitHub, generate a Linux self-hosted runner token for this repo. Then on VM:
 
@@ -189,7 +200,7 @@ sudo ./svc.sh status
 
 The workflow `.github/workflows/deploy-prod.yml` will now deploy on every push to `main`.
 
-## 10. Backups to Azure Blob (Optional but Recommended)
+## 9. Backups to Azure Blob (Optional but Recommended)
 
 Create storage resources (run locally or on VM with `az login`):
 
@@ -235,7 +246,7 @@ Test backup now:
 ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/backup_db.sh
 ```
 
-## 11. Operations Commands
+## 10. Operations Commands
 
 Deploy current HEAD:
 
@@ -273,12 +284,13 @@ Check host guardrails manually:
 ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/host_health_check.sh
 ```
 
-## 12. Acceptance Checklist
+## 11. Acceptance Checklist
 
-- App opens from a tailnet device at your Tailscale URL
-- App is not reachable from public internet
-- `docker exec hfi-api ... /health ...` returns `status=healthy`
+- App opens at `https://hfi-prod.israelcentral.cloudapp.azure.com` from any browser
+- HTTPS certificate is valid (padlock icon in browser)
+- Login page appears, JWT auth works with dashboard password
+- `curl https://hfi-prod.israelcentral.cloudapp.azure.com/health` returns `status=healthy`
 - Telegram bot answers `/start`, `/brief`, `/write`
 - Push to `main` triggers successful deployment workflow
-- Reboot restores stack (`hfi-prod.service`) and Tailscale serve
+- Reboot restores stack via `hfi-prod.service`
 - Latest DB backup exists locally and in Blob (if configured)

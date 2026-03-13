@@ -15,7 +15,8 @@ services:
       frontend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:80:80"
+      - "80:80"
+      - "443:443"
     volumes:
       - ${REPO_ROOT:-.}/deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -56,12 +57,12 @@ services:
       context: ${REPO_ROOT:-.}
       dockerfile: frontend/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     container_name: hfi-frontend
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     restart: unless-stopped
     depends_on:
       api:

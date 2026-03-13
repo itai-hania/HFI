@@ -301,19 +301,21 @@ rm data/hfi.db
 python tools/init_db.py
 ```
 
-### 5. Docker/K8s Deployment
+### 5. Deployment
 
-**Docker Compose:**
+**Local (Docker Compose):**
 ```bash
 docker-compose up -d          # Start all services
 docker-compose logs -f        # View logs
 docker-compose down           # Stop
 ```
 
-**Kubernetes:**
-- See `k8s/README.md` for full guide
-- Quick deploy: `cd k8s && ./deploy.sh`
-- All manifests validated and ready
+**Production (Azure VM + Caddy auto-HTTPS):**
+- See `docs/deploy/azure-private-production-runbook.md` for full guide
+- URL: `https://hfi-prod.israelcentral.cloudapp.azure.com`
+- Caddy handles Let's Encrypt TLS automatically
+- CI/CD: push to `main` → GitHub Actions self-hosted runner auto-deploys
+- Legacy K8s manifests in `k8s/` (superseded)
 
 ---
 
@@ -737,9 +739,9 @@ SELECT * FROM trends ORDER BY discovered_at DESC LIMIT 10;
 
 ### "How do I deploy this?"
 1. Local: `docker-compose up -d`
-2. Production: K3s (see `k8s/README.md`)
-3. Ensure `.env` is configured
-4. Ensure secrets are created (for K8s)
+2. Production: Azure VM with Caddy auto-HTTPS (see `docs/deploy/azure-private-production-runbook.md`)
+3. Ensure `.env.prod` is configured on the VM (see `deploy/.env.prod.example`)
+4. Push to `main` to trigger auto-deploy via GitHub Actions
 
 ### "I want to add [feature]"
 1. Check `IMPLEMENTATION_PLAN.md` for architecture
