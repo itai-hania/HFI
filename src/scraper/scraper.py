@@ -24,6 +24,8 @@ from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from fake_useragent import UserAgent
 import re
 
+from scraper.errors import SessionExpiredError
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -128,6 +130,7 @@ class TwitterScraper:
 
         If no session exists, launches browser in headful mode for manual login.
         Saves session state after successful login.
+        In headless mode, raises SessionExpiredError instead of blocking on input().
         """
         if self.session_file.exists():
             logger.info("Session file exists, attempting to use saved session...")
@@ -135,16 +138,28 @@ class TwitterScraper:
 
             # Verify session is valid by checking home page
             try:
-                await self.page.goto('https://x.com/home', timeout=30000)
+                await self.page.goto('https://x.com/home', timeout=15000)
                 await self.page.wait_for_selector('[data-testid="primaryColumn"]', timeout=10000)
                 logger.info("✅ Session valid - logged in successfully")
                 return
             except Exception as e:
                 logger.warning(f"Session expired or invalid: {e}")
                 await self.close()
-                self.session_file.unlink()  # Delete invalid session
+                if self.session_file.exists():
+                    self.session_file.unlink()
+                if self.headless:
+                    raise SessionExpiredError(
+                        "X session expired. Run 'python tools/refresh_session.py' "
+                        "locally, then copy data/session/storage_state.json to the server."
+                    ) from e
 
-        # No valid session - need manual login
+        if self.headless:
+            raise SessionExpiredError(
+                "X session expired or missing. Run 'python tools/refresh_session.py' "
+                "locally, then copy data/session/storage_state.json to the server."
+            )
+
+        # Non-headless manual login path
         logger.info("⚠️  No valid session found. Starting manual login process...")
         logger.info("📝 Please log in manually in the browser window that will open...")
 

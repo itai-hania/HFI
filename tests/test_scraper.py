@@ -16,6 +16,7 @@ For integration tests (actual scraping), run the scraper's main() function.
 
 import pytest
 import os
+from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import asyncio
 
@@ -316,6 +317,20 @@ class TestExtractHandleFromUrl:
     ])
     def test_extract_handle(self, url, expected):
         assert self.scraper._extract_handle_from_url(url) == expected
+
+
+class TestEnsureLoggedInSessionExpiry:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_raises_session_expired_when_no_session_file(self):
+        from scraper.errors import SessionExpiredError
+        self.scraper.session_file = Path("/nonexistent/storage_state.json")
+        with pytest.raises(SessionExpiredError, match="session"):
+            asyncio.run(self.scraper.ensure_logged_in())
 
 
 def test_scraper_can_be_instantiated():
