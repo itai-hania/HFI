@@ -83,8 +83,8 @@ export default function DashboardPage() {
                 <span>Updated {formatRelativeTime(briefQuery.dataUpdatedAt)}</span>
               ) : null}
               <Button
-                size="sm"
-                variant="outline"
+                variant="secondary"
+                className="h-8 px-3 text-xs"
                 onClick={() => refreshBrief.mutate()}
                 disabled={refreshBrief.isPending}
               >
