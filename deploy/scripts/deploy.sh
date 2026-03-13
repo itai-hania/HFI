@@ -201,7 +201,7 @@ main() {
   # Reload proxy so Caddyfile updates are always picked up across deploys.
   compose up -d --no-deps --force-recreate proxy
 
-  wait_for_http "http://127.0.0.1/" "frontend via proxy"
+  wait_for_http "https://hfi-prod.israelcentral.cloudapp.azure.com/" "frontend via proxy"
   wait_for_api_health
   check_telegram_bot_running
 

@@ -57,7 +57,7 @@ jobs:
               )
           PY
 
-          curl -fsS -o /dev/null http://127.0.0.1/
+          curl -fsS -o /dev/null https://hfi-prod.israelcentral.cloudapp.azure.com/
           for _ in $(seq 1 45); do
             if REPO_ROOT="${GITHUB_WORKSPACE}" \
               ENV_FILE_PATH="${ENV_FILE}" \
