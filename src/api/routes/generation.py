@@ -68,6 +68,11 @@ async def resolve_source(request: SourceResolveRequest):
     try:
         resolved = await resolve_source_input(text=request.text, url=request.url)
     except SourceResolverError as exc:
+        msg = str(exc).lower()
+        if "session" in msg:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if "timed out" in msg:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return SourceResolveResponse(**resolved.to_dict())
@@ -81,6 +86,11 @@ async def translate(request: TranslateRequest):
     try:
         resolved = await resolve_source_input(text=request.text, url=request.url)
     except SourceResolverError as exc:
+        msg = str(exc).lower()
+        if "session" in msg:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if "timed out" in msg:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     hebrew_text = await asyncio.to_thread(service.translate_and_rewrite, resolved.original_text)

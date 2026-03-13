@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Literal
@@ -113,10 +114,16 @@ async def _resolve_x_url(
 
         scraper_factory = lambda: TwitterScraper(headless=True)  # noqa: E731
 
+    from scraper.errors import SessionExpiredError
+
     scraper = scraper_factory()
     try:
-        await scraper.ensure_logged_in()
-        tweet_data = await scraper.get_tweet_content(url)
+        await asyncio.wait_for(scraper.ensure_logged_in(), timeout=20)
+        tweet_data = await asyncio.wait_for(scraper.get_tweet_content(url), timeout=60)
+    except SessionExpiredError as exc:
+        raise SourceResolverError(str(exc)) from exc
+    except asyncio.TimeoutError:
+        raise SourceResolverError("X scraping timed out. The session may be expired.")
     finally:
         await scraper.close()
 
