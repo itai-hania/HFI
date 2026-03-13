@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { PostCard } from "@/components/inspiration/PostCard";
 import { SearchForm } from "@/components/inspiration/SearchForm";
+import { SessionStatus } from "@/components/SessionStatus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -119,6 +120,8 @@ export default function InspirationPage() {
         <h2 className="font-display text-3xl leading-tight">Inspiration</h2>
         <p className="mt-2 text-sm text-[var(--muted)]">Find high-engagement posts to reuse as sources.</p>
       </header>
+
+      <SessionStatus />
 
       <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)]/60 p-4 md:p-5 space-y-3">
         <div className="flex flex-wrap gap-2">
