@@ -293,7 +293,9 @@ function CreateWorkspace({
 
 export default function CreatePage() {
   const params = useSearchParams();
-  const initialSource = params.get("text") || "";
+  const urlParam = params.get("url") || "";
+  const textParam = params.get("text") || "";
+  const initialSource = urlParam || textParam;
   const rawEditId = params.get("edit");
   const editId = rawEditId && /^\d+$/.test(rawEditId) ? Number(rawEditId) : null;
   const editQuery = useContentItem(editId);
