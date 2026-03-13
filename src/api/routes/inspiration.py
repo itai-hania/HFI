@@ -1,5 +1,6 @@
 """Inspiration account and search endpoints."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
@@ -16,6 +17,7 @@ from api.schemas.inspiration import (
     InspirationSearchResponse,
 )
 from common.models import InspirationAccount, InspirationPost
+from scraper.errors import SessionExpiredError
 
 router = APIRouter(
     prefix="/api/inspiration",
@@ -119,10 +121,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
         .first()
     )
     if not account:
-        account = InspirationAccount(username=payload.username, display_name=payload.username)
-        db.add(account)
-        db.commit()
-        db.refresh(account)
+        raise HTTPException(status_code=404, detail=f"Account @{payload.username} not tracked. Add it first.")
 
     query_key = _build_query_key(payload.username, payload.min_likes, payload.keyword, payload.since or "", payload.until or "")
     now = datetime.now(timezone.utc)
@@ -144,13 +143,23 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
 
     scraper = get_scraper()
     try:
-        posts = await scraper.search_by_user_engagement(
-            username=payload.username,
-            min_faves=payload.min_likes,
-            keyword=payload.keyword,
-            limit=payload.limit,
-            since=payload.since,
-            until=payload.until,
+        posts = await asyncio.wait_for(
+            scraper.search_by_user_engagement(
+                username=payload.username,
+                min_faves=payload.min_likes,
+                keyword=payload.keyword,
+                limit=payload.limit,
+                since=payload.since,
+                until=payload.until,
+            ),
+            timeout=90,
+        )
+    except SessionExpiredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="X search timed out. The session may be expired or X may be slow.",
         )
     finally:
         await scraper.close()

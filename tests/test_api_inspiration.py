@@ -1,5 +1,6 @@
 """Tests for inspiration APIs."""
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -174,6 +175,11 @@ class TestInspirationEndpoints:
 
     def test_search_with_date_filters(self, db_and_client):
         _, client = db_and_client
+        client.post(
+            "/api/inspiration/accounts",
+            json={"username": "test_user", "display_name": "Test User"},
+            headers={"Authorization": "Bearer test"},
+        )
 
         with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
             scraper = mock_get_scraper.return_value
@@ -195,3 +201,57 @@ class TestInspirationEndpoints:
         call_kwargs = scraper.search_by_user_engagement.call_args.kwargs
         assert call_kwargs["since"] == "2025-01-01"
         assert call_kwargs["until"] == "2025-12-31"
+
+
+class TestInspirationSessionAndTimeout:
+    def test_search_returns_503_when_session_expired(self, db_and_client):
+        _, client = db_and_client
+        client.post(
+            "/api/inspiration/accounts",
+            json={"username": "testuser", "display_name": "Test"},
+            headers={"Authorization": "Bearer test"},
+        )
+        with patch("api.routes.inspiration.get_scraper") as mock_get:
+            from scraper.errors import SessionExpiredError
+
+            scraper = AsyncMock()
+            scraper.search_by_user_engagement = AsyncMock(side_effect=SessionExpiredError())
+            scraper.close = AsyncMock()
+            mock_get.return_value = scraper
+            response = client.post(
+                "/api/inspiration/search",
+                json={"username": "testuser", "min_likes": 100, "keyword": "", "limit": 10},
+                headers={"Authorization": "Bearer test"},
+            )
+        assert response.status_code == 503
+        assert "session" in response.json()["detail"].lower()
+
+    def test_search_returns_504_on_timeout(self, db_and_client):
+        _, client = db_and_client
+        client.post(
+            "/api/inspiration/accounts",
+            json={"username": "testuser2", "display_name": "Test2"},
+            headers={"Authorization": "Bearer test"},
+        )
+        with patch("api.routes.inspiration.get_scraper") as mock_get:
+            scraper = AsyncMock()
+            scraper.search_by_user_engagement = AsyncMock(side_effect=asyncio.TimeoutError())
+            scraper.close = AsyncMock()
+            mock_get.return_value = scraper
+            response = client.post(
+                "/api/inspiration/search",
+                json={"username": "testuser2", "min_likes": 100, "keyword": "", "limit": 10},
+                headers={"Authorization": "Bearer test"},
+            )
+        assert response.status_code == 504
+        assert "timed out" in response.json()["detail"].lower()
+
+    def test_search_returns_404_for_unknown_account(self, db_and_client):
+        _, client = db_and_client
+        response = client.post(
+            "/api/inspiration/search",
+            json={"username": "nonexistent_user", "min_likes": 100, "keyword": "", "limit": 10},
+            headers={"Authorization": "Bearer test"},
+        )
+        assert response.status_code == 404
+        assert "not tracked" in response.json()["detail"].lower()
