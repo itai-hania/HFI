@@ -3,20 +3,26 @@
 import Link from "next/link";
 import { toast } from "sonner";
 
+import { AlertCard } from "@/components/dashboard/AlertCard";
 import { BriefCard } from "@/components/dashboard/BriefCard";
 import { ScheduleTimeline } from "@/components/dashboard/ScheduleTimeline";
 import { StatsBar } from "@/components/dashboard/StatsBar";
 import { Button } from "@/components/ui/button";
-import { useBrief } from "@/hooks/useBrief";
+import { useAlerts, useDismissAlert } from "@/hooks/useAlerts";
+import { useBrief, useRefreshBrief } from "@/hooks/useBrief";
 import { useScheduledContent } from "@/hooks/useContent";
 import { useStats } from "@/hooks/useStats";
 import { useTranslate } from "@/hooks/useTranslate";
 import type { BriefStory } from "@/lib/types";
+import { formatRelativeTime } from "@/lib/utils";
 
 export default function DashboardPage() {
   const statsQuery = useStats();
   const briefQuery = useBrief();
+  const refreshBrief = useRefreshBrief();
   const scheduledQuery = useScheduledContent();
+  const alertsQuery = useAlerts();
+  const dismissAlert = useDismissAlert();
   const translate = useTranslate();
 
   const handleTranslate = async (story: BriefStory) => {
@@ -57,9 +63,35 @@ export default function DashboardPage() {
         }
       />
 
+      {alertsQuery.data?.alerts && alertsQuery.data.alerts.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="font-display text-lg md:text-xl">🚨 Alerts ({alertsQuery.data.alerts.length})</h3>
+          <div className="space-y-2">
+            {alertsQuery.data.alerts.map((alert) => (
+              <AlertCard key={alert.id} alert={alert} onDismiss={(id) => dismissAlert.mutate(id)} />
+            ))}
+          </div>
+        </div>
+      )}
+
       <section className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
         <div className="space-y-3">
-          <h3 className="font-display text-lg md:text-xl">Today&apos;s Brief</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-lg md:text-xl">Today&apos;s Brief</h3>
+            <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
+              {briefQuery.dataUpdatedAt ? (
+                <span>Updated {formatRelativeTime(briefQuery.dataUpdatedAt)}</span>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => refreshBrief.mutate()}
+                disabled={refreshBrief.isPending}
+              >
+                {refreshBrief.isPending ? "Refreshing..." : "↻ Refresh"}
+              </Button>
+            </div>
+          </div>
           {briefQuery.isLoading ? (
             <div className="text-sm text-[var(--muted)]">Loading brief...</div>
           ) : briefQuery.isError ? (
