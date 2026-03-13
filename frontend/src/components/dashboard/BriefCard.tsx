@@ -81,7 +81,7 @@ export function BriefCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <Badge>Brief #{index + 1}</Badge>
-            {isIsrael && <Badge variant="outline" className="text-xs">🔵 Israel</Badge>}
+            {isIsrael && <Badge className="text-xs">🔵 Israel</Badge>}
           </div>
           <div className="flex items-center gap-1.5">
             {typeof story.relevance_score === "number" && (

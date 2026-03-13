@@ -26,13 +26,13 @@ export function AlertCard({ alert, onDismiss }: AlertCardProps) {
               <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{content.summary}</p>
             )}
             <div className="flex gap-2 mt-2">
-              <Badge variant="outline" className="text-xs">📡 {content.source_count} sources</Badge>
+              <Badge className="text-xs">📡 {content.source_count} sources</Badge>
             </div>
           </div>
           <div className="flex gap-1 shrink-0">
             <Button
-              size="sm"
-              variant="outline"
+              variant="secondary"
+              className="h-8 px-3 text-xs"
               onClick={() => {
                 const text = `${content.title}\n\n${content.summary || ""}`;
                 router.push(`/create?text=${encodeURIComponent(text)}`);
@@ -40,7 +40,7 @@ export function AlertCard({ alert, onDismiss }: AlertCardProps) {
             >
               Write
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => onDismiss(alert.id)}>
+            <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => onDismiss(alert.id)}>
               ✕
             </Button>
           </div>
