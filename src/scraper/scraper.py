@@ -13,6 +13,7 @@ Key Features:
 
 import asyncio
 import json
+import os
 import random
 import logging
 from pathlib import Path
@@ -33,6 +34,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_VALID_BROWSERS = {"chromium", "firefox", "webkit"}
+
 
 class TwitterScraper:
     """
@@ -50,6 +53,10 @@ class TwitterScraper:
         self.headless = headless
         self.max_interactions = max_interactions
         self.interaction_count = 0
+
+        self.browser_type = os.environ.get("SCRAPER_BROWSER", "chromium").lower()
+        if self.browser_type not in _VALID_BROWSERS:
+            self.browser_type = "chromium"
 
         # Paths
         self.session_dir = Path(__file__).parent.parent.parent / "data" / "session"
@@ -77,11 +84,11 @@ class TwitterScraper:
         await asyncio.sleep(delay)
 
     async def _init_browser(self, use_session: bool = True):
-        """Initialize Playwright browser with Firefox (more stable on macOS)"""
+        """Initialize Playwright browser (configurable via SCRAPER_BROWSER env var)"""
         self.playwright = await async_playwright().start()
 
-        # Launch Firefox browser
-        self.browser = await self.playwright.firefox.launch(headless=self.headless)
+        launcher = getattr(self.playwright, self.browser_type)
+        self.browser = await launcher.launch(headless=self.headless)
 
         # Create context with session if available
         if use_session and self.session_file.exists():
@@ -94,20 +101,19 @@ class TwitterScraper:
 
         self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
 
-        # Stealth mode: Patch navigator.webdriver to avoid bot detection
-        await self.page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            // Hide automation indicators
-            window.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-        """)
+        # Stealth mode: browser-appropriate anti-detection scripts
+        if self.browser_type == "chromium":
+            await self.page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            """)
+        else:
+            await self.page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            """)
 
         # Set up cleanup for handlers
         self._handlers = []

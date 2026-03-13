@@ -333,6 +333,28 @@ class TestEnsureLoggedInSessionExpiry:
             asyncio.run(self.scraper.ensure_logged_in())
 
 
+class TestBrowserSelection:
+    def test_default_browser_is_chromium(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "chromium"
+
+    def test_browser_type_from_env(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua, \
+             patch.dict("os.environ", {"SCRAPER_BROWSER": "firefox"}):
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "firefox"
+
+    def test_invalid_browser_falls_back_to_chromium(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua, \
+             patch.dict("os.environ", {"SCRAPER_BROWSER": "safari"}):
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "chromium"
+
+
 def test_scraper_can_be_instantiated():
     """Integration smoke test - verify scraper can be created."""
     try:
