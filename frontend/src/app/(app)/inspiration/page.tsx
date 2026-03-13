@@ -96,8 +96,20 @@ export default function InspirationPage() {
         until: until || undefined,
       });
       toast.success("Search complete");
-    } catch {
-      toast.error("Search failed");
+    } catch (error: unknown) {
+      const err = error as { response?: { status?: number; data?: { detail?: string } } };
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+
+      if (status === 503) {
+        toast.error(detail || "X session expired. Refresh the session file on the server.");
+      } else if (status === 504) {
+        toast.error(detail || "Search timed out. Try again later.");
+      } else if (status === 404) {
+        toast.error(detail || "Account not tracked. Add it first using the + Add button above.");
+      } else {
+        toast.error(detail || "Search failed. Check server logs.");
+      }
     }
   };
 
@@ -172,9 +184,13 @@ export default function InspirationPage() {
 
       {searchMutation.isPending ? (
         <p className="text-sm text-[var(--muted)]">Searching...</p>
+      ) : posts.length === 0 && searchMutation.isSuccess ? (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-4 py-5 text-sm text-[var(--muted)]">
+          No posts found matching your criteria. Try lowering the minimum likes or broadening the date range.
+        </div>
       ) : posts.length === 0 ? (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-4 py-5 text-sm text-[var(--muted)]">
-          No posts yet. Run a search.
+          Search for high-engagement posts from tracked accounts.
         </div>
       ) : (
         <>
