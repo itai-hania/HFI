@@ -833,44 +833,6 @@ class TwitterScraper:
             return f"@{match.group(1)}"
         return ""
 
-    def _should_stop_at_other_author(self, seen_tweets: Dict, target_handle: str) -> bool:
-        """
-        Check if we should stop scrolling.
-        Stop when we encounter a tweet from a different author AFTER the root tweet.
-        This properly captures the thread and stops at replies from others.
-        """
-        if not target_handle:
-            return False
-
-        tweets = list(seen_tweets.values())
-        if len(tweets) < 2:
-            return False
-
-        # Sort tweets by timestamp to get proper sequence
-        sorted_tweets = sorted(tweets, key=lambda t: t.get('timestamp') or '')
-
-        # Normalize target handle
-        target = target_handle.lower().lstrip('@')
-
-        # Find first occurrence of target author (root tweet)
-        root_idx = -1
-        for idx, t in enumerate(sorted_tweets):
-            author = t.get('author_handle', '').lower().lstrip('@')
-            if author == target:
-                root_idx = idx
-                break
-
-        if root_idx == -1:
-            return False  # Haven't found root yet
-
-        # Check if ANY tweet after root is by different author
-        for t in sorted_tweets[root_idx + 1:]:
-            author = t.get('author_handle', '').lower().lstrip('@')
-            if author and author != target:
-                return True  # Stop: found non-author tweet
-
-        return False
-
     def filter_author_tweets_only(self, tweets: List[Dict], target_handle: str) -> List[Dict]:
         """
         Filter collected tweets to only include consecutive author tweets.
