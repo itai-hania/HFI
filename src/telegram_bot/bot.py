@@ -490,9 +490,13 @@ class HFIBot:
         if token == "refresh":
             force_refresh = True
             return count, force_refresh
-        if token in {"3", "4", "5"}:
-            return int(token), force_refresh
-        raise ValueError("Usage: /brief [3|4|5|refresh]")
+        try:
+            n = int(token)
+        except ValueError:
+            raise ValueError("Usage: /brief [1-8|refresh]")
+        if 1 <= n <= 8:
+            return n, force_refresh
+        raise ValueError("Usage: /brief [1-8|refresh]")
 
     async def cmd_brief(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._reject_if_unauthorized(update, "brief"):

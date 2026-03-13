@@ -122,7 +122,7 @@ class TestTelegramBotFormatting:
         expected = (
             "HFI Content Studio Bot is online.\n\n"
             "Commands:\n"
-            "/brief [3|4|5|refresh] - Fetch the latest brief, limit the number of stories, or force a refresh.\n"
+            "/brief [1-8|refresh] - Fetch the latest brief, limit the number of stories, or force a refresh.\n"
             "/story <n> - Show the source links and fuller context for story n from the latest brief.\n"
             "/lastbrief - Re-open the most recent brief without regenerating it.\n"
             "/write <n|x_url|https_url|text> - Turn a brief item, X post, article URL, or pasted text into Hebrew draft variants.\n"
@@ -136,3 +136,19 @@ class TestTelegramBotFormatting:
             "/help - Show examples and supported input formats."
         )
         assert render_start_text() == expected
+
+    def test_brief_input_accepts_1_to_8(self):
+        """_brief_input should accept any number 1-8, not just 3/4/5."""
+        from telegram_bot.bot import HFIBot
+
+        assert HFIBot._brief_input(["1"]) == (1, False)
+        assert HFIBot._brief_input(["6"]) == (6, False)
+        assert HFIBot._brief_input(["8"]) == (8, False)
+        assert HFIBot._brief_input(["refresh"]) == (5, True)
+        assert HFIBot._brief_input([]) == (5, False)
+
+        import pytest
+        with pytest.raises(ValueError):
+            HFIBot._brief_input(["9"])
+        with pytest.raises(ValueError):
+            HFIBot._brief_input(["0"])

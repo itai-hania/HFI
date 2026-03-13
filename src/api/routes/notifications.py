@@ -140,7 +140,7 @@ def get_alerts(
 
 @router.post("/alerts/check")
 def check_alerts(
-    min_sources: int = Query(3, ge=2, le=10),
+    min_sources: int = Query(2, ge=2, le=10),
     db: Session = Depends(get_db),
 ):
     """Run cross-source alert detection and persist new notifications."""

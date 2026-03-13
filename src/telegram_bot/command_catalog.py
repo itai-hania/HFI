@@ -22,7 +22,7 @@ class CommandSpec:
 COMMAND_CATALOG: tuple[CommandSpec, ...] = (
     CommandSpec(
         name="brief",
-        syntax="/brief [3|4|5|refresh]",
+        syntax="/brief [1-8|refresh]",
         summary="Fetch the latest brief, limit the number of stories, or force a refresh.",
         example="/brief 3",
     ),
