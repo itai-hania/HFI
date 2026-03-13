@@ -89,22 +89,37 @@ class NewsScraper:
     _FEED_TIMEOUT = 10  # seconds per feed
     _URL_DATE_RE = re.compile(r"/(20\d{2})-(\d{2})-(\d{2})(?:/|$)")
 
-    # Keywords that indicate Wall Street / stock market focus (boost these)
-    WALL_STREET_KEYWORDS = {
-        'stock', 'stocks', 'shares', 'trading', 'trader', 'investors', 'investment',
-        'nasdaq', 'nyse', 's&p', 'dow', 'earnings', 'ipo', 'market', 'markets',
-        'ticker', 'equity', 'equities', 'portfolio', 'hedge', 'fund', 'valuation',
-        'buyback', 'dividend', 'rally', 'plunge', 'surge', 'analyst', 'rating',
-        'upgrade', 'downgrade', 'target', 'price', 'wall', 'street', 'bullish',
-        'bearish', 'volatility', 'gain', 'loss', 'index', 'etf', 'sec'
+    MUST_INCLUDE_KEYWORDS = {
+        # Wall Street / US Markets
+        'wall street', 'nasdaq', 's&p', 's&p 500', 'dow jones', 'dow', 'nyse',
+        'ipo', 'earnings', 'fed', 'fomc', 'treasury', 'sec',
+        'stock', 'stocks', 'shares', 'trading', 'investors', 'equity',
+        'rally', 'plunge', 'surge', 'etf', 'dividend', 'buyback',
+        'bullish', 'bearish', 'volatility',
+        # FinTech / Tech
+        'fintech', 'neobank', 'crypto', 'bitcoin', 'ethereum', 'defi',
+        'payments', 'blockchain', 'saas', 'b2b', 'cybersecurity',
+        'startup', 'funding', 'series a', 'series b', 'series c',
+        'valuation', 'acquisition', 'venture capital', 'vc',
+        # Israel
+        'israel', 'israeli', 'tel aviv', 'tase', 'check point', 'wix',
+        'monday.com', 'fiverr', 'ironsource', 'mobileye', 'playtika',
     }
 
-    # Keywords that indicate general economy (penalize these for finance)
-    GENERAL_ECONOMY_KEYWORDS = {
-        'economy', 'gdp', 'unemployment', 'inflation', 'deflation', 'recession',
-        'policy', 'tariff', 'tariffs', 'trade', 'deficit', 'budget', 'senate',
-        'congress', 'government', 'federal', 'reserve', 'central', 'bank'
+    EXCLUDE_KEYWORDS = {
+        'tariff', 'tariffs', 'trade war', 'eu regulation', 'brexit',
+        'china sanctions', 'senate vote', 'congress bill', 'political',
+        'election', 'campaign', 'diplomatic', 'military',
+        'climate policy', 'carbon tax', 'immigration',
     }
+
+    _RELEVANCE_THRESHOLD = 15
+
+    # Pre-split multi-word keywords for efficient matching
+    _MUST_INCLUDE_SINGLE = {kw for kw in MUST_INCLUDE_KEYWORDS if ' ' not in kw}
+    _MUST_INCLUDE_MULTI = {kw for kw in MUST_INCLUDE_KEYWORDS if ' ' in kw}
+    _EXCLUDE_SINGLE = {kw for kw in EXCLUDE_KEYWORDS if ' ' not in kw}
+    _EXCLUDE_MULTI = {kw for kw in EXCLUDE_KEYWORDS if ' ' in kw}
 
     def __init__(self):
         """Initialize the news scraper."""
@@ -799,18 +814,19 @@ class NewsScraper:
 
     def _rank_articles(self, articles: List[Dict]) -> List[Dict]:
         """
-        Rank articles by cross-source keyword overlap with Wall Street focus.
+        Rank articles by cross-source keyword overlap with relevance focus.
 
         Algorithm:
         1. Extract keywords from each article title
         2. Build map: keyword -> set of sources mentioning it
         3. Score each article:
            - Cross-source keywords: +10 * source_count
-           - Wall Street keywords: +15 bonus
-           - General economy keywords: -10 penalty (for finance sources)
+           - MUST_INCLUDE keywords: +10 bonus per hit
+           - EXCLUDE keywords: -20 penalty per hit
            - Single-source keywords: +1
-        4. Deduplicate similar articles (keep highest scored)
-        5. Sort by score descending
+        4. Filter articles below _RELEVANCE_THRESHOLD
+        5. Deduplicate similar articles (keep highest scored)
+        6. Sort by score descending
         """
         # Build keyword -> set of sources
         keyword_sources: Dict[str, set] = {}
@@ -835,14 +851,18 @@ class NewsScraper:
                 else:
                     score += 1
 
-            # Boost Wall Street focused articles
-            wall_street_count = sum(1 for kw in keywords if kw in self.WALL_STREET_KEYWORDS)
-            score += wall_street_count * 15
+            # Boost articles matching MUST_INCLUDE keywords
+            text_lower = self._article_text_lower(article)
+            must_count = self._count_keyword_hits(text_lower, keywords,
+                                                  self._MUST_INCLUDE_SINGLE,
+                                                  self._MUST_INCLUDE_MULTI)
+            score += must_count * 10
 
-            # Penalize general economy articles (for finance sources only)
-            if article.get('category') == 'Finance':
-                economy_count = sum(1 for kw in keywords if kw in self.GENERAL_ECONOMY_KEYWORDS)
-                score -= economy_count * 10
+            # Penalize articles matching EXCLUDE keywords
+            exclude_count = self._count_keyword_hits(text_lower, keywords,
+                                                     self._EXCLUDE_SINGLE,
+                                                     self._EXCLUDE_MULTI)
+            score -= exclude_count * 20
 
             # Recency bonus: fresher articles score higher
             discovered_at = article.get('discovered_at')
@@ -857,11 +877,29 @@ class NewsScraper:
 
             article['score'] = score
 
+        # Filter articles below relevance threshold
+        articles = [a for a in articles if a['score'] >= self._RELEVANCE_THRESHOLD]
+
         # Remove duplicates (similar articles from different sources)
         articles = self._deduplicate_articles(articles)
 
         articles.sort(key=lambda a: a['score'], reverse=True)
         return articles
+
+    @staticmethod
+    def _article_text_lower(article: Dict) -> str:
+        """Combine title and description into lowercase text for phrase matching."""
+        title = article.get('title', '') or ''
+        desc = article.get('description', '') or ''
+        return f"{title} {desc}".lower()
+
+    @staticmethod
+    def _count_keyword_hits(text_lower: str, single_keywords: List[str],
+                            single_set: set, multi_set: set) -> int:
+        """Count how many keywords from single_set and multi_set match."""
+        count = sum(1 for kw in single_keywords if kw in single_set)
+        count += sum(1 for phrase in multi_set if phrase in text_lower)
+        return count
 
     def _deduplicate_articles(self, articles: List[Dict]) -> List[Dict]:
         """
