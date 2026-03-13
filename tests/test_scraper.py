@@ -355,6 +355,38 @@ class TestBrowserSelection:
         assert scraper.browser_type == "chromium"
 
 
+class TestVideoStreamMerge:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_video_streams_merged_into_tweets(self):
+        tweets = [
+            {
+                "tweet_id": "123",
+                "text": "Check this video",
+                "media": [{"type": "video", "src": "", "alt": ""}],
+                "permalink": "https://x.com/user/status/123",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "author_handle": "@user",
+            }
+        ]
+        self.scraper.video_streams = {
+            "123": "https://video.twimg.com/ext_tw_video/123/pu/vid/1280x720/abc.mp4"
+        }
+        merged = self.scraper._merge_video_streams(tweets)
+        video_media = [m for m in merged[0]["media"] if m["type"] == "video"]
+        assert video_media[0]["src"] == "https://video.twimg.com/ext_tw_video/123/pu/vid/1280x720/abc.mp4"
+
+    def test_no_video_streams_unchanged(self):
+        tweets = [{"tweet_id": "1", "media": [{"type": "photo", "src": "img.jpg"}]}]
+        self.scraper.video_streams = {}
+        result = self.scraper._merge_video_streams(tweets)
+        assert result[0]["media"][0]["src"] == "img.jpg"
+
+
 def test_scraper_can_be_instantiated():
     """Integration smoke test - verify scraper can be created."""
     try:

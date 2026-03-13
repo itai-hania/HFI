@@ -632,6 +632,8 @@ class TwitterScraper:
             else:
                 tweets_to_return = all_tweets
 
+            tweets_to_return = self._merge_video_streams(tweets_to_return)
+
             # Find author info from first matching tweet
             author_name = ""
             for t in tweets_to_return:
@@ -1047,6 +1049,21 @@ class TwitterScraper:
                 break  # Stop at first non-author tweet
 
         return result
+
+    def _merge_video_streams(self, tweets: List[Dict]) -> List[Dict]:
+        """Replace empty video src with captured stream URLs."""
+        if not hasattr(self, 'video_streams') or not self.video_streams:
+            return tweets
+        for tweet in tweets:
+            tweet_id = tweet.get("tweet_id", "")
+            stream_url = self.video_streams.get(tweet_id)
+            if not stream_url:
+                continue
+            for media_item in tweet.get("media", []):
+                if media_item.get("type") == "video" and not media_item.get("src"):
+                    media_item["src"] = stream_url
+                    break
+        return tweets
 
     async def close(self):
         """Clean up resources"""
