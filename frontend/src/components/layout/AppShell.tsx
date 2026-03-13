@@ -13,6 +13,9 @@ function getPageMeta(pathname: string) {
   if (pathname.startsWith("/create")) {
     return { title: "Create", description: "Craft and polish Hebrew copy with controlled workflow." };
   }
+  if (pathname.startsWith("/acquire")) {
+    return { title: "Acquire", description: "Scrape X threads, auto-translate, and send to studio." };
+  }
   if (pathname.startsWith("/queue")) {
     return { title: "Queue", description: "Review drafts, schedule approved content, and monitor publication states." };
   }
