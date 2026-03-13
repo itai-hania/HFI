@@ -9,7 +9,7 @@
 
 **Name:** Hebrew FinTech Informant (HFI)
 **Type:** Automated content creation pipeline
-**Tech Stack:** Python, FastAPI, Next.js, Playwright, OpenAI GPT-4o, SQLite, Telegram Bot API, Docker, Kubernetes, RSS Feed Parsing
+**Tech Stack:** Python, FastAPI, Next.js, Playwright, OpenAI GPT-4o, SQLite, Telegram Bot API, Docker, RSS Feed Parsing
 **Purpose:** Scrape English FinTech content from X (Twitter) + news sources, rank by relevance, translate/generate Hebrew content, manage content in a Next.js studio, and deliver briefs/alerts through Telegram
 
 ---
@@ -27,8 +27,7 @@
 - ✅ Telegram bot service (briefs, alerts, commands + scheduler)
 - ✅ Database models (SQLAlchemy + SQLite)
 - ✅ Docker containers + Compose file
-- ✅ Kubernetes manifests (ready for deployment)
-- ✅ Comprehensive testing (100% pass rate - 468/468 tests)
+- ✅ Comprehensive testing (100% pass rate)
 - ✅ Code quality refactor (7 phases — prompt extraction, perf, security, packaging, dashboard split, tests)
 - ✅ Security hardening (auth, rate limiting, input validation, XSS, CORS)
 - ✅ Performance optimization (query consolidation, parallel feeds, caching, N+1 fixes)
@@ -101,7 +100,6 @@ HFI/
 │       │   └── settings.py  # Settings page
 │       └── Dockerfile
 ├── frontend/                # Next.js Content Studio
-├── archive/                 # Archived legacy modules
 ├── config/
 │   ├── glossary.json        # EN→HE term translations
 │   └── style.txt            # Hebrew tweet examples
@@ -110,16 +108,12 @@ HFI/
 │   ├── media/              # Downloaded media
 │   └── session/            # Browser session cookies
 ├── docs/                    # Documentation, plans, PDFs
-├── k8s/                     # K8s manifests
+│   └── archive/            # Completed plan documents
 ├── tests/                   # ALL test files (pytest)
 ├── tools/                   # Utility / one-off scripts
 │   ├── init_db.py           # Database initializer
-│   ├── verify_setup.py      # Pre-flight dependency checker
-│   ├── verify_changes.py    # Import sanity checker
-│   └── scrape_hebrew_threads.py  # Ad-hoc style-data scraper
+│   └── verify_setup.py      # Pre-flight dependency checker
 ├── docker-compose.yml
-├── docker-build.sh          # Docker build helper
-├── docker-validate.sh       # Docker validation
 ├── start_services.py        # App entrypoint
 ├── .env                     # Environment configuration (not in git)
 ├── CLAUDE.md
@@ -131,8 +125,8 @@ HFI/
 ## 🗂️ Project Structure Rules
 
 **NEVER drop files at the repository root.** The root is reserved exclusively for:
-- Project config/meta: `README.md`, `CLAUDE.md`, `AGENTS.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`, `requirements.txt`
-- Docker: `docker-compose.yml`, `docker-build.sh`, `docker-validate.sh`
+- Project config/meta: `README.md`, `CLAUDE.md`, `AGENTS.md`, `.env`, `.gitignore`, `.dockerignore`, `pyproject.toml`
+- Docker: `docker-compose.yml`
 - App entrypoint: `start_services.py`
 
 ### Where each file type belongs
@@ -143,7 +137,6 @@ HFI/
 | `verify_*.py`, `init_*.py`, ad-hoc scripts | `tools/` |
 | Scraper/processor/dashboard logic | `src/<service>/` |
 | `.md` plans, specs, PDFs, reference docs | `docs/` |
-| K8s YAML manifests | `k8s/` |
 | Glossary, style guide, config JSONs | `config/` |
 | DB file, media downloads, session cookies | `data/` (gitignored) |
 
@@ -165,9 +158,7 @@ HFI/
   - `ensure_logged_in()` - Handles X authentication
   - `get_trending_topics()` - Scrapes X Explore page
   - `get_tweet_content(url)` - Fetches individual tweet
-  - `fetch_thread(url)` - Scrapes full thread with replies
   - `fetch_raw_thread(url, author_only)` - Raw thread data extraction
-  - `_scroll_and_collect()` - Scrolls page and collects tweets
 
 ### When Helping with News Scraper
 - **`src/scraper/news_scraper.py`** - RSS feed aggregation + ranking
@@ -271,11 +262,9 @@ time[datetime]                       // Timestamp
 **Check:**
 - RSS feeds are accessible: `curl -I https://finance.yahoo.com/news/rssindex`
 - `feedparser` dependency installed: `pip install feedparser`
-- Streamlit server restarted (module caching issue): `pkill -f streamlit && python -m streamlit run app.py`
 - Check logs for feed parsing errors (bozo_exception)
 
 **Common Fixes:**
-- **Module cache**: If dashboard shows old code, restart Streamlit completely
 - **Feed changes**: RSS URLs may change; verify each feed individually
 - **Network issues**: Some feeds may be temporarily unavailable
 
@@ -315,7 +304,6 @@ docker-compose down           # Stop
 - URL: `https://hfi-prod.israelcentral.cloudapp.azure.com`
 - Caddy handles Let's Encrypt TLS automatically
 - CI/CD: push to `main` → GitHub Actions self-hosted runner auto-deploys
-- Legacy K8s manifests in `k8s/` (superseded)
 
 ---
 
@@ -387,7 +375,7 @@ pytest tests/ -v
 
 # Specific component
 pytest tests/test_scraper.py -v
-pytest tests/test_processor.py -v
+pytest tests/test_processor_comprehensive.py -v
 pytest tests/test_models.py -v
 pytest tests/test_dashboard.py -v
 
@@ -395,13 +383,12 @@ pytest tests/test_dashboard.py -v
 pytest --cov=src tests/
 ```
 
-**Current Status:** 468/468 tests passing (100%)
+**Current Status:** All tests passing (100%)
 
 **Test Files:**
 - `tests/test_models.py` - Database models
 - `tests/test_scraper.py` - X scraper functionality
 - `tests/test_scraper_page.py` - Scraper page mock tests
-- `tests/test_processor.py` - Translation + downloads
 - `tests/test_processor_comprehensive.py` - Processor config, translation, batch processing
 - `tests/test_content_generator.py` - Content generation engine
 - `tests/test_prompt_builder.py` - Shared prompt builder utilities
@@ -411,7 +398,6 @@ pytest --cov=src tests/
 - `tests/test_summary_generator.py` - Summary generation logic
 - `tests/test_thread_media.py` - Thread media downloads
 - `tests/test_thread_translation.py` - Thread translation logic (parameterized)
-- Dashboard UI tested manually (Streamlit apps)
 
 ---
 
@@ -528,7 +514,23 @@ Before declaring a dashboard feature complete:
 
 ## Recent Updates & Changes
 
-### 2026-02-15 (Latest)
+### 2026-03-13 (Latest)
+- ✅ **Legacy code cleanup** — full codebase audit and removal
+  - Deleted `archive/dashboard-v1/` (22 files, zero imports)
+  - Removed dead query helpers from `models.py` (get_tweets_by_status, get_recent_trends, update_tweet_status)
+  - Removed dead scraper methods (fetch_thread, _scroll_and_collect, main demo)
+  - Cleaned processor dead code (dead imports, unreachable returns, unused methods)
+  - Removed dead API schemas (TrendCreate, TrendUpdate) and unused route helper
+  - Moved misplaced test scripts from `tests/` to `tools/`
+  - Deleted stale tools (verify_changes.py, scrape_hebrew_threads.py)
+  - Deleted superseded `k8s/` directory (12 files, ~2,669 lines)
+  - Deleted stale Docker scripts (docker-build.sh, docker-validate.sh)
+  - Cleaned `start_services.py` — removed deprecated dashboard menu options, fixed tool paths
+  - Removed misleading root `requirements.txt`
+  - Consolidated duplicate STOPWORDS into `src/common/stopwords.py`
+  - Archived completed plan documents to `docs/archive/`
+
+### 2026-02-15
 - ✅ **Performance optimization for public deployment** (468/468 tests)
   - Database: Collapsed `get_stats()` from 6 queries to 1 (GROUP BY + conditional aggregation) with 5s TTL cache
   - Database: Gated `create_tables()` behind session flag (was running 12 ALTER TABLE attempts per rerun)
@@ -660,7 +662,7 @@ Before declaring a dashboard feature complete:
 ### Add Analytics
 1. Extend `Tweet` model with engagement fields (views, likes, retweets)
 2. Create `src/analytics/tracker.py`
-3. Add analytics page to Streamlit dashboard
+3. Add analytics page to Next.js frontend
 
 ---
 
@@ -689,16 +691,6 @@ cd src/processor
 python main.py  # Runs continuously
 ```
 
-### Dashboard
-```bash
-cd src/dashboard
-python3 -m streamlit run app.py  # Access at http://localhost:8501
-
-# Restart if code changed
-pkill -f streamlit
-python3 -m streamlit run app.py
-```
-
 ### Database Inspection
 ```bash
 sqlite3 data/hfi.db
@@ -722,12 +714,12 @@ SELECT * FROM trends ORDER BY discovered_at DESC LIMIT 10;
 ### "News scraper not fetching trends"
 1. Check RSS feed connectivity: `curl -I https://finance.yahoo.com/news/rssindex`
 2. Verify `feedparser` installed: `pip show feedparser`
-3. Check dashboard logs for parsing errors
-4. Restart Streamlit to clear module cache
+3. Check API logs for parsing errors
+4. Verify news scraper module is importable
 
-### "Dashboard shows error after code change"
-1. **FIRST:** Restart Streamlit (`pkill -f streamlit && python3 -m streamlit run app.py`)
-2. Check browser console for JavaScript errors
+### "Frontend shows error after code change"
+1. Check browser console for JavaScript errors
+2. Restart Next.js dev server (`cd frontend && npm run dev`)
 3. Verify database schema matches models
 4. Test in browser using MCP tools
 
@@ -765,7 +757,7 @@ SELECT * FROM trends ORDER BY discovered_at DESC LIMIT 10;
 ## Project Goals
 
 **Primary:** Enable one person to monitor FinTech trends from multiple sources and publish Hebrew content efficiently
-**Secondary:** Learn AI automation, practice DevOps (Docker/K8s), experiment with LLMs and RSS aggregation
+**Secondary:** Learn AI automation, practice DevOps (Docker), experiment with LLMs and RSS aggregation
 
 **Non-Goals:**
 - Not trying to replace human creativity (hence human-in-loop dashboard)
@@ -787,12 +779,11 @@ When helping:
 **User Preferences:**
 - Minimal comments in code (only complex sections)
 - Test all features (unit tests + browser tests)
-- Always restart Streamlit after code changes
 - Check `.agent` directory for task-specific rules
 - Update documentation after changes
 
 ---
 
-**Last Updated:** 2026-03-09
-**Version:** 1.7
+**Last Updated:** 2026-03-13
+**Version:** 1.8
 **Maintained by:** HFI Project Team
