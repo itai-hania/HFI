@@ -895,7 +895,19 @@ class TwitterScraper:
                 for (const span of userSection?.querySelectorAll("span") || []) {
                   const text = span.textContent?.trim() || "";
                   if (text.startsWith("@")) authorHandle = text;
-                  else if (!authorName) authorName = text;
+                  else if (!authorName && text && !text.includes("\u00b7")) authorName = text;
+                }
+                if (!authorHandle && permalink) {
+                  const handleMatch = permalink.match(/(?:x\\.com|twitter\\.com)\\/([^/]+)\\/status/);
+                  if (handleMatch) authorHandle = "@" + handleMatch[1];
+                }
+                if (!authorHandle) {
+                  const userLink = userSection?.querySelector('a[href^="/"]');
+                  if (userLink) {
+                    const href = userLink.getAttribute("href") || "";
+                    const parts = href.split("/").filter(Boolean);
+                    if (parts.length >= 1) authorHandle = "@" + parts[0];
+                  }
                 }
                 
                 // Get tweet text
