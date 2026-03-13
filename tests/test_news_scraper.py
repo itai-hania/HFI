@@ -75,3 +75,98 @@ def test_relevance_threshold_drops_low_score():
     assert "Bitcoin ETF sees record inflows on Wall Street" in titles
     if len(ranked) > 1:
         assert ranked[-1]["title"] == noise["title"]
+
+
+# ==================== Three-Bucket Source Weighting ====================
+
+
+def test_three_bucket_weighting():
+    """get_latest_news should fetch from finance, tech, and israel buckets."""
+    scraper = NewsScraper()
+
+    fetch_calls = []
+
+    def mock_fetch(sources, limit_per_source, category):
+        fetch_calls.append({"sources": sources, "category": category})
+        return []
+
+    scraper._fetch_by_category = mock_fetch
+    scraper.get_latest_news(total_limit=8)
+
+    categories_called = {c["category"] for c in fetch_calls}
+    assert "Finance" in categories_called
+    assert "Tech" in categories_called
+    assert "Israel" in categories_called
+
+
+def test_israel_slot_guaranteed():
+    """At least 1 Israel story should be included if available."""
+    scraper = NewsScraper()
+
+    mock_finance = [{"title": f"Finance {i}", "source": "Bloomberg", "description": "",
+                     "url": f"https://ex.com/f{i}", "category": "Finance", "score": 50-i}
+                    for i in range(6)]
+    mock_israel = [{"title": "Wix Reports Growth", "source": "Calcalist", "description": "",
+                    "url": "https://ex.com/il1", "category": "Israel", "score": 10}]
+
+    def mock_fetch(sources, limit_per_source, category):
+        if category == "Finance":
+            return mock_finance
+        if category == "Israel":
+            return mock_israel
+        return []
+
+    scraper._fetch_by_category = mock_fetch
+    results = scraper.get_latest_news(total_limit=8)
+
+    israel_titles = [r["title"] for r in results if r.get("category") == "Israel"]
+    assert len(israel_titles) >= 1, "At least 1 Israel story must be included"
+
+
+def test_three_bucket_no_finance_weight_param():
+    """get_latest_news should not accept finance_weight parameter."""
+    import inspect
+    scraper = NewsScraper()
+    sig = inspect.signature(scraper.get_latest_news)
+    assert "finance_weight" not in sig.parameters, "finance_weight param should be removed"
+
+
+def test_three_bucket_interleaving():
+    """Results should interleave finance, tech, and israel articles."""
+    scraper = NewsScraper()
+
+    mock_finance = [{"title": f"Wall Street stocks rally on NASDAQ earnings {i}", "source": "Bloomberg", "description": "",
+                     "url": f"https://ex.com/f{i}", "category": "Finance", "score": 50-i}
+                    for i in range(4)]
+    mock_tech = [{"title": f"Fintech startup raises Series B funding round {i}", "source": "TechCrunch", "description": "",
+                  "url": f"https://ex.com/t{i}", "category": "Tech", "score": 40-i}
+                 for i in range(2)]
+    mock_israel = [{"title": f"Israeli startup Wix reports growth in Tel Aviv {i}", "source": "Calcalist", "description": "",
+                    "url": f"https://ex.com/il{i}", "category": "Israel", "score": 30-i}
+                   for i in range(2)]
+
+    def mock_fetch(sources, limit_per_source, category):
+        if category == "Finance":
+            return mock_finance
+        if category == "Tech":
+            return mock_tech
+        if category == "Israel":
+            return mock_israel
+        return []
+
+    scraper._fetch_by_category = mock_fetch
+    results = scraper.get_latest_news(total_limit=8)
+
+    categories = [r["category"] for r in results]
+    assert "Finance" in categories
+    assert "Tech" in categories
+    assert "Israel" in categories
+
+
+def test_source_category_includes_israel():
+    """_source_category should return 'Israel' for Israeli sources."""
+    assert NewsScraper._source_category("Calcalist") == "Israel"
+    assert NewsScraper._source_category("Globes") == "Israel"
+    assert NewsScraper._source_category("Times of Israel") == "Israel"
+    assert NewsScraper._source_category("Bloomberg") == "Finance"
+    assert NewsScraper._source_category("TechCrunch") == "Tech"

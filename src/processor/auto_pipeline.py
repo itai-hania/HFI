@@ -103,7 +103,6 @@ class AutoPipeline:
         db: Session,
         top_n: int = 3,
         auto_summarize: bool = True,
-        finance_weight: float = 0.7,
     ) -> List[Dict]:
         """
         Phase A: Fetch trends, save to DB, pick top N, optionally summarize.
@@ -123,7 +122,6 @@ class AutoPipeline:
         ranked_news = self.news_scraper.get_latest_news(
             limit_per_source=10,
             total_limit=10,
-            finance_weight=finance_weight,
         )
 
         # 2. Save new trends to DB (batch-fetch existing titles first)

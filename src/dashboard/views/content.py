@@ -513,7 +513,7 @@ def _render_acquire_section(db):
                 try:
                     from scraper.news_scraper import NewsScraper
                     scraper = NewsScraper()
-                    ranked_news = scraper.get_latest_news(limit_per_source=10, total_limit=10, finance_weight=0.7)
+                    ranked_news = scraper.get_latest_news(limit_per_source=10, total_limit=10)
 
                     source_map = {
                         'Yahoo Finance': TrendSource.YAHOO_FINANCE,
