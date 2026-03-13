@@ -420,6 +420,37 @@ class TestPageValidation:
         asyncio.run(self.scraper._validate_page_loaded())  # Should not raise
 
 
+class TestFilterAuthorQuotedTweets:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_quoted_tweet_does_not_break_thread(self):
+        tweets = [
+            {"tweet_id": "1", "author_handle": "@alice", "text": "Thread start", "timestamp": "2026-01-01T00:00:00Z"},
+            {"tweet_id": "2", "author_handle": "@bob", "text": "Quoted/reply", "timestamp": "2026-01-01T00:00:30Z"},
+            {"tweet_id": "3", "author_handle": "@alice", "text": "Thread continues", "timestamp": "2026-01-01T00:01:00Z"},
+            {"tweet_id": "4", "author_handle": "@alice", "text": "Thread end", "timestamp": "2026-01-01T00:02:00Z"},
+        ]
+        result = self.scraper.filter_author_tweets_only(tweets, "@alice")
+        assert len(result) == 3
+        assert [t["tweet_id"] for t in result] == ["1", "3", "4"]
+
+    def test_genuine_end_of_thread(self):
+        tweets = [
+            {"tweet_id": "1", "author_handle": "@alice", "text": "Thread 1", "timestamp": "2026-01-01T00:00:00Z"},
+            {"tweet_id": "2", "author_handle": "@alice", "text": "Thread 2", "timestamp": "2026-01-01T00:01:00Z"},
+            {"tweet_id": "3", "author_handle": "@bob", "text": "Reply 1", "timestamp": "2026-01-01T00:02:00Z"},
+            {"tweet_id": "4", "author_handle": "@charlie", "text": "Reply 2", "timestamp": "2026-01-01T00:03:00Z"},
+            {"tweet_id": "5", "author_handle": "@alice", "text": "Separate tweet", "timestamp": "2026-01-01T00:10:00Z"},
+        ]
+        result = self.scraper.filter_author_tweets_only(tweets, "@alice")
+        assert len(result) == 2
+        assert [t["tweet_id"] for t in result] == ["1", "2"]
+
+
 def test_scraper_can_be_instantiated():
     """Integration smoke test - verify scraper can be created."""
     try:

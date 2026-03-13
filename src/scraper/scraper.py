@@ -1004,45 +1004,33 @@ class TwitterScraper:
 
     def filter_author_tweets_only(self, tweets: List[Dict], target_handle: str) -> List[Dict]:
         """
-        Filter collected tweets to only include consecutive author tweets.
-        Sorts by timestamp, starts from root, stops at first non-author tweet.
-
-        Args:
-            tweets: List of tweet dicts
-            target_handle: Target author handle (e.g., "@elonmusk" or "elonmusk")
-
-        Returns:
-            Filtered list of only the target author's consecutive tweets
+        Filter to target author's thread tweets.
+        Tolerates single interspersed non-author tweets (quoted tweets, UI artifacts)
+        but stops at 2+ consecutive non-author tweets (end of thread).
         """
         if not tweets or not target_handle:
             return tweets
-
-        # Normalize target
         target = target_handle.lower().lstrip('@')
-
-        # Sort by timestamp
         sorted_tweets = sorted(tweets, key=lambda t: t.get('timestamp') or '')
-
-        # Find root tweet (first by target author)
         root_idx = -1
         for idx, t in enumerate(sorted_tweets):
             author = t.get('author_handle', '').lower().lstrip('@')
             if author == target:
                 root_idx = idx
                 break
-
         if root_idx == -1:
-            return []  # No tweets by target found
-
-        # Collect consecutive author tweets starting from root
+            return []
         result = []
+        consecutive_non_author = 0
         for t in sorted_tweets[root_idx:]:
             author = t.get('author_handle', '').lower().lstrip('@')
             if author == target:
                 result.append(t)
+                consecutive_non_author = 0
             else:
-                break  # Stop at first non-author tweet
-
+                consecutive_non_author += 1
+                if consecutive_non_author >= 2:
+                    break
         return result
 
     async def _validate_page_loaded(self):
