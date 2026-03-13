@@ -14,7 +14,7 @@ from typing import List, Dict, Optional, Set
 from sqlalchemy.orm import Session
 
 from common.models import Trend, Tweet, TrendSource, TweetStatus
-from scraper.news_scraper import STOPWORDS
+from common.stopwords import STOPWORDS
 
 logger = logging.getLogger(__name__)
 

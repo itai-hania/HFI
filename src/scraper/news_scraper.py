@@ -24,27 +24,14 @@ from html.parser import HTMLParser
 from io import StringIO
 from typing import Any, List, Dict, Optional
 
+from common.stopwords import STOPWORDS
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-STOPWORDS = {
-    'the', 'a', 'an', 'in', 'on', 'at', 'for', 'of', 'to', 'is', 'are', 'was',
-    'were', 'be', 'been', 'has', 'have', 'had', 'do', 'does', 'did', 'will',
-    'would', 'could', 'should', 'may', 'might', 'can', 'shall', 'and', 'but',
-    'or', 'nor', 'not', 'no', 'so', 'yet', 'both', 'either', 'neither',
-    'each', 'every', 'all', 'any', 'few', 'more', 'most', 'other', 'some',
-    'such', 'than', 'too', 'very', 'just', 'also', 'now', 'new', 'says',
-    'said', 'its', 'it', 'this', 'that', 'these', 'those', 'what', 'which',
-    'who', 'whom', 'how', 'why', 'when', 'where', 'with', 'from', 'by',
-    'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
-    'up', 'down', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
-    'once', 'here', 'there', 'as', 'if', 'while', 'report', 'reports',
-    'according', 'amid', 'among', 'like', 'between', 'against', 'despite',
-}
 
 
 class _HTMLStripper(HTMLParser):

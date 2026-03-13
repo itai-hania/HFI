@@ -10,24 +10,7 @@ from typing import Any, Dict, List, Sequence
 from sqlalchemy.orm import Session
 
 from common.models import Notification
-
-_STOPWORDS = {
-    "the",
-    "a",
-    "an",
-    "and",
-    "or",
-    "of",
-    "to",
-    "for",
-    "in",
-    "on",
-    "with",
-    "at",
-    "from",
-    "new",
-    "says",
-}
+from common.stopwords import STOPWORDS
 
 
 class AlertDetector:
@@ -40,7 +23,7 @@ class AlertDetector:
     @staticmethod
     def _extract_keywords(title: str) -> set[str]:
         words = re.findall(r"[A-Za-z0-9']+", (title or "").lower())
-        return {w for w in words if len(w) > 2 and w not in _STOPWORDS}
+        return {w for w in words if len(w) > 2 and w not in STOPWORDS}
 
     @staticmethod
     def _similarity(a: str, b: str) -> float:
