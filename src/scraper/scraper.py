@@ -929,7 +929,7 @@ class TwitterScraper:
         """Extract handle from URL e.g. https://x.com/handle/status/..."""
         # Simple extraction
         # Matches https://x.com/[handle]/status/...
-        match = re.search(r'x\.com/([^/]+)/status', url)
+        match = re.search(r'(?:x\.com|twitter\.com)/([^/]+)/status', url)
         if match:
             return f"@{match.group(1)}"
         return ""

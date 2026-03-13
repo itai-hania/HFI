@@ -295,6 +295,29 @@ class TestTwitterScraperEdgeCases:
         assert 'x.com/search' in search_url
 
 
+class TestExtractHandleFromUrl:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    @pytest.mark.parametrize("url,expected", [
+        ("https://x.com/elonmusk/status/123456", "@elonmusk"),
+        ("https://twitter.com/elonmusk/status/123456", "@elonmusk"),
+        ("https://www.twitter.com/user/status/999", "@user"),
+        ("https://mobile.twitter.com/user/status/999", "@user"),
+        ("https://mobile.x.com/user/status/999", "@user"),
+        ("https://www.x.com/user/status/999", "@user"),
+        ("https://x.com/user/status/999/photo/1", "@user"),
+        ("https://example.com/status/123", ""),
+        ("https://x.com/user/likes", ""),
+        ("not a url", ""),
+    ])
+    def test_extract_handle(self, url, expected):
+        assert self.scraper._extract_handle_from_url(url) == expected
+
+
 def test_scraper_can_be_instantiated():
     """Integration smoke test - verify scraper can be created."""
     try:
