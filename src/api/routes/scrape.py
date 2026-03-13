@@ -142,6 +142,13 @@ async def content_from_thread(
     saved_items: list[dict] = []
 
     if request.mode == "consolidated":
+        existing = db.query(Tweet).filter_by(source_url=request.url).first()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Thread already saved (id={existing.id})",
+            )
+
         original_text = "\n\n".join(
             t.get("text", "") for t in tweets_data if t.get("text")
         )
@@ -174,7 +181,12 @@ async def content_from_thread(
         db.add(tweet)
         db.commit()
         db.refresh(tweet)
-        saved_items.append({"id": tweet.id, "status": tweet.status.value})
+        saved_items.append({
+            "id": tweet.id,
+            "status": tweet.status.value,
+            "original_text": tweet.original_text,
+            "hebrew_draft": tweet.hebrew_draft,
+        })
 
     else:  # separate
         for t in tweets_data:
@@ -202,6 +214,16 @@ async def content_from_thread(
                     base = parts[0]
                     tweet_url = f"{base}/status/{tweet_id}"
 
+            existing = db.query(Tweet).filter_by(source_url=tweet_url).first()
+            if existing:
+                saved_items.append({
+                    "id": existing.id,
+                    "status": existing.status.value,
+                    "original_text": existing.original_text,
+                    "hebrew_draft": existing.hebrew_draft,
+                })
+                continue
+
             tweet = Tweet(
                 source_url=tweet_url,
                 original_text=text,
@@ -218,7 +240,12 @@ async def content_from_thread(
             db.add(tweet)
             db.commit()
             db.refresh(tweet)
-            saved_items.append({"id": tweet.id, "status": tweet.status.value})
+            saved_items.append({
+                "id": tweet.id,
+                "status": tweet.status.value,
+                "original_text": tweet.original_text,
+                "hebrew_draft": tweet.hebrew_draft,
+            })
 
     return ContentFromThreadResponse(
         mode=request.mode,

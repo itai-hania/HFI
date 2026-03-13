@@ -913,8 +913,9 @@ class HFIBot:
                 "url": validated, "mode": "consolidated", "auto_translate": True,
             })
             data = response.json()
-            preview = _safe_preview(data.get("hebrew_draft") or data.get("original_text") or "", max_chars=500)
-            draft_id = data.get("id", "?")
+            first = data.get("saved_items", [{}])[0] if data.get("saved_items") else {}
+            preview = _safe_preview(first.get("hebrew_draft") or first.get("original_text") or "", max_chars=500)
+            draft_id = first.get("id", "?")
             msg = (
                 f"<b>Thread scraped</b>\n\n"
                 f"{html.escape(preview)}\n\n"
