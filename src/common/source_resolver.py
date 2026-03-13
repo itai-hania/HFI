@@ -30,6 +30,14 @@ class SourceResolverError(ValueError):
     """Raised when source text cannot be resolved safely."""
 
 
+class SourceSessionError(SourceResolverError):
+    """Raised when the X scraper session is expired or missing."""
+
+
+class SourceTimeoutError(SourceResolverError):
+    """Raised when scraping times out."""
+
+
 @dataclass(frozen=True)
 class SourceResolution:
     source_type: SourceType
@@ -124,9 +132,9 @@ async def _resolve_x_url(
             timeout=120,
         )
     except SessionExpiredError as exc:
-        raise SourceResolverError(str(exc)) from exc
+        raise SourceSessionError(str(exc)) from exc
     except asyncio.TimeoutError:
-        raise SourceResolverError("X scraping timed out. The session may be expired.")
+        raise SourceTimeoutError("X scraping timed out. The session may be expired.")
     finally:
         await scraper.close()
 

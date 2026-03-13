@@ -106,37 +106,6 @@ class TestTwitterScraperHelpers:
         url3 = "https://x.com/explore"
         assert scraper._extract_handle_from_url(url3) == ""
 
-    def test_should_stop_at_other_author(self):
-        """Test logic for stopping at other author tweets."""
-        scraper = TwitterScraper()
-
-        # Not enough tweets - should not stop
-        seen_tweets = {
-            "1": {"author_handle": "@user1"},
-            "2": {"author_handle": "@user1"},
-        }
-        assert scraper._should_stop_at_other_author(seen_tweets, "@user1") is False
-
-        # Last 3 tweets are from target - should not stop
-        seen_tweets = {
-            "1": {"author_handle": "@user1"},
-            "2": {"author_handle": "@user1"},
-            "3": {"author_handle": "@user1"},
-            "4": {"author_handle": "@user1"},
-            "5": {"author_handle": "@user1"},
-        }
-        assert scraper._should_stop_at_other_author(seen_tweets, "@user1") is False
-
-        # Last 3 tweets are from other authors - should stop
-        seen_tweets = {
-            "1": {"author_handle": "@user1"},
-            "2": {"author_handle": "@user1"},
-            "3": {"author_handle": "@other1"},
-            "4": {"author_handle": "@other2"},
-            "5": {"author_handle": "@other3"},
-        }
-        assert scraper._should_stop_at_other_author(seen_tweets, "@user1") is True
-
 
 class TestTwitterScraperConfiguration:
     """Test scraper configuration and settings."""

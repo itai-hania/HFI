@@ -82,7 +82,7 @@ class TestScraperSessionHealth:
         session_file.write_text('{"cookies": []}')
         five_and_half_days_ago = 5.5 * 24 * 3600
         with patch("api.main._get_session_path", return_value=session_file):
-            with patch("api.main._time.time", return_value=os.path.getmtime(session_file) + five_and_half_days_ago):
+            with patch("api.main.time.time", return_value=os.path.getmtime(session_file) + five_and_half_days_ago):
                 response = client.get("/health/scraper-session")
         assert response.status_code == 200
         data = response.json()
@@ -94,7 +94,7 @@ class TestScraperSessionHealth:
         session_file.write_text('{"cookies": []}')
         eight_days_ago = 8 * 24 * 3600
         with patch("api.main._get_session_path", return_value=session_file):
-            with patch("api.main._time.time", return_value=os.path.getmtime(session_file) + eight_days_ago):
+            with patch("api.main.time.time", return_value=os.path.getmtime(session_file) + eight_days_ago):
                 response = client.get("/health/scraper-session")
         assert response.status_code == 200
         data = response.json()

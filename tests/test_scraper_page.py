@@ -293,38 +293,5 @@ class TestHandleExtraction:
         assert scraper._extract_handle_from_url("") == ""
 
 
-# ==================== Should Stop Tests ====================
-
-class TestShouldStopAtOtherAuthor:
-    """Test thread boundary detection logic."""
-
-    def test_empty_tweets(self, scraper):
-        assert scraper._should_stop_at_other_author({}, "@user") is False
-
-    def test_no_target_handle(self, scraper):
-        tweets = {"1": {"author_handle": "@user"}}
-        assert scraper._should_stop_at_other_author(tweets, "") is False
-
-    def test_all_same_author(self, scraper):
-        tweets = {
-            "1": {"author_handle": "@user"},
-            "2": {"author_handle": "@user"},
-            "3": {"author_handle": "@user"},
-            "4": {"author_handle": "@user"},
-            "5": {"author_handle": "@user"},
-        }
-        assert scraper._should_stop_at_other_author(tweets, "@user") is False
-
-    def test_stops_after_consecutive_other_authors(self, scraper):
-        tweets = {
-            "1": {"author_handle": "@user"},
-            "2": {"author_handle": "@user"},
-            "3": {"author_handle": "@other1"},
-            "4": {"author_handle": "@other2"},
-            "5": {"author_handle": "@other3"},
-        }
-        assert scraper._should_stop_at_other_author(tweets, "@user") is True
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

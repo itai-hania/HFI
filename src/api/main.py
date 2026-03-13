@@ -6,7 +6,6 @@ Provides REST API endpoints for the Next.js frontend.
 
 import os
 import time
-import time as _time
 import logging
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -237,7 +236,7 @@ def health_check():
 
 
 def _get_session_path() -> Path:
-    return Path(__file__).parent.parent / "data" / "session" / "storage_state.json"
+    return _PROJECT_ROOT / "data" / "session" / "storage_state.json"
 
 
 @app.get("/health/scraper-session")
@@ -252,7 +251,7 @@ def scraper_session_health():
             "message": "No session file found. Run tools/refresh_session.py locally.",
         }
     mtime = os.path.getmtime(session_path)
-    age_hours = round((_time.time() - mtime) / 3600, 1)
+    age_hours = round((time.time() - mtime) / 3600, 1)
     if age_hours > 168:
         status = "expired"
         message = "Session is over 7 days old and likely expired."

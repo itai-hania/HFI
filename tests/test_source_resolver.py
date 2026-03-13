@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from common.source_resolver import SourceResolverError, resolve_source_input
+from common.source_resolver import (
+    SourceResolverError,
+    SourceSessionError,
+    SourceTimeoutError,
+    resolve_source_input,
+)
 
 
 @pytest.mark.asyncio
@@ -30,7 +35,7 @@ class TestSourceResolverSessionHandling:
         mock_scraper = AsyncMock()
         mock_scraper.ensure_logged_in = AsyncMock(side_effect=SessionExpiredError("expired"))
         mock_scraper.close = AsyncMock()
-        with pytest.raises(SourceResolverError, match="expired"):
+        with pytest.raises(SourceSessionError, match="expired"):
             await resolve_source_input(
                 url="https://x.com/user/status/123",
                 scraper_factory=lambda: mock_scraper,
@@ -43,7 +48,7 @@ class TestSourceResolverSessionHandling:
         mock_scraper.ensure_logged_in = AsyncMock()
         mock_scraper.fetch_raw_thread = AsyncMock(side_effect=asyncio.TimeoutError())
         mock_scraper.close = AsyncMock()
-        with pytest.raises(SourceResolverError, match="timed out"):
+        with pytest.raises(SourceTimeoutError, match="timed out"):
             await resolve_source_input(
                 url="https://x.com/user/status/123",
                 scraper_factory=lambda: mock_scraper,
