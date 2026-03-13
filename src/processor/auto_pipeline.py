@@ -116,6 +116,9 @@ class AutoPipeline:
             'TechCrunch': TrendSource.TECHCRUNCH,
             'Bloomberg': TrendSource.BLOOMBERG,
             'MarketWatch': TrendSource.MARKETWATCH,
+            'Calcalist': TrendSource.CALCALIST,
+            'Globes': TrendSource.GLOBES,
+            'Times of Israel': TrendSource.TIMES_OF_ISRAEL,
         }
 
         # 1. Fetch & rank articles

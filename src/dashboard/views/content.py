@@ -521,6 +521,9 @@ def _render_acquire_section(db):
                         'TechCrunch': TrendSource.TECHCRUNCH,
                         'Bloomberg': TrendSource.BLOOMBERG,
                         'MarketWatch': TrendSource.MARKETWATCH,
+                        'Calcalist': TrendSource.CALCALIST,
+                        'Globes': TrendSource.GLOBES,
+                        'Times of Israel': TrendSource.TIMES_OF_ISRAEL,
                     }
                     saved = 0
                     new_trend_ids = []

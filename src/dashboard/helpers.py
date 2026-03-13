@@ -17,6 +17,9 @@ _SOURCE_BADGE_MAP = {
     'TechCrunch': 'source-techcrunch',
     'Bloomberg': 'source-bloomberg',
     'MarketWatch': 'source-marketwatch',
+    'Calcalist': 'source-calcalist',
+    'Globes': 'source-globes',
+    'Times of Israel': 'source-times-of-israel',
     'Manual': 'source-manual',
     'X': 'source-x',
 }
