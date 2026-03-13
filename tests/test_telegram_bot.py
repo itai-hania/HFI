@@ -1,5 +1,8 @@
 """Tests for Telegram command rendering and message formatting."""
 
+import re
+from datetime import datetime, timedelta, timezone
+
 from telegram_bot.bot import format_alert_message, format_brief_message
 from telegram_bot.command_catalog import render_start_text, visible_start_commands
 
@@ -11,29 +14,103 @@ class TestTelegramBotFormatting:
                 "title": "SEC approves Bitcoin ETF",
                 "sources": ["Bloomberg", "WSJ"],
                 "summary": "רגולציה חדשה",
-                "source_urls": ["https://bloomberg.com/sec-etf"],
+                "source_urls": ["https://bloomberg.com/sec-etf", "https://wsj.com/etf"],
+                "source_count": 2,
+                "published_at": None,
+                "relevance_score": 75,
             },
             {
                 "title": "Stripe acquires startup",
                 "sources": ["TechCrunch"],
                 "summary": "רכישה",
                 "source_urls": [],
+                "source_count": 1,
+                "published_at": None,
+                "relevance_score": 40,
             },
         ]
         msg = format_brief_message(stories, "morning")
         assert "SEC approves Bitcoin ETF" in msg
-        assert "Source: https://bloomberg.com/sec-etf" in msg
-        assert "Use /write <n|x_url|https_url|text>" in msg
+        assert "<b>" in msg, "Must use HTML bold tags"
+        assert '<a href="https://bloomberg.com/sec-etf">Bloomberg</a>' in msg
+        assert "/write N to create" in msg
 
     def test_format_alert_message(self):
         alert = {
             "title": "CBDC pilot program",
             "sources": ["Bloomberg", "WSJ", "Yahoo"],
+            "source_urls": ["https://b.com", "https://wsj.com", "https://yf.com"],
             "summary": "בנק מרכזי",
+            "source_count": 3,
         }
         msg = format_alert_message(alert)
         assert "CBDC pilot program" in msg
-        assert "Use /write <n|x_url|https_url|text>" in msg
+        assert "<b>" in msg, "Must use HTML bold tags"
+        assert "📡 3 sources" in msg
+        assert "/write alert to create content" in msg
+
+    def test_brief_message_uses_html(self):
+        stories = [
+            {
+                "title": "Fed Signals Rate Cut",
+                "summary": "Powell says more data needed.",
+                "sources": ["Bloomberg", "WSJ"],
+                "source_urls": ["https://bloomberg.com/1", "https://wsj.com/1"],
+                "source_count": 2,
+                "published_at": "2026-03-13T07:00:00Z",
+                "relevance_score": 87,
+            }
+        ]
+        msg = format_brief_message(stories, "morning")
+        assert "<b>" in msg, "Must use HTML bold tags"
+        assert "Morning Brief" in msg
+        assert "87" in msg, "Relevance score must be shown"
+        assert "2 sources" in msg or "📡 2" in msg, "Source count must be shown"
+        assert "<a href=" in msg, "Source links must be HTML anchors"
+
+    def test_brief_message_shows_story_age(self):
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
+        stories = [
+            {
+                "title": "Test Story",
+                "summary": "Summary here.",
+                "sources": ["Bloomberg"],
+                "source_urls": ["https://bloomberg.com/1"],
+                "source_count": 1,
+                "published_at": recent.isoformat(),
+                "relevance_score": 50,
+            }
+        ]
+        msg = format_brief_message(stories, "on-demand")
+        assert "2h ago" in msg, "Story age should be shown"
+
+    def test_brief_message_shows_generation_timestamp(self):
+        stories = [{"title": "Test", "summary": "", "sources": ["WSJ"],
+                     "source_urls": ["https://wsj.com"], "source_count": 1,
+                     "published_at": None, "relevance_score": 30}]
+        msg = format_brief_message(stories, "morning")
+        assert re.search(r'\d{1,2}:\d{2}', msg), "Generation timestamp must be shown"
+
+    def test_brief_message_israel_badge(self):
+        stories = [{"title": "Wix Growth", "summary": "Strong quarter.",
+                     "sources": ["Calcalist", "Globes"],
+                     "source_urls": ["https://calcalist.com/1", "https://globes.com/1"],
+                     "source_count": 2, "published_at": None, "relevance_score": 60}]
+        msg = format_brief_message(stories, "morning")
+        assert "🔵" in msg or "Israel" in msg, "Israel badge should appear"
+
+    def test_alert_message_shows_source_count(self):
+        alert = {
+            "title": "NASDAQ Drops 3%",
+            "summary": "Markets react to inflation data.",
+            "sources": ["Bloomberg", "WSJ", "Yahoo Finance"],
+            "source_urls": ["https://b.com", "https://wsj.com", "https://yf.com"],
+            "source_count": 3,
+        }
+        msg = format_alert_message(alert)
+        assert "<b>" in msg, "Must use HTML bold"
+        assert "3 sources" in msg or "📡 3" in msg
+        assert "<a href=" in msg, "Source links must be clickable"
 
     def test_start_output_lists_all_visible_commands(self):
         start_text = render_start_text()
