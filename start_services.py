@@ -10,8 +10,6 @@ import os
 import sys
 import subprocess
 import platform
-import socket
-from typing import Optional, Tuple
 from pathlib import Path
 
 
@@ -67,7 +65,7 @@ def check_database(project_root: Path) -> bool:
     db_file = project_root / "data" / "hfi.db"
     if not db_file.exists():
         print(colorize("⚠️  Database not found. Initializing...", Colors.YELLOW))
-        init_script = project_root / "init_db.py"
+        init_script = project_root / "tools" / "init_db.py"
         result = subprocess.run([sys.executable, str(init_script)], cwd=project_root)
         if result.returncode != 0:
             print(colorize("❌ Failed to initialize database", Colors.RED))
@@ -108,62 +106,6 @@ def run_scraper_automated(project_root: Path):
     )
 
 
-def get_dashboard_bind() -> Tuple[str, str]:
-    """Read dashboard bind host/port from env with safe defaults."""
-    host = (os.environ.get("HFI_DASHBOARD_HOST") or "0.0.0.0").strip() or "0.0.0.0"
-    port = (os.environ.get("HFI_DASHBOARD_PORT") or "8501").strip() or "8501"
-    if not port.isdigit():
-        port = "8501"
-    return host, port
-
-
-def detect_lan_ip() -> Optional[str]:
-    """Best-effort LAN IP detection for mobile access instructions."""
-    sock = None
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        if ip and not ip.startswith("127."):
-            return ip
-    except OSError:
-        return None
-    finally:
-        if sock is not None:
-            sock.close()
-    return None
-
-
-def run_dashboard(project_root: Path):
-    """Start the Streamlit dashboard."""
-    host, port = get_dashboard_bind()
-    lan_ip = detect_lan_ip()
-
-    print(colorize("🚀 Starting Dashboard...", Colors.GREEN))
-    print(colorize(f"→ Dashboard local: http://localhost:{port}", Colors.BLUE))
-    if host in {"0.0.0.0", "::"} and lan_ip:
-        print(colorize(f"→ Dashboard mobile (same Wi-Fi): http://{lan_ip}:{port}", Colors.BLUE))
-        print(colorize("⚠️  Exposed on local network. Use trusted Wi-Fi only.", Colors.YELLOW))
-    else:
-        print(colorize(f"→ Dashboard bind host: {host}:{port}", Colors.BLUE))
-    print()
-    
-    dashboard_dir = project_root / "src" / "dashboard"
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "streamlit",
-            "run",
-            "app.py",
-            f"--server.address={host}",
-            f"--server.port={port}",
-            "--server.headless=true",
-        ],
-        cwd=dashboard_dir
-    )
-
-
 def run_docker_build(project_root: Path):
     """Build Docker images."""
     print(colorize("🐳 Building Docker images...", Colors.GREEN))
@@ -176,42 +118,18 @@ def run_docker_build(project_root: Path):
 def run_docker_services(project_root: Path):
     """Start Docker services."""
     print(colorize("🐳 Starting Docker services...", Colors.GREEN))
-    result = subprocess.run(["docker-compose", "up", "-d", "dashboard"], cwd=project_root)
+    result = subprocess.run(["docker-compose", "up", "-d"], cwd=project_root)
     if result.returncode == 0:
         print()
         print(colorize("✅ Services started!", Colors.GREEN))
-        print(colorize("→ Dashboard: http://localhost:8501", Colors.BLUE))
-        print(colorize("→ To run scraper: docker-compose run scraper python main.py", Colors.YELLOW))
-        print(colorize("→ To view logs: docker-compose logs -f dashboard", Colors.YELLOW))
+        print(colorize("→ To view logs: docker-compose logs -f", Colors.YELLOW))
 
 
 def run_verify_setup(project_root: Path):
     """Run the setup verification script."""
     print(colorize("🔍 Verifying setup...", Colors.GREEN))
-    verify_script = project_root / "verify_setup.py"
+    verify_script = project_root / "tools" / "verify_setup.py"
     subprocess.run([sys.executable, str(verify_script)], cwd=project_root)
-
-
-def stop_streamlit():
-    """Stop running Streamlit processes (cross-platform)."""
-    print(colorize("🛑 Stopping Streamlit...", Colors.YELLOW))
-    
-    if platform.system() == 'Windows':
-        subprocess.run(
-            ["taskkill", "/F", "/IM", "streamlit.exe"],
-            capture_output=True
-        )
-        subprocess.run(
-            ["powershell", "-Command", "Get-Process | Where-Object {$_.CommandLine -like '*streamlit*'} | Stop-Process -Force"],
-            capture_output=True
-        )
-    else:
-        subprocess.run(
-            ["pkill", "-f", "streamlit"],
-            capture_output=True
-        )
-    
-    print(colorize("✅ Streamlit stopped", Colors.GREEN))
 
 
 def show_menu() -> str:
@@ -220,14 +138,12 @@ def show_menu() -> str:
     print()
     print("1) Run Scraper (first time - manual login)")
     print("2) Run Scraper (automated - uses saved session)")
-    print("3) Run Dashboard")
-    print("4) Stop Streamlit")
-    print("5) Docker: Build all images")
-    print("6) Docker: Start all services")
-    print("7) Verify setup")
-    print("8) Exit")
+    print("3) Docker: Build all images")
+    print("4) Docker: Start all services")
+    print("5) Verify setup")
+    print("6) Exit")
     print()
-    return input("Enter choice [1-8]: ").strip()
+    return input("Enter choice [1-6]: ").strip()
 
 
 def main():
@@ -249,16 +165,12 @@ def main():
     elif choice == "2":
         run_scraper_automated(project_root)
     elif choice == "3":
-        run_dashboard(project_root)
-    elif choice == "4":
-        stop_streamlit()
-    elif choice == "5":
         run_docker_build(project_root)
-    elif choice == "6":
+    elif choice == "4":
         run_docker_services(project_root)
-    elif choice == "7":
+    elif choice == "5":
         run_verify_setup(project_root)
-    elif choice == "8":
+    elif choice == "6":
         print(colorize("👋 Goodbye!", Colors.BLUE))
         return 0
     else:

@@ -30,11 +30,6 @@ from .models import (
     get_db,
     get_db_session,
 
-    # Query helpers
-    get_tweets_by_status,
-    get_recent_trends,
-    update_tweet_status,
-
     # Health check
     health_check,
 )
@@ -64,11 +59,6 @@ __all__ = [
     'init_db',
     'get_db',
     'get_db_session',
-
-    # Query helpers
-    'get_tweets_by_status',
-    'get_recent_trends',
-    'update_tweet_status',
 
     # Health check
     'health_check',
