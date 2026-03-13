@@ -119,7 +119,10 @@ async def _resolve_x_url(
     scraper = scraper_factory()
     try:
         await asyncio.wait_for(scraper.ensure_logged_in(), timeout=20)
-        tweet_data = await asyncio.wait_for(scraper.get_tweet_content(url), timeout=60)
+        thread_data = await asyncio.wait_for(
+            scraper.fetch_raw_thread(url, author_only=True),
+            timeout=120,
+        )
     except SessionExpiredError as exc:
         raise SourceResolverError(str(exc)) from exc
     except asyncio.TimeoutError:
@@ -127,11 +130,16 @@ async def _resolve_x_url(
     finally:
         await scraper.close()
 
-    text = _collapse_whitespace((tweet_data or {}).get("text", ""))
-    if not text:
-        raise SourceResolverError("Invalid X/Twitter URL")
+    tweets = thread_data.get("tweets", [])
+    if not tweets:
+        raise SourceResolverError("No content found at this X/Twitter URL")
 
-    title = _build_preview(text, max_chars=120)
+    parts = [t.get("text", "").strip() for t in tweets if t.get("text", "").strip()]
+    text = "\n\n".join(parts)
+    if not text:
+        raise SourceResolverError("No content found at this X/Twitter URL")
+
+    title = _build_preview(parts[0] if parts else text, max_chars=120)
     return SourceResolution(
         source_type="x_url",
         original_text=text,
