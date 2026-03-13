@@ -3,6 +3,9 @@
 import re
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
+from common.url_validation import URLValidationError, validate_x_status_url
 from telegram_bot.bot import format_alert_message, format_brief_message
 from telegram_bot.command_catalog import render_start_text, visible_start_commands
 
@@ -132,6 +135,8 @@ class TestTelegramBotFormatting:
             "/approve <id> - Mark a saved draft as approved for the publishing workflow.\n"
             "/status - Show quick counts for drafts, scheduled, and published content.\n"
             "/schedule - Show the configured brief and alert automation times.\n"
+            "/scrape <url> - Scrape an X thread, translate it, and save as a draft.\n"
+            "/xtrends - Show the top trending topics on X.\n"
             "/health - Check API and database health.\n"
             "/help - Show examples and supported input formats."
         )
@@ -152,3 +157,37 @@ class TestTelegramBotFormatting:
             HFIBot._brief_input(["9"])
         with pytest.raises(ValueError):
             HFIBot._brief_input(["0"])
+
+
+class TestXUrlValidation:
+    def test_validate_x_status_url_accepts_valid(self):
+        result = validate_x_status_url("https://x.com/user/status/123456789")
+        assert "x.com" in result
+        assert "123456789" in result
+
+    def test_validate_x_status_url_accepts_twitter_domain(self):
+        result = validate_x_status_url("https://twitter.com/user/status/999")
+        assert "twitter.com" in result
+
+    def test_validate_x_status_url_rejects_non_x(self):
+        with pytest.raises((URLValidationError, ValueError)):
+            validate_x_status_url("https://google.com/something")
+
+    def test_validate_x_status_url_rejects_x_non_status(self):
+        with pytest.raises((URLValidationError, ValueError)):
+            validate_x_status_url("https://x.com/user/likes")
+
+
+class TestNewCommandsInCatalog:
+    def test_scrape_in_start_text(self):
+        text = render_start_text()
+        assert "/scrape" in text
+
+    def test_xtrends_in_start_text(self):
+        text = render_start_text()
+        assert "/xtrends" in text
+
+    def test_scrape_visible_in_start_commands(self):
+        names = [cmd.name for cmd in visible_start_commands()]
+        assert "scrape" in names
+        assert "xtrends" in names

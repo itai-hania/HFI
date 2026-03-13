@@ -81,6 +81,18 @@ COMMAND_CATALOG: tuple[CommandSpec, ...] = (
         example="/schedule",
     ),
     CommandSpec(
+        name="scrape",
+        syntax="/scrape <url>",
+        summary="Scrape an X thread, translate it, and save as a draft.",
+        example="/scrape https://x.com/user/status/123",
+    ),
+    CommandSpec(
+        name="xtrends",
+        syntax="/xtrends",
+        summary="Show the top trending topics on X.",
+        example="/xtrends",
+    ),
+    CommandSpec(
         name="health",
         syntax="/health",
         summary="Check API and database health.",

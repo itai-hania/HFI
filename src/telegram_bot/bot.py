@@ -292,6 +292,8 @@ class HFIBot:
         self.app.add_handler(CommandHandler("approve", self.cmd_approve))
         self.app.add_handler(CommandHandler("status", self.cmd_status))
         self.app.add_handler(CommandHandler("schedule", self.cmd_schedule))
+        self.app.add_handler(CommandHandler("scrape", self.cmd_scrape))
+        self.app.add_handler(CommandHandler("xtrends", self.cmd_xtrends))
 
     def _chat_key(self, update: Update) -> str:
         chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
@@ -887,6 +889,66 @@ class HFIBot:
                 f"Alert checks every {self.alert_interval_minutes} minutes."
             ),
         )
+
+    async def cmd_scrape(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self._reject_if_unauthorized(update, "scrape"):
+            return
+
+        args = getattr(context, "args", []) or []
+        if not args:
+            await self._reply_text(update, "Usage: /scrape &lt;x_thread_url&gt;", parse_mode="HTML")
+            return
+
+        url = args[0]
+        try:
+            validated = validate_x_status_url(url)
+        except (URLValidationError, ValueError):
+            await self._reply_text(update, "Invalid X URL. Use: /scrape https://x.com/user/status/...")
+            return
+
+        await self._reply_text(update, "🔄 Scraping thread...")
+
+        try:
+            response = await self._request("POST", "/api/content/from-thread", json={
+                "url": validated, "mode": "consolidated", "auto_translate": True,
+            })
+            data = response.json()
+            preview = _safe_preview(data.get("hebrew_draft") or data.get("original_text") or "", max_chars=500)
+            draft_id = data.get("id", "?")
+            msg = (
+                f"<b>Thread scraped</b>\n\n"
+                f"{html.escape(preview)}\n\n"
+                f"Draft #{draft_id} · /approve {draft_id} to approve"
+            )
+            await self._send_chunked_reply(update, msg, parse_mode="HTML")
+        except Exception as err:
+            await self._reply_error(update, err)
+
+    async def cmd_xtrends(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self._reject_if_unauthorized(update, "xtrends"):
+            return
+
+        await self._reply_text(update, "🔄 Fetching X trends...")
+
+        try:
+            response = await self._request("POST", "/api/scrape/trends", json={"limit": 10})
+            data = response.json()
+            trends = data.get("trends", [])
+
+            if not trends:
+                await self._reply_text(update, "No trending topics found.")
+                return
+
+            lines = ["<b>📈 X Trending Topics</b>", ""]
+            for i, trend in enumerate(trends, 1):
+                title = html.escape(str(trend.get("title", "")))
+                lines.append(f"<b>{i}.</b> {title}")
+            lines.append("")
+            lines.append("/write &lt;topic&gt; to create content")
+
+            await self._send_chunked_reply(update, "\n".join(lines), parse_mode="HTML")
+        except Exception as err:
+            await self._reply_error(update, err)
 
     async def send_scheduled_brief(self):
         response = await self._request("POST", "/api/notifications/brief")
