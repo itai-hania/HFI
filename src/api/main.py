@@ -27,6 +27,7 @@ from api.routes import (
     inspiration,
     settings,
     notifications,
+    scrape,
 )
 
 logger = logging.getLogger(__name__)
@@ -199,6 +200,8 @@ app.include_router(generation.router)
 app.include_router(inspiration.router)
 app.include_router(settings.router)
 app.include_router(notifications.router)
+app.include_router(scrape.router)
+app.include_router(scrape.content_router)
 
 
 @app.get("/")
