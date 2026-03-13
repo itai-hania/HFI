@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import asyncio
+import warnings
 
 from scraper.scraper import TwitterScraper
 
@@ -449,6 +450,41 @@ class TestFilterAuthorQuotedTweets:
         result = self.scraper.filter_author_tweets_only(tweets, "@alice")
         assert len(result) == 2
         assert [t["tweet_id"] for t in result] == ["1", "2"]
+
+
+class TestFetchThreadDeprecation:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_fetch_thread_emits_deprecation_warning(self):
+        self.scraper.fetch_raw_thread = AsyncMock(return_value={
+            "tweets": [{"text": "hi", "tweet_id": "1"}],
+            "author_handle": "@user",
+        })
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            asyncio.run(self.scraper.fetch_thread("https://x.com/user/status/1"))
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "fetch_raw_thread" in str(w[0].message)
+
+    def test_fetch_thread_delegates_to_raw(self):
+        thread_data = {
+            "tweets": [
+                {"text": "tweet 1", "tweet_id": "1"},
+                {"text": "tweet 2", "tweet_id": "2"},
+            ],
+            "author_handle": "@user",
+        }
+        self.scraper.fetch_raw_thread = AsyncMock(return_value=thread_data)
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            result = asyncio.run(self.scraper.fetch_thread("https://x.com/user/status/1"))
+        assert isinstance(result, list)
+        assert len(result) == 2
 
 
 def test_scraper_can_be_instantiated():

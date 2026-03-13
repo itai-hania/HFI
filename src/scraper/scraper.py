@@ -732,101 +732,19 @@ class TwitterScraper:
 
     async def fetch_thread(self, thread_url: str, max_scroll_attempts: int = 50) -> List[Dict]:
         """
-        Fetches a thread from X using authenticated browser session.
-        NOTE: This method FILTERS to only author's consecutive tweets.
-        For raw unfiltered data, use fetch_raw_thread() instead.
-
-        Args:
-            thread_url: URL of the main tweet
-            max_scroll_attempts: Max number of scroll actions
-
-        Returns:
-            List of tweet dictionaries (filtered to author only)
+        DEPRECATED: Use fetch_raw_thread() instead.
+        Kept for backward compatibility. Returns List[Dict] (just the tweets).
         """
-        logger.info(f"🧵 Fetching thread (FILTERED): {thread_url}")
-        
-        if not self.page:
-            await self.ensure_logged_in()
-            
-        try:
-            # Capture video streams (using response listener)
-            self.video_streams = {}
-            
-            async def handle_response(response: Response):
-                url = response.url
-                if "video.twimg.com" in url and (".mp4" in url or ".m3u8" in url):
-                    # Basic extraction of a video ID or just storing the URL
-                    # In a real implementation, we'd map this to the tweet
-                    # For now we store it to potentially map later
-                    self.video_streams[url] = url
-
-            self.page.on("response", handle_response)
-            
-            await self.page.goto(thread_url, timeout=60000)
-
-            # Wait for tweets
-            await self.page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
-            await self._validate_page_loaded()
-            
-            target_handle = self._extract_handle_from_url(thread_url)
-
-            # Scroll and collect
-            raw_tweets = await self._scroll_and_collect(target_handle, max_scroll_attempts)
-
-            # Cleanup listener
-            self.page.remove_listener("response", handle_response)
-
-            # Filter to only consecutive author tweets (proper thread extraction)
-            tweets = self.filter_author_tweets_only(raw_tweets, target_handle)
-
-            logger.info(f"✅ Scraped {len(tweets)} tweets from thread (filtered from {len(raw_tweets)} raw)")
-            return tweets
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to fetch thread: {e}")
-            raise
-
-    async def _scroll_and_collect(self, target_handle: str, max_scroll_attempts: int = 50) -> List[Dict]:
-        """Scroll page and collect all tweets from thread author."""
-        seen = {}  # tweet_id -> tweet_data
-        idle_scrolls = 0
-        max_idle = 5
-        
-        for attempt in range(max_scroll_attempts):
-            # Expand "Show more replies" buttons
-            await self._expand_replies()
-            # Expand truncated long tweets
-            await self._expand_long_tweets()
-
-            # Scroll down
-            scroll_distance = random.randint(600, 1000)
-            await self.page.evaluate("(dist) => window.scrollBy(0, dist)", scroll_distance)
-
-            # Random delay
-            await self._random_delay(1.2, 2.5)
-
-            # Collect tweets
-            new_tweets = await self._collect_tweets_from_page()
-            
-            changed = False
-            for tweet in new_tweets:
-                if tweet["tweet_id"] not in seen:
-                    seen[tweet["tweet_id"]] = tweet
-                    changed = True
-            
-            # Stop conditions
-            if not changed:
-                idle_scrolls += 1
-                if idle_scrolls >= max_idle:
-                    break  # No new content
-            else:
-                idle_scrolls = 0
-            
-            # Stop if we hit a different author's reply (heuristic)
-            if self._should_stop_at_other_author(seen, target_handle):
-                break
-        
-        return list(seen.values())
+        import warnings
+        warnings.warn(
+            "fetch_thread() is deprecated. Use fetch_raw_thread() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        result = await self.fetch_raw_thread(
+            thread_url, max_scroll_attempts=max_scroll_attempts, author_only=True,
+        )
+        return result.get("tweets", [])
 
     async def _expand_replies(self):
         """Click 'Show more replies' buttons using JavaScript (more reliable)."""
