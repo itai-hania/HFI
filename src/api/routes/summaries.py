@@ -7,7 +7,6 @@ Author: HFI Development Team
 Last Updated: 2026-02-01
 """
 
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 
@@ -84,12 +83,6 @@ def generate_summary(
         source_count=trend.source_count or 1,
         related_trend_ids=trend.related_trend_ids or []
     )
-
-
-def _backfill_summaries_task(limit: Optional[int], db_session):
-    """Background task to generate summaries."""
-    generator = SummaryGenerator()
-    return generator.backfill_summaries(db_session, limit=limit)
 
 
 @router.post("/generate-summaries", response_model=BulkSummaryGenerateResponse)

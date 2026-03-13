@@ -64,12 +64,11 @@ except ImportError:
 from urllib.parse import urlparse
 from openai import OpenAI
 from sqlalchemy.orm import Session
-from common.models import SessionLocal, Tweet, TweetStatus, StyleExample, create_tables
+from common.models import SessionLocal, Tweet, TweetStatus, create_tables
 from common.openai_client import get_openai_client
 from processor.prompt_builder import (
     KEEP_ENGLISH,
     extract_topic_keywords,
-    build_glossary_section,
     build_relevant_glossary_section,
     validate_hebrew_output,
     build_style_section,
@@ -345,32 +344,9 @@ CRITICAL RULES - FOLLOW EXACTLY:
         except Exception as e:
             raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
 
-        return text  # Fallback to original
-
     def translate_text(self, text: str) -> str:
         """Alias for backward compatibility with dashboard."""
         return self.translate_and_rewrite(text)
-
-    def translate_long_text(self, texts: List[str]) -> str:
-        """
-        Translate multiple tweets as one coherent text (for context).
-
-        This concatenates all tweets into one text for translation,
-        preserving context across the thread.
-
-        Args:
-            texts: List of tweet texts
-
-        Returns:
-            Single translated text (can be split later if needed)
-        """
-        if not texts:
-            return ""
-
-        # Concatenate with separators
-        combined = "\n\n---\n\n".join(texts)
-
-        return self.translate_and_rewrite(combined)
 
     def translate_thread_consolidated(self, tweets: List[Dict], max_retries: int = 2) -> str:
         """
@@ -490,8 +466,6 @@ Transcreate this entire thread into ONE flowing Hebrew post."""
             return result
         except Exception as e:
             raise Exception(f"OpenAI translation error after {max_retries + 1} attempts: {str(e)}")
-
-        return combined_text  # Fallback
 
     def translate_thread_separate(self, tweets: List[Dict], max_retries: int = 2) -> List[str]:
         """

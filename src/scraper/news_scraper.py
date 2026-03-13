@@ -24,27 +24,14 @@ from html.parser import HTMLParser
 from io import StringIO
 from typing import Any, List, Dict, Optional
 
+from common.stopwords import STOPWORDS
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-STOPWORDS = {
-    'the', 'a', 'an', 'in', 'on', 'at', 'for', 'of', 'to', 'is', 'are', 'was',
-    'were', 'be', 'been', 'has', 'have', 'had', 'do', 'does', 'did', 'will',
-    'would', 'could', 'should', 'may', 'might', 'can', 'shall', 'and', 'but',
-    'or', 'nor', 'not', 'no', 'so', 'yet', 'both', 'either', 'neither',
-    'each', 'every', 'all', 'any', 'few', 'more', 'most', 'other', 'some',
-    'such', 'than', 'too', 'very', 'just', 'also', 'now', 'new', 'says',
-    'said', 'its', 'it', 'this', 'that', 'these', 'those', 'what', 'which',
-    'who', 'whom', 'how', 'why', 'when', 'where', 'with', 'from', 'by',
-    'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
-    'up', 'down', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
-    'once', 'here', 'there', 'as', 'if', 'while', 'report', 'reports',
-    'according', 'amid', 'among', 'like', 'between', 'against', 'despite',
-}
 
 
 class _HTMLStripper(HTMLParser):
@@ -63,9 +50,9 @@ class _HTMLStripper(HTMLParser):
 
 class NewsScraper:
     """
-    Scraper for RSS news feeds from major financial/tech sources.
+    Scraper for RSS news feeds from major financial/tech/Israeli sources.
     Fetches articles, then ranks them by cross-source keyword overlap.
-    Supports weighted sampling (default: 70% finance, 30% tech).
+    Uses 3-bucket weighted sampling (50% finance, 25% tech, 25% Israel).
     """
 
     # Feed categories for weighted sampling
@@ -75,46 +62,67 @@ class NewsScraper:
         "WSJ": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
         "TechCrunch": "https://techcrunch.com/category/fintech/feed/",
         "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
-        "MarketWatch": "https://www.marketwatch.com/rss/topstories"
+        "MarketWatch": "https://www.marketwatch.com/rss/topstories",
+        "Calcalist": "https://www.calcalistech.com/ctechnews/rss",
+        "Globes": "https://en.globes.co.il/en/rss",
+        "Times of Israel": "https://www.timesofisrael.com/feed/business/",
     }
 
     FINANCE_SOURCES = ["Yahoo Finance", "WSJ", "Bloomberg", "MarketWatch"]
     TECH_SOURCES = ["TechCrunch"]
+    ISRAEL_SOURCES = ["Calcalist", "Globes", "Times of Israel"]
 
     _HTML_RE = re.compile('<.*?>')
     _FEED_TIMEOUT = 10  # seconds per feed
     _URL_DATE_RE = re.compile(r"/(20\d{2})-(\d{2})-(\d{2})(?:/|$)")
 
-    # Keywords that indicate Wall Street / stock market focus (boost these)
-    WALL_STREET_KEYWORDS = {
-        'stock', 'stocks', 'shares', 'trading', 'trader', 'investors', 'investment',
-        'nasdaq', 'nyse', 's&p', 'dow', 'earnings', 'ipo', 'market', 'markets',
-        'ticker', 'equity', 'equities', 'portfolio', 'hedge', 'fund', 'valuation',
-        'buyback', 'dividend', 'rally', 'plunge', 'surge', 'analyst', 'rating',
-        'upgrade', 'downgrade', 'target', 'price', 'wall', 'street', 'bullish',
-        'bearish', 'volatility', 'gain', 'loss', 'index', 'etf', 'sec'
+    MUST_INCLUDE_KEYWORDS = {
+        # Wall Street / US Markets
+        'wall street', 'nasdaq', 's&p', 's&p 500', 'dow jones', 'dow', 'nyse',
+        'ipo', 'earnings', 'fed', 'fomc', 'treasury', 'sec',
+        'stock', 'stocks', 'shares', 'trading', 'investors', 'equity',
+        'rally', 'plunge', 'surge', 'etf', 'dividend', 'buyback',
+        'bullish', 'bearish', 'volatility',
+        # FinTech / Tech
+        'fintech', 'neobank', 'crypto', 'bitcoin', 'ethereum', 'defi',
+        'payments', 'blockchain', 'saas', 'b2b', 'cybersecurity',
+        'startup', 'funding', 'series a', 'series b', 'series c',
+        'valuation', 'acquisition', 'venture capital', 'vc',
+        # Israel
+        'israel', 'israeli', 'tel aviv', 'tase', 'check point', 'wix',
+        'monday.com', 'fiverr', 'ironsource', 'mobileye', 'playtika',
     }
 
-    # Keywords that indicate general economy (penalize these for finance)
-    GENERAL_ECONOMY_KEYWORDS = {
-        'economy', 'gdp', 'unemployment', 'inflation', 'deflation', 'recession',
-        'policy', 'tariff', 'tariffs', 'trade', 'deficit', 'budget', 'senate',
-        'congress', 'government', 'federal', 'reserve', 'central', 'bank'
+    EXCLUDE_KEYWORDS = {
+        'tariff', 'tariffs', 'trade war', 'eu regulation', 'brexit',
+        'china sanctions', 'senate vote', 'congress bill', 'political',
+        'election', 'campaign', 'diplomatic', 'military',
+        'climate policy', 'carbon tax', 'immigration',
     }
+
+    _RELEVANCE_THRESHOLD = 15
+
+    # Pre-split multi-word keywords for efficient matching
+    _MUST_INCLUDE_SINGLE = {kw for kw in MUST_INCLUDE_KEYWORDS if ' ' not in kw}
+    _MUST_INCLUDE_MULTI = {kw for kw in MUST_INCLUDE_KEYWORDS if ' ' in kw}
+    _EXCLUDE_SINGLE = {kw for kw in EXCLUDE_KEYWORDS if ' ' not in kw}
+    _EXCLUDE_MULTI = {kw for kw in EXCLUDE_KEYWORDS if ' ' in kw}
 
     def __init__(self):
         """Initialize the news scraper."""
         pass
 
-    def get_latest_news(self, limit_per_source: int = 10, total_limit: int = 10, finance_weight: float = 0.7) -> List[Dict]:
+    def get_latest_news(self, limit_per_source: int = 10, total_limit: int = 10) -> List[Dict]:
         """
         Fetch latest news from all configured sources and return
-        the top articles ranked by Wall Street focus with weighted sampling.
+        the top articles ranked by relevance with 3-bucket weighted sampling.
+
+        Bucket split: Finance 50%, Tech 25%, Israel 25%.
+        At least 1 Israel slot is guaranteed if articles are available.
 
         Args:
-            limit_per_source: Max articles to fetch per source (increased to account for deduplication)
+            limit_per_source: Max articles to fetch per source
             total_limit: Max total articles to return after ranking
-            finance_weight: Percentage of finance articles (0.0-1.0, default: 0.7 for 70% finance)
 
         Returns:
             List of ranked, deduplicated article dicts (top total_limit), each containing:
@@ -124,37 +132,60 @@ class NewsScraper:
             - url
             - discovered_at
             - score (ranking score)
-            - category (Finance/Tech)
+            - category (Finance/Tech/Israel)
         """
-        # Calculate target counts for each category (overfetch to account for deduplication)
-        finance_count = int(total_limit * finance_weight) + 3  # +3 buffer for deduplication
-        tech_count = total_limit - int(total_limit * finance_weight) + 2  # +2 buffer
+        import math
 
-        logger.info(f"Weighted sampling: targeting {int(total_limit * finance_weight)} finance + {total_limit - int(total_limit * finance_weight)} tech articles (with buffer)")
+        finance_target = max(1, math.floor(total_limit * 0.50))
+        tech_target = max(1, math.floor(total_limit * 0.25))
+        israel_target = max(1, total_limit - finance_target - tech_target)
 
-        # Fetch articles by category (fetch more per source to account for filtering)
+        # Overfetch buffer for deduplication/filtering
+        finance_count = finance_target + 3
+        tech_count = tech_target + 2
+        israel_count = israel_target + 2
+
+        logger.info(
+            f"3-bucket sampling: targeting {finance_target} finance + "
+            f"{tech_target} tech + {israel_target} israel articles (with buffer)"
+        )
+
         finance_articles = self._fetch_by_category(self.FINANCE_SOURCES, limit_per_source, "Finance")
         tech_articles = self._fetch_by_category(self.TECH_SOURCES, limit_per_source, "Tech")
+        israel_articles = self._fetch_by_category(self.ISRAEL_SOURCES, limit_per_source, "Israel")
 
-        logger.info(f"Fetched {len(finance_articles)} finance, {len(tech_articles)} tech articles (before ranking/dedup)")
+        logger.info(
+            f"Fetched {len(finance_articles)} finance, {len(tech_articles)} tech, "
+            f"{len(israel_articles)} israel articles (before ranking/dedup)"
+        )
 
-        # Rank within each category (includes deduplication)
         finance_ranked = self._rank_articles(finance_articles)[:finance_count]
         tech_ranked = self._rank_articles(tech_articles)[:tech_count]
+        israel_ranked = self._rank_articles(israel_articles)[:israel_count]
 
-        # Trim to exact target counts
-        finance_final = finance_ranked[:int(total_limit * finance_weight)]
-        tech_final = tech_ranked[:total_limit - int(total_limit * finance_weight)]
+        finance_final = finance_ranked[:finance_target]
+        tech_final = tech_ranked[:tech_target]
+        israel_final = israel_ranked[:israel_target]
 
-        # Combine and interleave for variety (finance, tech, finance, tech...)
+        # Guarantee at least 1 Israel slot if available
+        if not israel_final and israel_ranked:
+            israel_final = israel_ranked[:1]
+
+        # Interleave: finance, tech, israel, finance, tech, israel, ...
         combined = []
-        for i in range(max(len(finance_final), len(tech_final))):
+        max_len = max(len(finance_final), len(tech_final), len(israel_final))
+        for i in range(max_len):
             if i < len(finance_final):
                 combined.append(finance_final[i])
             if i < len(tech_final):
                 combined.append(tech_final[i])
+            if i < len(israel_final):
+                combined.append(israel_final[i])
 
-        logger.info(f"Final mix: {len(finance_final)} finance + {len(tech_final)} tech = {len(combined)} total")
+        logger.info(
+            f"Final mix: {len(finance_final)} finance + {len(tech_final)} tech + "
+            f"{len(israel_final)} israel = {len(combined)} total"
+        )
         return combined[:total_limit]
 
     def get_brief_news(self, total_limit: int = 8, max_age_hours: int = 48, limit_per_source: int = 20) -> List[Dict[str, Any]]:
@@ -324,6 +355,8 @@ class NewsScraper:
     def _source_category(cls, source_name: str) -> str:
         if source_name in cls.TECH_SOURCES:
             return "Tech"
+        if source_name in cls.ISRAEL_SOURCES:
+            return "Israel"
         return "Finance"
 
     @staticmethod
@@ -557,15 +590,16 @@ class NewsScraper:
 
         selected: List[Dict[str, Any]] = []
 
-        has_finance = any(cluster.get("category") == "Finance" for cluster in ranked_clusters)
-        has_tech = any(cluster.get("category") == "Tech" for cluster in ranked_clusters)
-        enforce_diversity = has_finance and has_tech
+        available_categories = {cluster.get("category") for cluster in ranked_clusters}
+        enforce_diversity = len(available_categories) >= 2
 
         if enforce_diversity:
-            # Seed with best finance + tech topics, then fill remaining slots by score.
-            best_finance = next((c for c in ranked_clusters if c.get("category") == "Finance"), None)
-            best_tech = next((c for c in ranked_clusters if c.get("category") == "Tech"), None)
-            seeds = [seed for seed in (best_finance, best_tech) if seed is not None]
+            # Seed with best article from each available category, then fill remaining slots by score.
+            seeds = []
+            for cat in ("Finance", "Tech", "Israel"):
+                best = next((c for c in ranked_clusters if c.get("category") == cat), None)
+                if best is not None:
+                    seeds.append(best)
             seeds.sort(key=lambda c: c.get("final_score", 0), reverse=True)
             for seed in seeds:
                 if len(selected) >= total_limit:
@@ -795,18 +829,19 @@ class NewsScraper:
 
     def _rank_articles(self, articles: List[Dict]) -> List[Dict]:
         """
-        Rank articles by cross-source keyword overlap with Wall Street focus.
+        Rank articles by cross-source keyword overlap with relevance focus.
 
         Algorithm:
         1. Extract keywords from each article title
         2. Build map: keyword -> set of sources mentioning it
         3. Score each article:
            - Cross-source keywords: +10 * source_count
-           - Wall Street keywords: +15 bonus
-           - General economy keywords: -10 penalty (for finance sources)
+           - MUST_INCLUDE keywords: +10 bonus per hit
+           - EXCLUDE keywords: -20 penalty per hit
            - Single-source keywords: +1
-        4. Deduplicate similar articles (keep highest scored)
-        5. Sort by score descending
+        4. Filter articles below _RELEVANCE_THRESHOLD
+        5. Deduplicate similar articles (keep highest scored)
+        6. Sort by score descending
         """
         # Build keyword -> set of sources
         keyword_sources: Dict[str, set] = {}
@@ -831,14 +866,18 @@ class NewsScraper:
                 else:
                     score += 1
 
-            # Boost Wall Street focused articles
-            wall_street_count = sum(1 for kw in keywords if kw in self.WALL_STREET_KEYWORDS)
-            score += wall_street_count * 15
+            # Boost articles matching MUST_INCLUDE keywords
+            text_lower = self._article_text_lower(article)
+            must_count = self._count_keyword_hits(text_lower, keywords,
+                                                  self._MUST_INCLUDE_SINGLE,
+                                                  self._MUST_INCLUDE_MULTI)
+            score += must_count * 10
 
-            # Penalize general economy articles (for finance sources only)
-            if article.get('category') == 'Finance':
-                economy_count = sum(1 for kw in keywords if kw in self.GENERAL_ECONOMY_KEYWORDS)
-                score -= economy_count * 10
+            # Penalize articles matching EXCLUDE keywords
+            exclude_count = self._count_keyword_hits(text_lower, keywords,
+                                                     self._EXCLUDE_SINGLE,
+                                                     self._EXCLUDE_MULTI)
+            score -= exclude_count * 20
 
             # Recency bonus: fresher articles score higher
             discovered_at = article.get('discovered_at')
@@ -853,11 +892,29 @@ class NewsScraper:
 
             article['score'] = score
 
+        # Filter articles below relevance threshold
+        articles = [a for a in articles if a['score'] >= self._RELEVANCE_THRESHOLD]
+
         # Remove duplicates (similar articles from different sources)
         articles = self._deduplicate_articles(articles)
 
         articles.sort(key=lambda a: a['score'], reverse=True)
         return articles
+
+    @staticmethod
+    def _article_text_lower(article: Dict) -> str:
+        """Combine title and description into lowercase text for phrase matching."""
+        title = article.get('title', '') or ''
+        desc = article.get('description', '') or ''
+        return f"{title} {desc}".lower()
+
+    @staticmethod
+    def _count_keyword_hits(text_lower: str, single_keywords: List[str],
+                            single_set: set, multi_set: set) -> int:
+        """Count how many keywords from single_set and multi_set match."""
+        count = sum(1 for kw in single_keywords if kw in single_set)
+        count += sum(1 for phrase in multi_set if phrase in text_lower)
+        return count
 
     def _deduplicate_articles(self, articles: List[Dict]) -> List[Dict]:
         """
@@ -925,14 +982,19 @@ class NewsScraper:
 
 if __name__ == "__main__":
     scraper = NewsScraper()
-    print("Fetching news with weighted sampling (70% finance, 30% tech)...\n")
-    news = scraper.get_latest_news(limit_per_source=5, total_limit=10, finance_weight=0.7)
+    print("Fetching news with 3-bucket sampling (50% finance, 25% tech, 25% Israel)...\n")
+    news = scraper.get_latest_news(limit_per_source=5, total_limit=10)
 
     finance_count = sum(1 for a in news if a.get('category') == 'Finance')
     tech_count = sum(1 for a in news if a.get('category') == 'Tech')
+    israel_count = sum(1 for a in news if a.get('category') == 'Israel')
 
-    print(f"\n📊 Distribution: {finance_count} Finance ({finance_count/len(news)*100:.0f}%) + {tech_count} Tech ({tech_count/len(news)*100:.0f}%)\n")
+    total = len(news) or 1
+    print(f"\n📊 Distribution: {finance_count} Finance ({finance_count/total*100:.0f}%) + "
+          f"{tech_count} Tech ({tech_count/total*100:.0f}%) + "
+          f"{israel_count} Israel ({israel_count/total*100:.0f}%)\n")
 
     for i, article in enumerate(news, 1):
-        category_emoji = "💰" if article.get('category') == 'Finance' else "💻"
-        print(f"#{i} {category_emoji} [{article['source']}] (score={article.get('score', 0)}) {article['title']}")
+        cat = article.get('category', '')
+        emoji = "💰" if cat == 'Finance' else "💻" if cat == 'Tech' else "🇮🇱"
+        print(f"#{i} {emoji} [{article['source']}] (score={article.get('score', 0)}) {article['title']}")

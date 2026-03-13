@@ -14,7 +14,7 @@ from typing import List, Dict, Optional, Set
 from sqlalchemy.orm import Session
 
 from common.models import Trend, Tweet, TrendSource, TweetStatus
-from scraper.news_scraper import STOPWORDS
+from common.stopwords import STOPWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,6 @@ class AutoPipeline:
         db: Session,
         top_n: int = 3,
         auto_summarize: bool = True,
-        finance_weight: float = 0.7,
     ) -> List[Dict]:
         """
         Phase A: Fetch trends, save to DB, pick top N, optionally summarize.
@@ -117,13 +116,15 @@ class AutoPipeline:
             'TechCrunch': TrendSource.TECHCRUNCH,
             'Bloomberg': TrendSource.BLOOMBERG,
             'MarketWatch': TrendSource.MARKETWATCH,
+            'Calcalist': TrendSource.CALCALIST,
+            'Globes': TrendSource.GLOBES,
+            'Times of Israel': TrendSource.TIMES_OF_ISRAEL,
         }
 
         # 1. Fetch & rank articles
         ranked_news = self.news_scraper.get_latest_news(
             limit_per_source=10,
             total_limit=10,
-            finance_weight=finance_weight,
         )
 
         # 2. Save new trends to DB (batch-fetch existing titles first)

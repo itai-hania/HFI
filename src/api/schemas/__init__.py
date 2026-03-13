@@ -3,8 +3,6 @@
 from .trend import (
     TrendResponse,
     TrendListResponse,
-    TrendCreate,
-    TrendUpdate,
     SummaryGenerateRequest,
     SummaryGenerateResponse,
     BulkSummaryGenerateResponse
@@ -55,8 +53,6 @@ from .notification import (
 __all__ = [
     'TrendResponse',
     'TrendListResponse',
-    'TrendCreate',
-    'TrendUpdate',
     'SummaryGenerateRequest',
     'SummaryGenerateResponse',
     'BulkSummaryGenerateResponse',

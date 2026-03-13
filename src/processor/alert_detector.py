@@ -10,24 +10,7 @@ from typing import Any, Dict, List, Sequence
 from sqlalchemy.orm import Session
 
 from common.models import Notification
-
-_STOPWORDS = {
-    "the",
-    "a",
-    "an",
-    "and",
-    "or",
-    "of",
-    "to",
-    "for",
-    "in",
-    "on",
-    "with",
-    "at",
-    "from",
-    "new",
-    "says",
-}
+from common.stopwords import STOPWORDS
 
 
 class AlertDetector:
@@ -40,7 +23,7 @@ class AlertDetector:
     @staticmethod
     def _extract_keywords(title: str) -> set[str]:
         words = re.findall(r"[A-Za-z0-9']+", (title or "").lower())
-        return {w for w in words if len(w) > 2 and w not in _STOPWORDS}
+        return {w for w in words if len(w) > 2 and w not in STOPWORDS}
 
     @staticmethod
     def _similarity(a: str, b: str) -> float:
@@ -53,22 +36,6 @@ class AlertDetector:
         if not left or not right:
             return 0.0
         return len(left & right) / len(left | right)
-
-    def _already_alerted(self, title: str) -> bool:
-        """Deduplicate against recent alert notifications by title similarity."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        rows = (
-            self.db.query(Notification)
-            .filter(Notification.type == "alert", Notification.created_at >= cutoff)
-            .order_by(Notification.created_at.desc())
-            .all()
-        )
-
-        for row in rows:
-            existing_title = (row.content or {}).get("title", "")
-            if self._similarity(existing_title, title) >= 0.85 or self._keyword_overlap(existing_title, title) >= 0.6:
-                return True
-        return False
 
     def _load_recent_alert_fingerprints(self, hours: int = 24) -> List[tuple[str, set[str]]]:
         """Fetch recent alert titles + keywords once to avoid per-article DB scans."""

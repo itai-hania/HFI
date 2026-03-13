@@ -1,6 +1,6 @@
 """API route modules."""
 
-from . import trends, summaries, auth, content, generation, inspiration, settings, notifications
+from . import trends, summaries, auth, content, generation, inspiration, settings, notifications, scrape
 
 __all__ = [
     "trends",
@@ -11,4 +11,5 @@ __all__ = [
     "inspiration",
     "settings",
     "notifications",
+    "scrape",
 ]

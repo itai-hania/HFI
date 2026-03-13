@@ -734,22 +734,6 @@ class TwitterScraper:
         tweets.sort(key=lambda t: t.get('timestamp') or '')
         return tweets
 
-    async def fetch_thread(self, thread_url: str, max_scroll_attempts: int = 50) -> List[Dict]:
-        """
-        DEPRECATED: Use fetch_raw_thread() instead.
-        Kept for backward compatibility. Returns List[Dict] (just the tweets).
-        """
-        import warnings
-        warnings.warn(
-            "fetch_thread() is deprecated. Use fetch_raw_thread() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        result = await self.fetch_raw_thread(
-            thread_url, max_scroll_attempts=max_scroll_attempts, author_only=True,
-        )
-        return result.get("tweets", [])
-
     async def _expand_replies(self):
         """Click 'Show more replies' buttons using JavaScript (more reliable)."""
         try:
@@ -972,51 +956,3 @@ class TwitterScraper:
             logger.warning(f"Error during cleanup: {e}")
 
         logger.info("✅ Browser closed")
-
-
-# CLI test functionality
-async def main():
-    """Test the scraper"""
-    # Run headless now that we have a session
-    scraper = TwitterScraper(headless=True)
-
-    try:
-        # Ensure logged in
-        await scraper.ensure_logged_in()
-
-        # Test: Get trending topics
-        trends = await scraper.get_trending_topics(limit=5)
-        print("\n📊 Trending Topics:")
-        for i, trend in enumerate(trends, 1):
-            print(f"{i}. {trend['title']} - {trend['description']}")
-
-        # Test: Search tweets for first trend
-        if trends:
-            first_trend = trends[0]['title']
-            tweet_urls = await scraper.search_tweets_by_topic(first_trend, limit=3)
-
-            # Test: Get content from first tweet
-            if tweet_urls:
-                tweet_data = await scraper.get_tweet_content(tweet_urls[0])
-                print(f"\n📝 Sample Tweet:")
-                print(f"   Author: {tweet_data['author']}")
-                print(f"   Text: {tweet_data['text'][:200]}")
-                print(f"   Has Media: {bool(tweet_data['media_url'])}")
-
-        # Test: Fetch thread
-        print("\n🧵 Testing Thread Fetching...")
-        if trends:
-            # Just search for a tweet to use as 'thread' source or use a fixed one if you had one
-            # For now we'll just skip unless we have a known thread URL.
-            # But let's try to fetch the thread of the first tweet we found
-            if tweet_urls:
-                thread_tweets = await scraper.fetch_thread(tweet_urls[0], max_scroll_attempts=3)
-                print(f"\n   Fetched {len(thread_tweets)} tweets from thread.")
-                print(f"   First tweet: {thread_tweets[0]['text'][:50]}...")
-
-    finally:
-        await scraper.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
