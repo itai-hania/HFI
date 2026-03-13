@@ -167,6 +167,9 @@ class TrendSource(enum.Enum):
     TECHCRUNCH = "TechCrunch"
     BLOOMBERG = "Bloomberg"
     MARKETWATCH = "MarketWatch"
+    CALCALIST = "Calcalist"
+    GLOBES = "Globes"
+    TIMES_OF_ISRAEL = "Times of Israel"
     MANUAL = "Manual"
 
     def __str__(self):

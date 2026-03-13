@@ -75,11 +75,15 @@ class NewsScraper:
         "WSJ": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
         "TechCrunch": "https://techcrunch.com/category/fintech/feed/",
         "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
-        "MarketWatch": "https://www.marketwatch.com/rss/topstories"
+        "MarketWatch": "https://www.marketwatch.com/rss/topstories",
+        "Calcalist": "https://www.calcalistech.com/ctechnews/rss",
+        "Globes": "https://en.globes.co.il/en/rss",
+        "Times of Israel": "https://www.timesofisrael.com/feed/business/",
     }
 
     FINANCE_SOURCES = ["Yahoo Finance", "WSJ", "Bloomberg", "MarketWatch"]
     TECH_SOURCES = ["TechCrunch"]
+    ISRAEL_SOURCES = ["Calcalist", "Globes", "Times of Israel"]
 
     _HTML_RE = re.compile('<.*?>')
     _FEED_TIMEOUT = 10  # seconds per feed
