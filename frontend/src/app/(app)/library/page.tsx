@@ -1,9 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
+import { PenSquare } from "lucide-react";
 
 import { ContentCard } from "@/components/queue/ContentCard";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useCopyContent, useDeleteContent, useUpdateContent } from "@/hooks/useContent";
@@ -83,8 +86,14 @@ export default function LibraryPage() {
       {query.isLoading ? (
         <p className="text-sm text-[var(--muted)]">Loading...</p>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-4 py-5 text-sm text-[var(--muted)]">
-          No results.
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-4 py-10 text-center">
+          <p className="text-sm text-[var(--muted)]">Your library is empty. Published content will appear here.</p>
+          <Link href="/create" className="mt-3">
+            <Button variant="secondary" className="gap-2 text-xs">
+              <PenSquare size={14} />
+              Create content
+            </Button>
+          </Link>
         </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { AlertCard } from "@/components/dashboard/AlertCard";
@@ -65,7 +66,7 @@ export default function DashboardPage() {
 
       {alertsQuery.data?.alerts && alertsQuery.data.alerts.length > 0 && (
         <div className="space-y-3">
-          <h3 className="font-display text-lg md:text-xl">🚨 Alerts ({alertsQuery.data.alerts.length})</h3>
+          <h3 className="font-display text-lg md:text-xl"><AlertTriangle size={16} className="inline text-red-400" /> Alerts ({alertsQuery.data.alerts.length})</h3>
           <div className="space-y-2">
             {alertsQuery.data.alerts.map((alert) => (
               <AlertCard key={alert.id} alert={alert} onDismiss={(id) => dismissAlert.mutate(id)} />

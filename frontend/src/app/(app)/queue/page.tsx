@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
+import { PenSquare } from "lucide-react";
 
 import { ContentCard } from "@/components/queue/ContentCard";
 import { Button } from "@/components/ui/button";
@@ -119,6 +121,7 @@ export default function QueuePage() {
       <Tabs
         tabs={TABS}
         active={tab}
+        label="Queue tabs"
         onChange={(next) => {
           setTab(next);
           setPage(1);
@@ -128,8 +131,18 @@ export default function QueuePage() {
       {isLoading ? (
         <p className="text-sm text-[var(--muted)]">Loading...</p>
       ) : (data?.items || []).length === 0 ? (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-4 py-5 text-sm text-[var(--muted)]">
-          No items.
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-4 py-10 text-center">
+          <p className="text-sm text-[var(--muted)]">
+            {tab === "drafts" ? "No drafts yet. Create content to get started." :
+             tab === "scheduled" ? "Nothing scheduled. Approve drafts to schedule them." :
+             "No published content yet."}
+          </p>
+          <Link href="/create" className="mt-3">
+            <Button variant="secondary" className="gap-2 text-xs">
+              <PenSquare size={14} />
+              Create content
+            </Button>
+          </Link>
         </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">

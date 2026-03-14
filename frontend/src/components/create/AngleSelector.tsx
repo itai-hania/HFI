@@ -37,7 +37,7 @@ export function AngleSelector({ value, onChange }: { value: string; onChange: (v
             className="h-auto min-h-[44px] flex-col items-start gap-0.5 py-2 text-left"
           >
             <span>{angle.label}</span>
-            <span className={value === angle.key ? "text-[rgba(255,250,252,0.88)]" : "text-[var(--muted)]"}>
+            <span className={value === angle.key ? "text-[rgba(248,251,255,0.88)]" : "text-[var(--muted)]"}>
               {angle.hint}
             </span>
           </Button>

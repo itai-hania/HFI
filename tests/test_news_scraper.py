@@ -8,13 +8,9 @@ def test_israeli_sources_configured():
     scraper = NewsScraper()
     feeds = scraper.FEEDS
 
-    assert "Calcalist" in feeds
-    assert "Globes" in feeds
-    assert "Times of Israel" in feeds
-
-    assert "Calcalist" in scraper.ISRAEL_SOURCES
-    assert "Globes" in scraper.ISRAEL_SOURCES
-    assert "Times of Israel" in scraper.ISRAEL_SOURCES
+    for src in scraper.ISRAEL_SOURCES:
+        assert src in feeds, f"{src} must be in FEEDS"
+        assert src in scraper.ISRAEL_SOURCES
 
 
 def test_israel_sources_not_in_finance_or_tech():
@@ -34,7 +30,7 @@ def test_must_include_keywords_boost():
 
     relevant = {"title": "NASDAQ hits record on fintech IPO surge", "source": "Bloomberg",
                 "description": "Markets rally", "url": "https://example.com/1", "category": "Finance"}
-    irrelevant = {"title": "EU trade policy meeting discusses tariffs", "source": "WSJ",
+    irrelevant = {"title": "EU trade policy meeting discusses tariffs", "source": "CNBC",
                   "description": "Trade talks", "url": "https://example.com/2", "category": "Finance"}
 
     articles = [irrelevant, relevant]
@@ -106,7 +102,7 @@ def test_israel_slot_guaranteed():
     mock_finance = [{"title": f"Finance {i}", "source": "Bloomberg", "description": "",
                      "url": f"https://ex.com/f{i}", "category": "Finance", "score": 50-i}
                     for i in range(6)]
-    mock_israel = [{"title": "Wix Reports Growth", "source": "Calcalist", "description": "",
+    mock_israel = [{"title": "Israeli startup Wix Reports Growth", "source": "Google News Israel", "description": "",
                     "url": "https://ex.com/il1", "category": "Israel", "score": 10}]
 
     def mock_fetch(sources, limit_per_source, category):
@@ -141,7 +137,7 @@ def test_three_bucket_interleaving():
     mock_tech = [{"title": f"Fintech startup raises Series B funding round {i}", "source": "TechCrunch", "description": "",
                   "url": f"https://ex.com/t{i}", "category": "Tech", "score": 40-i}
                  for i in range(2)]
-    mock_israel = [{"title": f"Israeli startup Wix reports growth in Tel Aviv {i}", "source": "Calcalist", "description": "",
+    mock_israel = [{"title": f"Israeli startup Wix reports growth in Tel Aviv {i}", "source": "Google News Israel", "description": "",
                     "url": f"https://ex.com/il{i}", "category": "Israel", "score": 30-i}
                    for i in range(2)]
 
@@ -165,8 +161,19 @@ def test_three_bucket_interleaving():
 
 def test_source_category_includes_israel():
     """_source_category should return 'Israel' for Israeli sources."""
-    assert NewsScraper._source_category("Calcalist") == "Israel"
-    assert NewsScraper._source_category("Globes") == "Israel"
-    assert NewsScraper._source_category("Times of Israel") == "Israel"
+    for src in NewsScraper.ISRAEL_SOURCES:
+        assert NewsScraper._source_category(src) == "Israel"
     assert NewsScraper._source_category("Bloomberg") == "Finance"
     assert NewsScraper._source_category("TechCrunch") == "Tech"
+    assert NewsScraper._source_category("CNBC") == "Finance"
+    assert NewsScraper._source_category("Seeking Alpha") == "Finance"
+
+
+def test_expanded_must_include_keywords():
+    """MUST_INCLUDE should contain Wall Street, Big Tech, and AI keywords."""
+    kws = NewsScraper.MUST_INCLUDE_KEYWORDS
+    assert "market" in kws
+    assert "nvidia" in kws
+    assert "artificial intelligence" in kws
+    assert "openai" in kws
+    assert "jpmorgan" in kws

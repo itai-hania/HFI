@@ -52,7 +52,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center px-4">
+    <div className="relative flex min-h-[100dvh] items-center justify-center px-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Welcome back</p>

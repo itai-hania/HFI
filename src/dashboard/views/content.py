@@ -517,13 +517,13 @@ def _render_acquire_section(db):
 
                     source_map = {
                         'Yahoo Finance': TrendSource.YAHOO_FINANCE,
-                        'WSJ': TrendSource.WSJ,
+                        'CNBC': TrendSource.CNBC,
                         'TechCrunch': TrendSource.TECHCRUNCH,
                         'Bloomberg': TrendSource.BLOOMBERG,
                         'MarketWatch': TrendSource.MARKETWATCH,
-                        'Calcalist': TrendSource.CALCALIST,
-                        'Globes': TrendSource.GLOBES,
-                        'Times of Israel': TrendSource.TIMES_OF_ISRAEL,
+                        'Seeking Alpha': TrendSource.SEEKING_ALPHA,
+                        'Investing.com': TrendSource.INVESTING_COM,
+                        'Google News Israel': TrendSource.GOOGLE_NEWS_ISRAEL,
                     }
                     saved = 0
                     new_trend_ids = []

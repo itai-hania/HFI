@@ -344,15 +344,20 @@ DARK_MODE_CSS = """
 
     /* Source Badges */
     .source-yahoo-finance { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3); }
-    .source-wsj { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .source-cnbc { background: rgba(0, 133, 204, 0.15); color: #33AAFF; border: 1px solid rgba(0, 133, 204, 0.3); }
     .source-techcrunch { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3); }
     .source-bloomberg { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
     .source-marketwatch { background: rgba(255, 193, 7, 0.15); color: #FFC107; border: 1px solid rgba(255, 193, 7, 0.3); }
+    .source-seeking-alpha { background: rgba(255, 120, 0, 0.15); color: #FF9F43; border: 1px solid rgba(255, 120, 0, 0.3); }
+    .source-investingcom { background: rgba(220, 53, 69, 0.15); color: #FF6B7A; border: 1px solid rgba(220, 53, 69, 0.3); }
+    .source-google-news-israel { background: rgba(66, 133, 244, 0.15); color: #69A5FF; border: 1px solid rgba(66, 133, 244, 0.3); }
+    .source-manual { background: rgba(155, 163, 174, 0.15); color: #9BA3AE; border: 1px solid rgba(155, 163, 174, 0.3); }
+    .source-x { background: rgba(255, 255, 255, 0.1); color: #E4E6EA; border: 1px solid rgba(255, 255, 255, 0.2); }
+    /* Legacy sources — kept for existing DB rows */
+    .source-wsj { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
     .source-calcalist { background: rgba(6, 182, 212, 0.15); color: #22D3EE; border: 1px solid rgba(6, 182, 212, 0.3); }
     .source-globes { background: rgba(20, 184, 166, 0.15); color: #2DD4BF; border: 1px solid rgba(20, 184, 166, 0.3); }
     .source-times-of-israel { background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); }
-    .source-manual { background: rgba(155, 163, 174, 0.15); color: #9BA3AE; border: 1px solid rgba(155, 163, 174, 0.3); }
-    .source-x { background: rgba(255, 255, 255, 0.1); color: #E4E6EA; border: 1px solid rgba(255, 255, 255, 0.2); }
 
     /* Category Badges */
     .category-finance { background: rgba(255, 159, 10, 0.15); color: #FFA726; border: 1px solid rgba(255, 159, 10, 0.3); }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink, Globe, Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BriefStory } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const ISRAEL_SOURCES = ["Calcalist", "Globes", "Times of Israel"];
+const ISRAEL_SOURCES = ["Investing.com", "Google News Israel"];
 
 function safeHref(value: string | null | undefined) {
   if (!value) return null;
@@ -38,9 +38,9 @@ function formatRelativeAge(value: string | null | undefined): string | null {
 }
 
 function relevanceColor(score: number): string {
-  if (score >= 70) return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300";
-  if (score >= 40) return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
-  return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
+  if (score >= 70) return "bg-green-900/40 text-green-300";
+  if (score >= 40) return "bg-amber-900/40 text-amber-300";
+  return "bg-red-900/40 text-red-300";
 }
 
 function hasIsraelSource(sources: string[]): boolean {
@@ -54,10 +54,11 @@ export function BriefCard({
 }: {
   story: BriefStory;
   index: number;
-  onTranslate: (story: BriefStory) => void;
+  onTranslate: (story: BriefStory) => void | Promise<void>;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(true);
+  const [translating, setTranslating] = useState(false);
   const toggleExpanded = () => setExpanded((prev) => !prev);
   const ageLabel = formatRelativeAge(story.published_at);
   const isIsrael = hasIsraelSource(story.sources || []);
@@ -81,7 +82,7 @@ export function BriefCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <Badge>Brief #{index + 1}</Badge>
-            {isIsrael && <Badge className="text-xs">🔵 Israel</Badge>}
+            {isIsrael && <Badge className="text-xs"><Globe size={12} className="text-sky-400" /> Israel</Badge>}
           </div>
           <div className="flex items-center gap-1.5">
             {typeof story.relevance_score === "number" && (
@@ -118,7 +119,7 @@ export function BriefCard({
 
               {story.source_urls && story.source_urls.length > 0 && (
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Sources</p>
+                  <p className="text-xs font-medium text-[var(--muted)]">Sources</p>
                   <div className="flex flex-col gap-1">
                     {story.source_urls.map((url, i) => {
                       const href = safeHref(url);
@@ -154,12 +155,18 @@ export function BriefCard({
                 </Button>
                 <Button
                   variant="secondary"
-                  onClick={(e) => {
+                  disabled={translating}
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    onTranslate(story);
+                    setTranslating(true);
+                    try {
+                      await onTranslate(story);
+                    } finally {
+                      setTranslating(false);
+                    }
                   }}
                 >
-                  Translate
+                  {translating ? <><Loader2 size={14} className="animate-spin" /> Translating...</> : "Translate"}
                 </Button>
               </div>
             </CardContent>

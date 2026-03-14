@@ -17,7 +17,7 @@ class TrendBase(BaseModel):
     title: str = Field(..., max_length=256, description="Trend title or article headline")
     description: Optional[str] = Field(None, description="Article description or excerpt")
     article_url: Optional[HttpUrl] = Field(None, description="Original article URL")
-    source: str = Field(..., description="Source platform (Yahoo Finance, WSJ, etc.)")
+    source: str = Field(..., description="Source platform (Yahoo Finance, CNBC, Bloomberg, etc.)")
 
 
 class TrendResponse(TrendBase):

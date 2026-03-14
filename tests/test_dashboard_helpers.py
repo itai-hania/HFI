@@ -20,12 +20,20 @@ class TestGetSourceBadgeClass:
 
     @pytest.mark.parametrize("source,expected", [
         ("Yahoo Finance", "source-yahoo-finance"),
-        ("WSJ", "source-wsj"),
+        ("CNBC", "source-cnbc"),
         ("TechCrunch", "source-techcrunch"),
         ("Bloomberg", "source-bloomberg"),
         ("MarketWatch", "source-marketwatch"),
+        ("Seeking Alpha", "source-seeking-alpha"),
+        ("Investing.com", "source-investingcom"),
+        ("Google News Israel", "source-google-news-israel"),
         ("Manual", "source-manual"),
         ("X", "source-x"),
+        # Legacy sources still in map for DB backward compat
+        ("WSJ", "source-wsj"),
+        ("Calcalist", "source-calcalist"),
+        ("Globes", "source-globes"),
+        ("Times of Israel", "source-times-of-israel"),
     ])
     def test_known_sources(self, source, expected):
         assert get_source_badge_class(source) == expected
