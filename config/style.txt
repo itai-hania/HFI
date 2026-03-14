@@ -68,7 +68,7 @@
 הסיפור המלא מאחורי המהלך שהציל את אפל
 
 ## Example 9 - Legal Case Opening (SEC Twitter Influencers)
-*אין באמור לעיל המלצה לפעולה והכותב לא יועץ פיננסי*.
+ה־SEC מגישה תביעה נגד 8 אנשים שגנבו מעל 100 מיליון דולר
 
 בדצמבר 2022 הרשות לניירות ערך הגישה תביעה על סך 100 מיליון דולר כנגד 8 משפיעני טוויטר שהוליכו שולל את העוקבים שלהם. כל אחד מהנאשמים עם מאות אלפי עוקבים.
 
@@ -110,8 +110,7 @@
 - Occasionally in lighter content but very restrained
 
 ## Disclaimers:
-- **Always include**: "*אין באמור לעיל המלצה לפעולה*"
-- Position at START of sensitive content (SEC cases, specific stocks)
+- **Never include disclaimers** - no "אין באמור לעיל המלצה לפעולה", no legal warnings, no "ייעוץ השקעות" boilerplate. The reader is an adult.
 
 ## Opening Hooks:
 - **Conversational starter**: "אתמול אשתי שאלה אותי..."
