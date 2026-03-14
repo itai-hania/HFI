@@ -48,10 +48,11 @@ HFI/
 ├── frontend/             # Next.js Content Studio (the active UI)
 ├── config/               # glossary.json, style.txt
 ├── data/                 # Gitignored: hfi.db, media/, session/
+├── deploy/               # Production deploy scripts + docker-compose.prod.yml
 ├── docs/                 # Plans, specs, runbooks
 ├── tests/                # ALL pytest test files
 ├── tools/                # Utility scripts (init_db.py, verify_setup.py)
-├── docker-compose.yml
+├── docker-compose.yml    # LOCAL DEV ONLY — do NOT use in production
 ├── start_services.py     # CLI entrypoint (scraper, docker, setup)
 └── pyproject.toml
 ```
@@ -167,9 +168,53 @@ cd frontend && npm run dev    # Start Next.js dev server
 
 ## Deployment
 
-**Local:** `docker-compose up -d`
-**Production:** Azure VM + Caddy auto-HTTPS — see `docs/deploy/azure-private-production-runbook.md`
-**CI/CD:** Push to `main` → GitHub Actions self-hosted runner auto-deploys
+**⚠️ CRITICAL: Production uses a SEPARATE compose file and deploy script. NEVER run `docker-compose up` directly on the Azure VM.**
+
+**Local (Docker Compose — dev only):**
+```bash
+docker-compose up -d          # Uses docker-compose.yml (dev)
+docker-compose logs -f        # View logs
+docker-compose down           # Stop
+```
+
+**Production (Azure VM + Caddy auto-HTTPS):**
+- **Compose file:** `deploy/docker-compose.prod.yml` (NOT root `docker-compose.yml`)
+- **Env file:** `.env.prod` (NOT `.env`)
+- **Deploy script:** `deploy/scripts/deploy.sh` (handles build, env validation, health checks, Caddy reload)
+- **URL:** `https://hfi-prod.israelcentral.cloudapp.azure.com`
+- **CI/CD:** Push to `main` → GitHub Actions self-hosted runner auto-deploys via `deploy/scripts/deploy.sh`
+- See `docs/deploy/azure-private-production-runbook.md` for full guide
+
+**Manual production deploy (on Azure VM):**
+```bash
+cd /opt/hfi/app
+git pull origin main
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/deploy.sh
+```
+
+**Other production operations:**
+```bash
+# Rollback to previous release
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/rollback.sh
+
+# Run scraper manually
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/run_scraper_manual.sh
+
+# Check host health
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/host_health_check.sh
+```
+
+**Key differences between dev and prod compose:**
+
+| | Dev (`docker-compose.yml`) | Prod (`deploy/docker-compose.prod.yml`) |
+|---|---|---|
+| Proxy | None | Caddy with auto-HTTPS |
+| Env file | `.env` | `.env.prod` via `ENV_FILE` |
+| CORS | `http://localhost:3000` fallback | From `.env.prod` (HTTPS required) |
+| Health checks | None | Built-in for api + frontend |
+| Memory limits | None | Per-service limits |
+| Logging | Default | JSON with rotation |
+| Network | `hfi-network` | `hfi-private` |
 
 ---
 
@@ -186,4 +231,4 @@ cd frontend && npm run dev    # Start Next.js dev server
 
 ---
 
-**Last Updated:** 2026-03-14 | **Version:** 2.0
+**Last Updated:** 2026-03-14 | **Version:** 2.1
