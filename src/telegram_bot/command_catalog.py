@@ -22,7 +22,7 @@ class CommandSpec:
 COMMAND_CATALOG: tuple[CommandSpec, ...] = (
     CommandSpec(
         name="brief",
-        syntax="/brief [3|4|5|refresh]",
+        syntax="/brief [1-8|refresh]",
         summary="Fetch the latest brief, limit the number of stories, or force a refresh.",
         example="/brief 3",
     ),
@@ -79,6 +79,18 @@ COMMAND_CATALOG: tuple[CommandSpec, ...] = (
         syntax="/schedule",
         summary="Show the configured brief and alert automation times.",
         example="/schedule",
+    ),
+    CommandSpec(
+        name="scrape",
+        syntax="/scrape <url>",
+        summary="Scrape an X thread, translate it, and save as a draft.",
+        example="/scrape https://x.com/user/status/123",
+    ),
+    CommandSpec(
+        name="xtrends",
+        syntax="/xtrends",
+        summary="Show the top trending topics on X.",
+        example="/xtrends",
     ),
     CommandSpec(
         name="health",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, PenSquare, ListTodo, Sparkles, LibraryBig, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, PenSquare, Download, ListTodo, Sparkles, LibraryBig, Settings, LogOut } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/create", label: "Create", icon: PenSquare },
+  { href: "/acquire", label: "Acquire", icon: Download },
   { href: "/queue", label: "Queue", icon: ListTodo },
   { href: "/inspiration", label: "Inspiration", icon: Sparkles },
   { href: "/library", label: "Library", icon: LibraryBig },

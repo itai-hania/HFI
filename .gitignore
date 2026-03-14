@@ -20,6 +20,9 @@ data/media/*
 data/session/*
 !data/session/.gitkeep
 
+# Runtime data files
+data/*.jsonl
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1,5 +1,7 @@
 """Inspiration account and search endpoints."""
 
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
@@ -7,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, require_jwt
+from api.routes.scrape import get_scraper
 from api.schemas.inspiration import (
     InspirationAccountCreate,
     InspirationAccountUpdate,
@@ -16,6 +19,9 @@ from api.schemas.inspiration import (
     InspirationSearchResponse,
 )
 from common.models import InspirationAccount, InspirationPost
+from scraper.errors import SessionExpiredError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/inspiration",
@@ -24,13 +30,6 @@ router = APIRouter(
 )
 
 _CACHE_TTL = timedelta(hours=1)
-
-
-def get_scraper():
-    """Factory kept separate for unit-test patching."""
-    from scraper.scraper import TwitterScraper
-
-    return TwitterScraper(headless=True)
 
 
 @router.get("/accounts", response_model=InspirationAccountListResponse)
@@ -119,10 +118,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
         .first()
     )
     if not account:
-        account = InspirationAccount(username=payload.username, display_name=payload.username)
-        db.add(account)
-        db.commit()
-        db.refresh(account)
+        raise HTTPException(status_code=404, detail=f"Account @{payload.username} not tracked. Add it first.")
 
     query_key = _build_query_key(payload.username, payload.min_likes, payload.keyword, payload.since or "", payload.until or "")
     now = datetime.now(timezone.utc)
@@ -142,18 +138,26 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
     if cached:
         return InspirationSearchResponse(posts=cached, cached=True, query=query_key)
 
-    scraper = get_scraper()
+    scraper = await get_scraper()
     try:
-        posts = await scraper.search_by_user_engagement(
-            username=payload.username,
-            min_faves=payload.min_likes,
-            keyword=payload.keyword,
-            limit=payload.limit,
-            since=payload.since,
-            until=payload.until,
+        posts = await asyncio.wait_for(
+            scraper.search_by_user_engagement(
+                username=payload.username,
+                min_faves=payload.min_likes,
+                keyword=payload.keyword,
+                limit=payload.limit,
+                since=payload.since,
+                until=payload.until,
+            ),
+            timeout=90,
         )
-    finally:
-        await scraper.close()
+    except SessionExpiredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="X search timed out. The session may be expired or X may be slow.",
+        )
 
     rows = []
     post_ids = []

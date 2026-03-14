@@ -25,6 +25,7 @@ from openai import OpenAI
 from sqlalchemy.orm import Session
 from common.models import Trend, get_db
 from common.openai_client import get_openai_client
+from common.stopwords import STOPWORDS
 from processor.prompt_builder import get_completion_params, call_with_retry
 
 # Configure logging
@@ -45,17 +46,6 @@ class SummaryGenerator:
     - Calculate source_count from existing data
     - Group related trends by keyword overlap
     """
-
-    # Common stopwords to exclude from keywords
-    STOPWORDS = {
-        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-        'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
-        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
-        'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
-        'can', 'as', 'this', 'that', 'these', 'those', 'it', 'its', 'their',
-        'his', 'her', 'our', 'your', 'my', 'all', 'some', 'any', 'no', 'not',
-        'what', 'which', 'who', 'when', 'where', 'why', 'how'
-    }
 
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
         """
@@ -141,7 +131,7 @@ Be concise and informative."""
         # Filter: remove stopwords, keep words >2 chars
         keywords = [
             word for word in words
-            if word not in self.STOPWORDS and len(word) > 2
+            if word not in STOPWORDS and len(word) > 2
         ]
 
         # Remove duplicates while preserving order

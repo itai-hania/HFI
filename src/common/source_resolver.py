@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Literal
@@ -27,6 +28,14 @@ _MIN_ARTICLE_TEXT_LENGTH = 200
 
 class SourceResolverError(ValueError):
     """Raised when source text cannot be resolved safely."""
+
+
+class SourceSessionError(SourceResolverError):
+    """Raised when the X scraper session is expired or missing."""
+
+
+class SourceTimeoutError(SourceResolverError):
+    """Raised when scraping times out."""
 
 
 @dataclass(frozen=True)
@@ -113,18 +122,32 @@ async def _resolve_x_url(
 
         scraper_factory = lambda: TwitterScraper(headless=True)  # noqa: E731
 
+    from scraper.errors import SessionExpiredError
+
     scraper = scraper_factory()
     try:
-        await scraper.ensure_logged_in()
-        tweet_data = await scraper.get_tweet_content(url)
+        await asyncio.wait_for(scraper.ensure_logged_in(), timeout=20)
+        thread_data = await asyncio.wait_for(
+            scraper.fetch_raw_thread(url, author_only=True),
+            timeout=120,
+        )
+    except SessionExpiredError as exc:
+        raise SourceSessionError(str(exc)) from exc
+    except asyncio.TimeoutError:
+        raise SourceTimeoutError("X scraping timed out. The session may be expired.")
     finally:
         await scraper.close()
 
-    text = _collapse_whitespace((tweet_data or {}).get("text", ""))
-    if not text:
-        raise SourceResolverError("Invalid X/Twitter URL")
+    tweets = thread_data.get("tweets", [])
+    if not tweets:
+        raise SourceResolverError("No content found at this X/Twitter URL")
 
-    title = _build_preview(text, max_chars=120)
+    parts = [t.get("text", "").strip() for t in tweets if t.get("text", "").strip()]
+    text = "\n\n".join(parts)
+    if not text:
+        raise SourceResolverError("No content found at this X/Twitter URL")
+
+    title = _build_preview(parts[0] if parts else text, max_chars=120)
     return SourceResolution(
         source_type="x_url",
         original_text=text,

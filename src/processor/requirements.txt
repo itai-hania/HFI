@@ -4,7 +4,7 @@
 # OpenAI API for GPT-4o translation
 # Version: 1.10.0 - Latest stable with GPT-4o support
 # Why: Provides transcreation capabilities far superior to traditional translation APIs
-openai==1.10.0
+openai>=1.30.0
 
 # SQLAlchemy for database operations
 # Version: 2.0.25 - Modern 2.x API with improved performance

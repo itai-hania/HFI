@@ -12,7 +12,7 @@ import os
 import enum
 import logging
 from datetime import datetime, timezone
-from typing import Generator, Optional
+from typing import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlparse
@@ -167,6 +167,9 @@ class TrendSource(enum.Enum):
     TECHCRUNCH = "TechCrunch"
     BLOOMBERG = "Bloomberg"
     MARKETWATCH = "MarketWatch"
+    CALCALIST = "Calcalist"
+    GLOBES = "Globes"
+    TIMES_OF_ISRAEL = "Times of Israel"
     MANUAL = "Manual"
 
     def __str__(self):
@@ -934,128 +937,6 @@ def init_db():
     logger.info(f"Initializing database: {DATABASE_URL.split('://')[0]}://***")
     create_tables()
     logger.info("Database initialization complete")
-
-
-# ==================== Query Helpers ====================
-
-def get_tweets_by_status(
-    db: Session,
-    status: TweetStatus,
-    limit: Optional[int] = None,
-    offset: int = 0
-) -> list[Tweet]:
-    """
-    Retrieve tweets filtered by status.
-
-    Args:
-        db: Database session
-        status: Tweet status to filter by
-        limit: Maximum number of tweets to return (None = all)
-        offset: Number of tweets to skip (for pagination)
-
-    Returns:
-        List of Tweet objects matching the status
-
-    Example:
-        >>> with get_db() as db:
-        ...     pending = get_tweets_by_status(db, TweetStatus.PENDING, limit=10)
-        ...     for tweet in pending:
-        ...         print(f"Tweet {tweet.id}: {tweet.original_text[:50]}...")
-    """
-    query = db.query(Tweet).filter(Tweet.status == status).order_by(Tweet.created_at.desc())
-
-    if limit:
-        query = query.limit(limit)
-
-    if offset:
-        query = query.offset(offset)
-
-    return query.all()
-
-
-def get_recent_trends(
-    db: Session,
-    source: Optional[TrendSource] = None,
-    limit: int = 10
-) -> list[Trend]:
-    """
-    Retrieve recent trends, optionally filtered by source.
-
-    Args:
-        db: Database session
-        source: Trend source to filter by (None = all sources)
-        limit: Maximum number of trends to return
-
-    Returns:
-        List of Trend objects, newest first
-
-    Example:
-        >>> with get_db() as db:
-        ...     trends = get_recent_trends(db, TrendSource.X_TWITTER, limit=5)
-        ...     for trend in trends:
-        ...         print(f"Trending: {trend.title}")
-    """
-    query = db.query(Trend).order_by(Trend.discovered_at.desc())
-
-    if source:
-        query = query.filter(Trend.source == source)
-
-    return query.limit(limit).all()
-
-
-def update_tweet_status(
-    db: Session,
-    tweet_id: int,
-    new_status: TweetStatus,
-    hebrew_draft: Optional[str] = None,
-    media_path: Optional[str] = None
-) -> Optional[Tweet]:
-    """
-    Update tweet status and optionally update content fields.
-
-    Args:
-        db: Database session
-        tweet_id: ID of tweet to update
-        new_status: New status to set
-        hebrew_draft: Optional updated Hebrew translation
-        media_path: Optional updated media file path
-
-    Returns:
-        Updated Tweet object, or None if not found
-
-    Example:
-        >>> with get_db() as db:
-        ...     tweet = update_tweet_status(
-        ...         db,
-        ...         tweet_id=1,
-        ...         new_status=TweetStatus.PROCESSED,
-        ...         hebrew_draft="תרגום עברי כאן"
-        ...     )
-        ...     if tweet:
-        ...         print(f"Updated tweet {tweet.id} to {tweet.status}")
-    """
-    tweet = db.query(Tweet).filter(Tweet.id == tweet_id).first()
-
-    if not tweet:
-        logger.warning(f"Tweet {tweet_id} not found")
-        return None
-
-    # Update status
-    tweet.status = new_status
-
-    # Update optional fields if provided
-    if hebrew_draft is not None:
-        tweet.hebrew_draft = hebrew_draft
-
-    if media_path is not None:
-        tweet.media_path = media_path
-
-    # updated_at will be automatically updated by onupdate
-    db.commit()
-    db.refresh(tweet)
-
-    logger.info(f"Updated tweet {tweet_id} to status {new_status}")
-    return tweet
 
 
 # ==================== Health Check ====================

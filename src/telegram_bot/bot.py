@@ -156,7 +156,9 @@ def _chunk_text(text: str, max_chars: int = _MAX_TELEGRAM_MESSAGE_CHARS) -> list
 
 
 def format_brief_message(stories: List[dict], brief_type: str) -> str:
-    """Render stories as concise Telegram-safe plain text."""
+    """Render stories as rich HTML for Telegram."""
+    from datetime import datetime, timezone, timedelta
+
     if brief_type == "morning":
         header = "Morning Brief"
     elif brief_type == "evening":
@@ -164,29 +166,90 @@ def format_brief_message(stories: List[dict], brief_type: str) -> str:
     else:
         header = "Brief"
 
-    lines = [f"{header}: {len(stories)} stories"]
+    now = datetime.now(timezone.utc)
+    ist_now = now + timedelta(hours=2)
+    timestamp = ist_now.strftime("%H:%M")
+
+    lines = [f"📊 <b>{header}</b> · {len(stories)} stories · {timestamp} IST", ""]
+
+    israel_sources = {"calcalist", "globes", "times of israel"}
+
     for index, story in enumerate(stories, 1):
-        title = _safe_text(str(story.get("title", "Untitled")))
-        summary = _safe_text(_safe_preview(str(story.get("summary", "")), max_chars=200))
-        lines.append(f"{index}. {title}")
+        title = html.escape(str(story.get("title", "Untitled")))
+        summary = html.escape(_safe_preview(str(story.get("summary", "")), max_chars=280))
+        source_count = story.get("source_count", len(story.get("sources", [])))
+        relevance = story.get("relevance_score", 0)
+        sources = story.get("sources", [])
+        source_urls = story.get("source_urls", [])
+
+        age_str = ""
+        published = story.get("published_at")
+        if published:
+            if isinstance(published, str):
+                try:
+                    pub_dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
+                    age_hours = (now - pub_dt).total_seconds() / 3600
+                    if age_hours < 1:
+                        age_str = f"{int(age_hours * 60)}m ago"
+                    elif age_hours < 24:
+                        age_str = f"{int(age_hours)}h ago"
+                    else:
+                        age_str = f"{int(age_hours / 24)}d ago"
+                except (ValueError, TypeError):
+                    pass
+
+        is_israel = any(s.lower() in israel_sources for s in sources)
+        badge = "🔵 Israel" if is_israel else f"🎯 {relevance}"
+
+        source_links = []
+        for i, src in enumerate(sources):
+            url = source_urls[i] if i < len(source_urls) else ""
+            if url:
+                source_links.append(f'<a href="{url}">{html.escape(src)}</a>')
+            else:
+                source_links.append(html.escape(src))
+
+        lines.append(f"<b>{index}.</b> <b>{title}</b>")
         if summary:
             lines.append(f"   {summary}")
-        link = _first_safe_source_link(story)
-        if link:
-            lines.append(f"   Source: {link}")
-    lines.append("")
-    lines.append(_WRITE_USAGE)
+        meta_parts = []
+        if age_str:
+            meta_parts.append(f"⏱ {age_str}")
+        meta_parts.append(f"📡 {source_count} sources")
+        meta_parts.append(badge)
+        lines.append("   " + " · ".join(meta_parts))
+        if source_links:
+            lines.append("   " + " · ".join(source_links))
+        lines.append("")
+
+    lines.append("/write N to create · /story N for details")
     return "\n".join(lines).strip()
 
 
 def format_alert_message(alert: dict) -> str:
-    """Render a single alert payload for Telegram as plain text."""
-    title = _safe_text(str(alert.get("title", "Breaking alert")))
-    summary = _safe_text(_safe_preview(str(alert.get("summary", "")), max_chars=220))
-    lines = [f"Breaking: {title}"]
+    """Render a single alert as rich HTML for Telegram."""
+    title = html.escape(str(alert.get("title", "Breaking alert")))
+    summary = html.escape(_safe_preview(str(alert.get("summary", "")), max_chars=280))
+    source_count = alert.get("source_count", 0)
+    sources = alert.get("sources", [])
+    source_urls = alert.get("source_urls", [])
+
+    source_links = []
+    for i, src in enumerate(sources):
+        url = source_urls[i] if i < len(source_urls) else ""
+        if url:
+            source_links.append(f'<a href="{url}">{html.escape(src)}</a>')
+        else:
+            source_links.append(html.escape(src))
+
+    lines = [f"🚨 <b>Breaking:</b> {title}"]
     if summary:
         lines.append(summary)
-    lines.append(_WRITE_USAGE)
+    lines.append(f"📡 {source_count} sources")
+    if source_links:
+        lines.append(" · ".join(source_links))
+    lines.append("")
+    lines.append("/write alert to create content")
     return "\n".join(lines)
 
 
@@ -229,6 +292,8 @@ class HFIBot:
         self.app.add_handler(CommandHandler("approve", self.cmd_approve))
         self.app.add_handler(CommandHandler("status", self.cmd_status))
         self.app.add_handler(CommandHandler("schedule", self.cmd_schedule))
+        self.app.add_handler(CommandHandler("scrape", self.cmd_scrape))
+        self.app.add_handler(CommandHandler("xtrends", self.cmd_xtrends))
 
     def _chat_key(self, update: Update) -> str:
         chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
@@ -296,9 +361,9 @@ class HFIBot:
             log_event(logger, "telegram_rejected_message", level=logging.WARNING, error=str(err))
             raise
 
-    async def _send_chunked_reply(self, update: Update, text: str):
+    async def _send_chunked_reply(self, update: Update, text: str, parse_mode: str | None = None):
         for chunk in _chunk_text(text, max_chars=_MAX_TELEGRAM_MESSAGE_CHARS):
-            await self._reply_text(update, chunk)
+            await self._reply_text(update, chunk, parse_mode=parse_mode)
 
     async def _reply_error(self, update: Update, err: Exception):
         logger.exception("Telegram command failed: %s", err)
@@ -427,9 +492,13 @@ class HFIBot:
         if token == "refresh":
             force_refresh = True
             return count, force_refresh
-        if token in {"3", "4", "5"}:
-            return int(token), force_refresh
-        raise ValueError("Usage: /brief [3|4|5|refresh]")
+        try:
+            n = int(token)
+        except ValueError:
+            raise ValueError("Usage: /brief [1-8|refresh]")
+        if 1 <= n <= 8:
+            return n, force_refresh
+        raise ValueError("Usage: /brief [1-8|refresh]")
 
     async def cmd_brief(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._reject_if_unauthorized(update, "brief"):
@@ -443,7 +512,7 @@ class HFIBot:
             self._state_for(update).last_brief = stories
 
             msg = format_brief_message(stories, "on-demand")
-            await self._send_chunked_reply(update, msg)
+            await self._send_chunked_reply(update, msg, parse_mode="HTML")
             log_event(logger, "brief_sent", mode="on_demand", count=len(stories), force_refresh=force_refresh)
         except ValueError as err:
             await self._reply_text(update, str(err))
@@ -509,7 +578,7 @@ class HFIBot:
             if not stories:
                 await self._reply_text(update, "No cached brief found. Run /brief first.")
                 return
-            await self._send_chunked_reply(update, format_brief_message(stories, "cached"))
+            await self._send_chunked_reply(update, format_brief_message(stories, "cached"), parse_mode="HTML")
         except Exception as err:
             await self._reply_error(update, err)
 
@@ -821,6 +890,67 @@ class HFIBot:
             ),
         )
 
+    async def cmd_scrape(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self._reject_if_unauthorized(update, "scrape"):
+            return
+
+        args = getattr(context, "args", []) or []
+        if not args:
+            await self._reply_text(update, "Usage: /scrape &lt;x_thread_url&gt;", parse_mode="HTML")
+            return
+
+        url = args[0]
+        try:
+            validated = validate_x_status_url(url)
+        except (URLValidationError, ValueError):
+            await self._reply_text(update, "Invalid X URL. Use: /scrape https://x.com/user/status/...")
+            return
+
+        await self._reply_text(update, "🔄 Scraping thread...")
+
+        try:
+            response = await self._request("POST", "/api/content/from-thread", json={
+                "url": validated, "mode": "consolidated", "auto_translate": True,
+            })
+            data = response.json()
+            first = data.get("saved_items", [{}])[0] if data.get("saved_items") else {}
+            preview = _safe_preview(first.get("hebrew_draft") or first.get("original_text") or "", max_chars=500)
+            draft_id = first.get("id", "?")
+            msg = (
+                f"<b>Thread scraped</b>\n\n"
+                f"{html.escape(preview)}\n\n"
+                f"Draft #{draft_id} · /approve {draft_id} to approve"
+            )
+            await self._send_chunked_reply(update, msg, parse_mode="HTML")
+        except Exception as err:
+            await self._reply_error(update, err)
+
+    async def cmd_xtrends(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self._reject_if_unauthorized(update, "xtrends"):
+            return
+
+        await self._reply_text(update, "🔄 Fetching X trends...")
+
+        try:
+            response = await self._request("POST", "/api/scrape/trends", json={"limit": 10})
+            data = response.json()
+            trends = data.get("trends", [])
+
+            if not trends:
+                await self._reply_text(update, "No trending topics found.")
+                return
+
+            lines = ["<b>📈 X Trending Topics</b>", ""]
+            for i, trend in enumerate(trends, 1):
+                title = html.escape(str(trend.get("title", "")))
+                lines.append(f"<b>{i}.</b> {title}")
+            lines.append("")
+            lines.append("/write &lt;topic&gt; to create content")
+
+            await self._send_chunked_reply(update, "\n".join(lines), parse_mode="HTML")
+        except Exception as err:
+            await self._reply_error(update, err)
+
     async def send_scheduled_brief(self):
         response = await self._request("POST", "/api/notifications/brief")
         stories = response.json().get("stories", [])
@@ -830,7 +960,7 @@ class HFIBot:
         self._state_for_chat_key(str(self.chat_id)).last_brief = stories
         msg = format_brief_message(stories, "scheduled")
         try:
-            await self.app.bot.send_message(chat_id=self.chat_id, text=msg)
+            await self.app.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode="HTML")
             log_event(logger, "brief_sent", mode="scheduled", count=len(stories))
         except BadRequest as err:
             log_event(logger, "telegram_rejected_message", level=logging.WARNING, error=str(err))
@@ -846,7 +976,7 @@ class HFIBot:
             content = alert.get("content", {})
             msg = format_alert_message(content)
             try:
-                await self.app.bot.send_message(chat_id=self.chat_id, text=msg)
+                await self.app.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode="HTML")
                 await self._request("PATCH", f"/api/notifications/{alert['id']}/delivered")
             except BadRequest as err:
                 log_event(logger, "telegram_rejected_message", level=logging.WARNING, error=str(err))

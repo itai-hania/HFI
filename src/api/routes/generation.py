@@ -15,7 +15,12 @@ from api.schemas.generation import (
     TranslateRequest,
     TranslateResponse,
 )
-from common.source_resolver import SourceResolverError, resolve_source_input
+from common.source_resolver import (
+    SourceResolverError,
+    SourceSessionError,
+    SourceTimeoutError,
+    resolve_source_input,
+)
 
 router = APIRouter(
     prefix="/api/generation",
@@ -67,6 +72,10 @@ async def resolve_source(request: SourceResolveRequest):
     """Resolve text or URL source into canonical generation input."""
     try:
         resolved = await resolve_source_input(text=request.text, url=request.url)
+    except SourceSessionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SourceTimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except SourceResolverError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -80,6 +89,10 @@ async def translate(request: TranslateRequest):
 
     try:
         resolved = await resolve_source_input(text=request.text, url=request.url)
+    except SourceSessionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SourceTimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except SourceResolverError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

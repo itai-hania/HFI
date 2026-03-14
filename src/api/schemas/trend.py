@@ -20,22 +20,6 @@ class TrendBase(BaseModel):
     source: str = Field(..., description="Source platform (Yahoo Finance, WSJ, etc.)")
 
 
-class TrendCreate(TrendBase):
-    """Schema for creating a new trend."""
-    pass
-
-
-class TrendUpdate(BaseModel):
-    """Schema for updating a trend."""
-    title: Optional[str] = Field(None, max_length=256)
-    description: Optional[str] = None
-    article_url: Optional[HttpUrl] = None
-    summary: Optional[str] = None
-    keywords: Optional[List[str]] = None
-    source_count: Optional[int] = None
-    related_trend_ids: Optional[List[int]] = None
-
-
 class TrendResponse(TrendBase):
     """Schema for trend response (includes all fields)."""
     model_config = ConfigDict(from_attributes=True)

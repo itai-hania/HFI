@@ -16,6 +16,7 @@ For integration tests (actual scraping), run the scraper's main() function.
 
 import pytest
 import os
+from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import asyncio
 
@@ -103,37 +104,6 @@ class TestTwitterScraperHelpers:
         # Invalid URL
         url3 = "https://x.com/explore"
         assert scraper._extract_handle_from_url(url3) == ""
-
-    def test_should_stop_at_other_author(self):
-        """Test logic for stopping at other author tweets."""
-        scraper = TwitterScraper()
-
-        # Not enough tweets - should not stop
-        seen_tweets = {
-            "1": {"author_handle": "@user1"},
-            "2": {"author_handle": "@user1"},
-        }
-        assert scraper._should_stop_at_other_author(seen_tweets, "@user1") is False
-
-        # Last 3 tweets are from target - should not stop
-        seen_tweets = {
-            "1": {"author_handle": "@user1"},
-            "2": {"author_handle": "@user1"},
-            "3": {"author_handle": "@user1"},
-            "4": {"author_handle": "@user1"},
-            "5": {"author_handle": "@user1"},
-        }
-        assert scraper._should_stop_at_other_author(seen_tweets, "@user1") is False
-
-        # Last 3 tweets are from other authors - should stop
-        seen_tweets = {
-            "1": {"author_handle": "@user1"},
-            "2": {"author_handle": "@user1"},
-            "3": {"author_handle": "@other1"},
-            "4": {"author_handle": "@other2"},
-            "5": {"author_handle": "@other3"},
-        }
-        assert scraper._should_stop_at_other_author(seen_tweets, "@user1") is True
 
 
 class TestTwitterScraperConfiguration:
@@ -293,6 +263,161 @@ class TestTwitterScraperEdgeCases:
         search_url = f"https://x.com/search?q={topic}&src=trend_click&f=live"
 
         assert 'x.com/search' in search_url
+
+
+class TestExtractHandleFromUrl:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    @pytest.mark.parametrize("url,expected", [
+        ("https://x.com/elonmusk/status/123456", "@elonmusk"),
+        ("https://twitter.com/elonmusk/status/123456", "@elonmusk"),
+        ("https://www.twitter.com/user/status/999", "@user"),
+        ("https://mobile.twitter.com/user/status/999", "@user"),
+        ("https://mobile.x.com/user/status/999", "@user"),
+        ("https://www.x.com/user/status/999", "@user"),
+        ("https://x.com/user/status/999/photo/1", "@user"),
+        ("https://example.com/status/123", ""),
+        ("https://x.com/user/likes", ""),
+        ("not a url", ""),
+    ])
+    def test_extract_handle(self, url, expected):
+        assert self.scraper._extract_handle_from_url(url) == expected
+
+
+class TestEnsureLoggedInSessionExpiry:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_raises_session_expired_when_no_session_file(self):
+        from scraper.errors import SessionExpiredError
+        self.scraper.session_file = Path("/nonexistent/storage_state.json")
+        with pytest.raises(SessionExpiredError, match="session"):
+            asyncio.run(self.scraper.ensure_logged_in())
+
+
+class TestBrowserSelection:
+    def test_default_browser_is_chromium(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "chromium"
+
+    def test_browser_type_from_env(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua, \
+             patch.dict("os.environ", {"SCRAPER_BROWSER": "firefox"}):
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "firefox"
+
+    def test_invalid_browser_falls_back_to_chromium(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua, \
+             patch.dict("os.environ", {"SCRAPER_BROWSER": "safari"}):
+            mock_ua.return_value.random = "Mozilla/5.0"
+            scraper = TwitterScraper(headless=True)
+        assert scraper.browser_type == "chromium"
+
+
+class TestVideoStreamMerge:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_video_streams_merged_into_tweets(self):
+        tweets = [
+            {
+                "tweet_id": "123",
+                "text": "Check this video",
+                "media": [{"type": "video", "src": "", "alt": ""}],
+                "permalink": "https://x.com/user/status/123",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "author_handle": "@user",
+            }
+        ]
+        self.scraper.video_streams = {
+            "123": "https://video.twimg.com/ext_tw_video/123/pu/vid/1280x720/abc.mp4"
+        }
+        merged = self.scraper._merge_video_streams(tweets)
+        video_media = [m for m in merged[0]["media"] if m["type"] == "video"]
+        assert video_media[0]["src"] == "https://video.twimg.com/ext_tw_video/123/pu/vid/1280x720/abc.mp4"
+
+    def test_no_video_streams_unchanged(self):
+        tweets = [{"tweet_id": "1", "media": [{"type": "photo", "src": "img.jpg"}]}]
+        self.scraper.video_streams = {}
+        result = self.scraper._merge_video_streams(tweets)
+        assert result[0]["media"][0]["src"] == "img.jpg"
+
+
+class TestPageValidation:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_detect_rate_limit_page(self):
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/search"
+        mock_page.title = AsyncMock(return_value="Rate limit exceeded")
+        mock_page.query_selector = AsyncMock(return_value=None)
+        self.scraper.page = mock_page
+        with pytest.raises(Exception, match="(?i)rate.limit"):
+            asyncio.run(self.scraper._validate_page_loaded())
+
+    def test_detect_login_redirect(self):
+        from scraper.errors import SessionExpiredError
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/i/flow/login"
+        self.scraper.page = mock_page
+        with pytest.raises(SessionExpiredError):
+            asyncio.run(self.scraper._validate_page_loaded())
+
+    def test_valid_page_passes(self):
+        mock_page = AsyncMock()
+        mock_page.url = "https://x.com/user/status/123"
+        mock_page.title = AsyncMock(return_value="User on X")
+        mock_page.query_selector = AsyncMock(return_value=True)
+        self.scraper.page = mock_page
+        asyncio.run(self.scraper._validate_page_loaded())  # Should not raise
+
+
+class TestFilterAuthorQuotedTweets:
+    @pytest.fixture(autouse=True)
+    def scraper(self):
+        with patch("scraper.scraper.UserAgent") as mock_ua:
+            mock_ua.return_value.random = "Mozilla/5.0"
+            self.scraper = TwitterScraper(headless=True)
+
+    def test_quoted_tweet_does_not_break_thread(self):
+        tweets = [
+            {"tweet_id": "1", "author_handle": "@alice", "text": "Thread start", "timestamp": "2026-01-01T00:00:00Z"},
+            {"tweet_id": "2", "author_handle": "@bob", "text": "Quoted/reply", "timestamp": "2026-01-01T00:00:30Z"},
+            {"tweet_id": "3", "author_handle": "@alice", "text": "Thread continues", "timestamp": "2026-01-01T00:01:00Z"},
+            {"tweet_id": "4", "author_handle": "@alice", "text": "Thread end", "timestamp": "2026-01-01T00:02:00Z"},
+        ]
+        result = self.scraper.filter_author_tweets_only(tweets, "@alice")
+        assert len(result) == 3
+        assert [t["tweet_id"] for t in result] == ["1", "3", "4"]
+
+    def test_genuine_end_of_thread(self):
+        tweets = [
+            {"tweet_id": "1", "author_handle": "@alice", "text": "Thread 1", "timestamp": "2026-01-01T00:00:00Z"},
+            {"tweet_id": "2", "author_handle": "@alice", "text": "Thread 2", "timestamp": "2026-01-01T00:01:00Z"},
+            {"tweet_id": "3", "author_handle": "@bob", "text": "Reply 1", "timestamp": "2026-01-01T00:02:00Z"},
+            {"tweet_id": "4", "author_handle": "@charlie", "text": "Reply 2", "timestamp": "2026-01-01T00:03:00Z"},
+            {"tweet_id": "5", "author_handle": "@alice", "text": "Separate tweet", "timestamp": "2026-01-01T00:10:00Z"},
+        ]
+        result = self.scraper.filter_author_tweets_only(tweets, "@alice")
+        assert len(result) == 2
+        assert [t["tweet_id"] for t in result] == ["1", "2"]
 
 
 def test_scraper_can_be_instantiated():

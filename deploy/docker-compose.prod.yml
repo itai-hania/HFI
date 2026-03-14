@@ -38,6 +38,7 @@ services:
       ENVIRONMENT: production
       APP_VERSION: ${APP_VERSION}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      SESSION_DIR: /app/data/session
     volumes:
       - ${HOST_DATA_DIR:-/opt/hfi/data}:/app/data
     restart: unless-stopped

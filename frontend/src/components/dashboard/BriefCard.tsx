@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
 import { ChevronDown, ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BriefStory } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const ISRAEL_SOURCES = ["Calcalist", "Globes", "Times of Israel"];
 
 function safeHref(value: string | null | undefined) {
   if (!value) return null;
@@ -21,11 +22,29 @@ function safeHref(value: string | null | undefined) {
   }
 }
 
-function formatPublishedAt(value: string | null | undefined) {
+function formatRelativeAge(value: string | null | undefined): string | null {
   if (!value) return null;
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
-  return format(parsed, "dd/MM/yyyy HH:mm");
+  const diffMs = Date.now() - parsed.getTime();
+  if (diffMs < 0) return "just now";
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function relevanceColor(score: number): string {
+  if (score >= 70) return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300";
+  if (score >= 40) return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
+  return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
+}
+
+function hasIsraelSource(sources: string[]): boolean {
+  return sources.some((s) => ISRAEL_SOURCES.includes(s));
 }
 
 export function BriefCard({
@@ -38,9 +57,10 @@ export function BriefCard({
   onTranslate: (story: BriefStory) => void;
 }) {
   const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const toggleExpanded = () => setExpanded((prev) => !prev);
-  const publishedAtLabel = formatPublishedAt(story.published_at);
+  const ageLabel = formatRelativeAge(story.published_at);
+  const isIsrael = hasIsraelSource(story.sources || []);
 
   return (
     <Card className="lift-hover h-full">
@@ -59,8 +79,16 @@ export function BriefCard({
         aria-label={`${expanded ? "Collapse" : "Expand"} brief #${index + 1}: ${story.title}`}
       >
         <div className="flex items-center justify-between gap-2">
-          <Badge>Brief #{index + 1}</Badge>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <Badge>Brief #{index + 1}</Badge>
+            {isIsrael && <Badge className="text-xs">🔵 Israel</Badge>}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {typeof story.relevance_score === "number" && (
+              <Badge className={cn("text-xs", relevanceColor(story.relevance_score))}>
+                ★{story.relevance_score}
+              </Badge>
+            )}
             <Badge>{story.source_count} sources</Badge>
             <ChevronDown
               size={16}
@@ -72,9 +100,9 @@ export function BriefCard({
           </div>
         </div>
         <CardTitle className="mt-2 text-xl leading-snug">{story.title}</CardTitle>
-        {publishedAtLabel ? (
-          <p className="mt-1 text-xs text-[var(--muted)]">Published: {publishedAtLabel}</p>
-        ) : null}
+        {ageLabel && (
+          <p className="mt-1 text-xs text-[var(--muted)]">{ageLabel}</p>
+        )}
       </CardHeader>
 
       <div
@@ -117,7 +145,9 @@ export function BriefCard({
                 <Button
                   onClick={(e) => {
                     e.stopPropagation();
-                    router.push(`/create?source=trend&id=${index + 1}&text=${encodeURIComponent(story.title)}`);
+                    const text = `${story.title}\n\n${story.summary || ""}`;
+                    const sources = (story.source_urls || []).join(",");
+                    router.push(`/create?source=trend&id=${index + 1}&text=${encodeURIComponent(text)}&sources=${encodeURIComponent(sources)}`);
                   }}
                 >
                   Write
