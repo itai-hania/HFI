@@ -89,22 +89,21 @@ class TestInspirationEndpoints:
             headers={"Authorization": "Bearer test"},
         )
 
-        with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
-            scraper = mock_get_scraper.return_value
-            scraper.search_by_user_engagement = AsyncMock(
-                return_value=[
-                    {
-                        "tweet_id": "111",
-                        "text": "Bitcoin ETF explainer",
-                        "likes": 250,
-                        "retweets": 35,
-                        "views": 10000,
-                        "url": "https://x.com/a/status/111",
-                    }
-                ]
-            )
-            scraper.close = AsyncMock(return_value=None)
+        scraper = AsyncMock()
+        scraper.search_by_user_engagement = AsyncMock(
+            return_value=[
+                {
+                    "tweet_id": "111",
+                    "text": "Bitcoin ETF explainer",
+                    "likes": 250,
+                    "retweets": 35,
+                    "views": 10000,
+                    "url": "https://x.com/a/status/111",
+                }
+            ]
+        )
 
+        with patch("api.routes.inspiration.get_scraper", new_callable=AsyncMock, return_value=scraper):
             resp = client.post(
                 "/api/inspiration/search",
                 json={"username": "fintech_guru", "min_likes": 100, "keyword": "bitcoin"},
@@ -124,21 +123,20 @@ class TestInspirationEndpoints:
             headers={"Authorization": "Bearer test"},
         )
 
-        with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
-            scraper = mock_get_scraper.return_value
-            scraper.search_by_user_engagement = AsyncMock(
-                return_value=[
-                    {
-                        "tweet_id": "111",
-                        "text": "Original text",
-                        "likes": 120,
-                        "retweets": 20,
-                        "views": 1000,
-                        "url": "https://x.com/a/status/111",
-                    }
-                ]
-            )
-            scraper.close = AsyncMock(return_value=None)
+        scraper = AsyncMock()
+        scraper.search_by_user_engagement = AsyncMock(
+            return_value=[
+                {
+                    "tweet_id": "111",
+                    "text": "Original text",
+                    "likes": 120,
+                    "retweets": 20,
+                    "views": 1000,
+                    "url": "https://x.com/a/status/111",
+                }
+            ]
+        )
+        with patch("api.routes.inspiration.get_scraper", new_callable=AsyncMock, return_value=scraper):
             first = client.post(
                 "/api/inspiration/search",
                 json={"username": "fintech_guru", "min_likes": 100, "keyword": "btc"},
@@ -146,21 +144,20 @@ class TestInspirationEndpoints:
             )
         assert first.status_code == 200
 
-        with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
-            scraper = mock_get_scraper.return_value
-            scraper.search_by_user_engagement = AsyncMock(
-                return_value=[
-                    {
-                        "tweet_id": "111",
-                        "text": "Updated text",
-                        "likes": 560,
-                        "retweets": 60,
-                        "views": 12000,
-                        "url": "https://x.com/a/status/111",
-                    }
-                ]
-            )
-            scraper.close = AsyncMock(return_value=None)
+        scraper2 = AsyncMock()
+        scraper2.search_by_user_engagement = AsyncMock(
+            return_value=[
+                {
+                    "tweet_id": "111",
+                    "text": "Updated text",
+                    "likes": 560,
+                    "retweets": 60,
+                    "views": 12000,
+                    "url": "https://x.com/a/status/111",
+                }
+            ]
+        )
+        with patch("api.routes.inspiration.get_scraper", new_callable=AsyncMock, return_value=scraper2):
             second = client.post(
                 "/api/inspiration/search",
                 json={"username": "fintech_guru", "min_likes": 100, "keyword": "eth"},
@@ -181,10 +178,10 @@ class TestInspirationEndpoints:
             headers={"Authorization": "Bearer test"},
         )
 
-        with patch("api.routes.inspiration.get_scraper") as mock_get_scraper:
-            scraper = mock_get_scraper.return_value
+        with patch("api.routes.inspiration.get_scraper", new_callable=AsyncMock) as mock_get_scraper:
+            scraper = AsyncMock()
             scraper.search_by_user_engagement = AsyncMock(return_value=[])
-            scraper.close = AsyncMock(return_value=None)
+            mock_get_scraper.return_value = scraper
 
             resp = client.post(
                 "/api/inspiration/search",
@@ -211,12 +208,11 @@ class TestInspirationSessionAndTimeout:
             json={"username": "testuser", "display_name": "Test"},
             headers={"Authorization": "Bearer test"},
         )
-        with patch("api.routes.inspiration.get_scraper") as mock_get:
+        with patch("api.routes.inspiration.get_scraper", new_callable=AsyncMock) as mock_get:
             from scraper.errors import SessionExpiredError
 
             scraper = AsyncMock()
             scraper.search_by_user_engagement = AsyncMock(side_effect=SessionExpiredError())
-            scraper.close = AsyncMock()
             mock_get.return_value = scraper
             response = client.post(
                 "/api/inspiration/search",
@@ -233,10 +229,9 @@ class TestInspirationSessionAndTimeout:
             json={"username": "testuser2", "display_name": "Test2"},
             headers={"Authorization": "Bearer test"},
         )
-        with patch("api.routes.inspiration.get_scraper") as mock_get:
+        with patch("api.routes.inspiration.get_scraper", new_callable=AsyncMock) as mock_get:
             scraper = AsyncMock()
             scraper.search_by_user_engagement = AsyncMock(side_effect=asyncio.TimeoutError())
-            scraper.close = AsyncMock()
             mock_get.return_value = scraper
             response = client.post(
                 "/api/inspiration/search",

@@ -58,8 +58,13 @@ class TwitterScraper:
         if self.browser_type not in _VALID_BROWSERS:
             self.browser_type = "chromium"
 
-        # Paths
-        self.session_dir = Path(__file__).parent.parent.parent / "data" / "session"
+        # Paths — honour SESSION_DIR env var for persistent session across deploys.
+        # Falls back to <repo>/data/session/ for local dev.
+        env_session_dir = os.environ.get("SESSION_DIR")
+        if env_session_dir:
+            self.session_dir = Path(env_session_dir)
+        else:
+            self.session_dir = Path(__file__).parent.parent.parent / "data" / "session"
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.session_file = self.session_dir / "storage_state.json"
 
@@ -562,6 +567,8 @@ class TwitterScraper:
             logger.info(f"✅ Found {len(results)} posts for {username} with likes>={min_faves}")
             return results[:limit]
 
+        except SessionExpiredError:
+            raise
         except Exception as e:
             logger.error(f"❌ Failed user engagement search for {username}: {e}")
             return []

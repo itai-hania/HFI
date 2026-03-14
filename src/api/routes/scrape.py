@@ -121,8 +121,8 @@ async def content_from_thread(
       - consolidated: merge all thread tweets into one Hebrew post
       - separate: save each tweet as a separate content item
     """
-    scraper = await get_scraper()
     try:
+        scraper = await get_scraper()
         thread = await scraper.fetch_raw_thread(request.url, author_only=True)
     except Exception as exc:
         logger.error(f"Thread scrape failed for {request.url}: {exc}")
