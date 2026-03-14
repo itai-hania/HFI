@@ -489,3 +489,29 @@ def test_score_breakdown_includes_relevance():
     scored = NewsScraper._score_brief_cluster(cluster)
     assert "relevance_points" in scored["score_breakdown"]
     assert scored["score_breakdown"]["relevance_points"] > 0
+
+
+def test_feedback_keywords_penalize_score():
+    """Keywords with >= 3 'not_relevant' feedback get loaded as excludes."""
+    from common.models import Base, BriefFeedback, SessionLocal, engine
+
+    Base.metadata.create_all(engine)
+    db = SessionLocal()
+    try:
+        # Add 3 feedbacks for "tariff"
+        for _ in range(3):
+            db.add(BriefFeedback(
+                story_title="Tariff story",
+                feedback_type="not_relevant",
+                keywords=["tariff"],
+                source="dashboard",
+            ))
+        db.commit()
+
+        scraper = NewsScraper()
+        feedback_excludes = scraper._load_feedback_excludes()
+        assert "tariff" in feedback_excludes
+    finally:
+        db.query(BriefFeedback).delete()
+        db.commit()
+        db.close()

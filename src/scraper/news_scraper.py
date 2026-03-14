@@ -23,6 +23,7 @@ from html.parser import HTMLParser
 from io import StringIO
 from typing import Any, List, Dict, Optional
 
+from common.models import BriefFeedback, SessionLocal
 from common.stopwords import STOPWORDS
 
 # Setup logging
@@ -314,7 +315,12 @@ class NewsScraper:
                     fresh_candidates.append(enriched)
 
         clusters = self._cluster_brief_articles(fresh_candidates)
-        ranked_clusters = [self._score_brief_cluster(cluster) for cluster in clusters]
+
+        feedback_excludes = self._load_feedback_excludes()
+        if feedback_excludes:
+            logger.info(f"📊 Applying {len(feedback_excludes)} feedback-based keyword exclusions")
+
+        ranked_clusters = [self._score_brief_cluster(cluster, extra_excludes=feedback_excludes) for cluster in clusters]
         ranked_clusters.sort(key=lambda c: c["final_score"], reverse=True)
         selected_clusters = self._select_brief_clusters(ranked_clusters, total_limit=total_limit)
 
@@ -550,6 +556,19 @@ class NewsScraper:
             return 12
         return 0
 
+    def _load_feedback_excludes(self) -> set[str]:
+        """Load keywords that users have marked as not relevant (>= 3 times)."""
+        db = SessionLocal()
+        try:
+            rows = db.query(BriefFeedback).filter_by(feedback_type="not_relevant").all()
+            keyword_counts: dict[str, int] = {}
+            for row in rows:
+                for kw in (row.keywords or []):
+                    keyword_counts[kw] = keyword_counts.get(kw, 0) + 1
+            return {kw for kw, count in keyword_counts.items() if count >= 3}
+        finally:
+            db.close()
+
     @classmethod
     def _cluster_relevance_score(cls, cluster: Dict[str, Any]) -> int:
         """Score topic relevance of a cluster using MUST_INCLUDE / EXCLUDE keywords."""
@@ -569,7 +588,7 @@ class NewsScraper:
         return (must_hits * 10) - (exclude_hits * 20)
 
     @classmethod
-    def _score_brief_cluster(cls, cluster: Dict[str, Any]) -> Dict[str, Any]:
+    def _score_brief_cluster(cls, cluster: Dict[str, Any], extra_excludes: set[str] | None = None) -> Dict[str, Any]:
         representative = cluster["representative"]
         age_hours = float(representative.get("age_hours", 9999.0))
         source_count = int(cluster.get("source_count", 1))
@@ -589,6 +608,15 @@ class NewsScraper:
                 single_source_penalty = -10
 
         relevance_points = cls._cluster_relevance_score(cluster)
+
+        # Apply feedback-based keyword exclusion penalty
+        feedback_penalty = 0
+        if extra_excludes:
+            text = " ".join(item.get("title", "").lower() for item in cluster.get("items", []))
+            for kw in extra_excludes:
+                if kw in text:
+                    feedback_penalty -= 20
+        relevance_points += feedback_penalty
 
         final_score = (
             cross_source_points
