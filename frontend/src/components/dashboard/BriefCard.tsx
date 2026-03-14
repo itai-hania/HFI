@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BriefStory } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const ISRAEL_SOURCES = ["Calcalist", "Globes", "Times of Israel"];
+const ISRAEL_SOURCES = ["Investing.com", "Google News Israel"];
 
 function safeHref(value: string | null | undefined) {
   if (!value) return null;
