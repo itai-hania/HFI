@@ -23,7 +23,7 @@ export function Sidebar({ onNavigate, onLogout }: { onNavigate?: () => void; onL
   return (
     <aside className="surface-panel flex h-full w-80 flex-col border-r border-[var(--border)] px-4 py-6">
       <div className="mb-8 rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-4 py-4">
-        <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--muted)]">Hebrew FinTech</p>
+        <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">Hebrew FinTech</p>
         <h1 className="font-display mt-2 text-2xl font-semibold text-[var(--ink)]">Content Studio</h1>
         <p className="mt-2 text-xs text-[var(--muted)]">Editorial automation workspace</p>
       </div>
@@ -40,7 +40,7 @@ export function Sidebar({ onNavigate, onLogout }: { onNavigate?: () => void; onL
               className={cn(
                 "flex min-h-[44px] cursor-pointer items-center justify-between rounded-2xl border px-3.5 py-2.5 text-sm transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                 isActive
-                  ? "border-[var(--accent)]/40 bg-[linear-gradient(135deg,rgba(236,72,153,0.28),rgba(236,72,153,0.16))] text-[var(--accent-ink)] shadow-[0_8px_24px_rgba(236,72,153,0.2)]"
+                  ? "border-[var(--accent)]/40 bg-[linear-gradient(135deg,rgba(29,155,240,0.22),rgba(29,155,240,0.1))] text-[var(--accent-ink)] shadow-[0_8px_24px_rgba(29,155,240,0.18)]"
                   : "border-transparent text-[var(--muted)] hover:border-[var(--border)] hover:bg-[var(--card-hover)] hover:text-[var(--ink)]",
               )}
             >

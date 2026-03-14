@@ -3,18 +3,18 @@
 :root {
   color-scheme: dark;
   --bg: #08080f;
-  --panel: #0e1019;
-  --card: #151828;
-  --card-hover: #1b1f34;
-  --input: #0d101a;
-  --border: #2a3148;
+  --panel: #0c1220;
+  --card: #141d2e;
+  --card-hover: #1a2540;
+  --input: #0b1018;
+  --border: #243352;
   --ink: #f4f4f6;
   --muted: #a6aec4;
-  --accent: #ec4899;
-  --accent-soft: #f472b6;
-  --accent-ink: #fffafc;
+  --accent: #1d9bf0;
+  --accent-soft: #60c0f8;
+  --accent-ink: #f8fbff;
   --danger: #fb7185;
-  --ring: rgba(236, 72, 153, 0.55);
+  --ring: rgba(29, 155, 240, 0.55);
   --shadow-soft: 0 12px 38px rgba(5, 7, 16, 0.38);
   --shadow-lift: 0 20px 48px rgba(5, 7, 16, 0.55);
 }
@@ -38,10 +38,10 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    radial-gradient(circle at 12% 8%, rgba(236, 72, 153, 0.26), transparent 30%),
-    radial-gradient(circle at 88% 14%, rgba(79, 70, 229, 0.2), transparent 32%),
+    radial-gradient(circle at 12% 8%, rgba(29, 155, 240, 0.12), transparent 30%),
+    radial-gradient(circle at 88% 14%, rgba(56, 189, 248, 0.08), transparent 32%),
     linear-gradient(150deg, #07080f 0%, #090b13 45%, #0e1220 100%);
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   text-rendering: optimizeLegibility;
@@ -49,8 +49,8 @@ body {
 }
 
 ::selection {
-  background: rgba(236, 72, 153, 0.36);
-  color: #fff5fb;
+  background: rgba(29, 155, 240, 0.36);
+  color: #f0f8ff;
 }
 
 a {
@@ -88,9 +88,9 @@ a {
 
 .surface-glow {
   background:
-    linear-gradient(130deg, rgba(236, 72, 153, 0.18), rgba(79, 70, 229, 0.08)),
+    linear-gradient(130deg, rgba(29, 155, 240, 0.14), rgba(56, 189, 248, 0.06)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0));
-  border: 1px solid rgba(236, 72, 153, 0.3);
+  border: 1px solid rgba(29, 155, 240, 0.24);
   box-shadow: var(--shadow-soft);
 }
 
