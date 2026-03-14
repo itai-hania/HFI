@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const ICONS = [FileText, Clock3, Send, BarChart3];
-const ACCENTS = ["#ec4899", "#8b5cf6", "#22d3ee", "#34d399"];
+const ACCENTS = ["#1d9bf0", "#8b5cf6", "#22d3ee", "#34d399"];
 const LINKS = ["/queue?tab=drafts", "/queue?tab=scheduled", "/queue?tab=published", "/library"];
 
 export function StatsBar({
@@ -21,13 +21,11 @@ export function StatsBar({
     { label: "Published Today", value: stats.publishedToday },
     { label: "Total", value: stats.total },
   ];
-  const maxValue = Math.max(...items.map((item) => item.value), 1);
 
   return (
     <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       {items.map((item, index) => {
         const Icon = ICONS[index];
-        const progress = Math.min(100, Math.round((item.value / maxValue) * 100));
         return (
           <Link
             key={item.label}
@@ -35,11 +33,11 @@ export function StatsBar({
             className="block h-full rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             aria-label={`View ${item.value} ${item.label.toLowerCase()}`}
           >
-            <Card className="lift-hover cursor-pointer overflow-hidden h-full">
-              <CardContent className="space-y-4 py-5">
+            <Card className="lift-hover cursor-pointer overflow-hidden h-full relative">
+              <CardContent className="py-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs uppercase tracking-wider text-[var(--muted)]">{item.label}</p>
+                    <p className="text-xs font-medium text-[var(--muted)]">{item.label}</p>
                     {loading ? (
                       <Skeleton className="mt-2 h-7 w-14" />
                     ) : (
@@ -57,16 +55,11 @@ export function StatsBar({
                     <Icon size={18} />
                   </div>
                 </div>
-
-                <div className="space-y-1.5">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
-                    <div
-                      className="h-full rounded-full transition-[width] duration-300"
-                      style={{ width: `${loading ? 30 : progress}%`, backgroundColor: ACCENTS[index] }}
-                    />
-                  </div>
-                </div>
               </CardContent>
+              <div
+                className="absolute bottom-0 left-0 h-0.5 w-full"
+                style={{ backgroundColor: ACCENTS[index] }}
+              />
             </Card>
           </Link>
         );

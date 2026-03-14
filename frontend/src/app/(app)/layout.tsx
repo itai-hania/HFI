@@ -19,7 +19,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!authed) {
     return (
-      <div className="flex min-h-screen items-center justify-center px-4">
+      <div className="flex min-h-[100dvh] items-center justify-center px-4">
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 px-5 py-4 text-sm text-[var(--muted)]">
           Loading workspace...
         </div>

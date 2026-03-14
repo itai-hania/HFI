@@ -1,6 +1,9 @@
 import { format } from "date-fns";
+import Link from "next/link";
+import { CalendarPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { textDir } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,7 +22,15 @@ export function ScheduleTimeline({ items, loading }: { items: ContentItem[]; loa
             <Skeleton className="h-16 w-full" />
           </div>
         ) : items.length === 0 ? (
-          <p className="text-sm text-[var(--muted)]">No scheduled posts yet.</p>
+          <div>
+            <p className="text-sm text-[var(--muted)]">No scheduled posts yet.</p>
+            <Link href="/create" className="mt-3 block">
+              <Button variant="secondary" className="gap-2 text-xs">
+                <CalendarPlus size={14} />
+                Create your first post
+              </Button>
+            </Link>
+          </div>
         ) : (
           <div className="space-y-3">
             {items.map((item) => (

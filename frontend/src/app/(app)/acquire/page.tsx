@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Check, ExternalLink, Loader2, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +55,7 @@ function ResultItem({ itemId }: { itemId: number }) {
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+          <p className="text-xs font-medium text-[var(--muted)]">
             English (Source)
           </p>
           <div
@@ -67,7 +67,7 @@ function ResultItem({ itemId }: { itemId: number }) {
         </div>
 
         <div className="space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+          <p className="text-xs font-medium text-[var(--muted)]">
             Hebrew (Draft)
           </p>
           <div
@@ -141,7 +141,7 @@ export default function AcquirePage() {
         <CardContent className="space-y-5">
           {/* URL input */}
           <div className="space-y-1.5">
-            <label htmlFor="thread-url" className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+            <label htmlFor="thread-url" className="text-xs font-medium text-[var(--muted)]">
               Thread URL
             </label>
             <div className="flex gap-2">
@@ -156,8 +156,8 @@ export default function AcquirePage() {
                   }}
                 />
                 {trimmedUrl.length > 0 && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs">
-                    {validUrl ? "✓" : "✗"}
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                    {validUrl ? <Check size={14} className="text-emerald-400" /> : <XIcon size={14} className="text-red-400" />}
                   </span>
                 )}
               </div>
@@ -169,7 +169,7 @@ export default function AcquirePage() {
 
           {/* Mode selector */}
           <fieldset className="space-y-2">
-            <legend className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+            <legend className="text-xs font-medium text-[var(--muted)]">
               Mode
             </legend>
             <div className="flex gap-3">
@@ -178,7 +178,7 @@ export default function AcquirePage() {
                   key={m}
                   className={`flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition duration-200 ${
                     mode === m
-                      ? "border-[var(--accent)]/40 bg-[linear-gradient(135deg,rgba(236,72,153,0.18),rgba(236,72,153,0.08))] text-[var(--accent-ink)]"
+                      ? "border-[var(--accent)]/40 bg-[linear-gradient(135deg,rgba(29,155,240,0.16),rgba(29,155,240,0.06))] text-[var(--accent-ink)]"
                       : "border-[var(--border)] bg-[var(--card)] text-[var(--muted)] hover:border-[var(--border)] hover:bg-[var(--card-hover)]"
                   }`}
                 >
@@ -201,7 +201,7 @@ export default function AcquirePage() {
 
           {/* Options */}
           <fieldset className="space-y-2">
-            <legend className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+            <legend className="text-xs font-medium text-[var(--muted)]">
               Options
             </legend>
             <div className="flex flex-wrap gap-4">

@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
+import { Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { ContentItem } from "@/lib/types";
 import { textDir } from "@/lib/utils";
 
@@ -33,11 +36,31 @@ export function ContentCard({
   onReschedule,
 }: {
   item: ContentItem;
-  onCopy: (item: ContentItem) => void;
-  onDelete: (item: ContentItem) => void;
-  onReschedule: (item: ContentItem) => void;
+  onCopy: (item: ContentItem) => void | Promise<void>;
+  onDelete: (item: ContentItem) => void | Promise<void>;
+  onReschedule: (item: ContentItem) => void | Promise<void>;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
   const href = safeHref(item.source_url);
+
+  const handleCopy = async () => {
+    setCopying(true);
+    try { await onCopy(item); } finally { setCopying(false); }
+  };
+
+  const handleReschedule = async () => {
+    setRescheduling(true);
+    try { await onReschedule(item); } finally { setRescheduling(false); }
+  };
+
+  const handleConfirmDelete = async () => {
+    setConfirmDelete(false);
+    setDeleting(true);
+    try { await onDelete(item); } finally { setDeleting(false); }
+  };
 
   return (
     <Card className="lift-hover">
@@ -66,16 +89,24 @@ export function ContentCard({
           <Link href={`/create?edit=${item.id}`}>
             <Button variant="secondary">Edit</Button>
           </Link>
-          <Button variant="secondary" onClick={() => onCopy(item)}>
-            Copy
+          <Button variant="secondary" disabled={copying} onClick={handleCopy}>
+            {copying ? <><Loader2 size={14} className="animate-spin" /> Copying...</> : "Copy"}
           </Button>
-          <Button variant="secondary" onClick={() => onReschedule(item)}>
-            Reschedule
+          <Button variant="secondary" disabled={rescheduling} onClick={handleReschedule}>
+            {rescheduling ? <><Loader2 size={14} className="animate-spin" /> Rescheduling...</> : "Reschedule"}
           </Button>
-          <Button variant="danger" onClick={() => onDelete(item)}>
+          <Button variant="danger" disabled={deleting} onClick={() => setConfirmDelete(true)}>
             Delete
           </Button>
         </div>
+
+        <ConfirmDialog
+          open={confirmDelete}
+          title="Delete content"
+          description="This will permanently remove this content item. This action cannot be undone."
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
       </CardContent>
     </Card>
   );

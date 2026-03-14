@@ -30,7 +30,7 @@ export function VariantCards({
       {variants.map((variant, index) => (
         <Card
           key={`${variant.angle}-${index}`}
-          className={selectedIndex === index ? "lift-hover border-[var(--accent)]/60 shadow-[0_14px_34px_rgba(236,72,153,0.2)]" : "lift-hover"}
+          className={selectedIndex === index ? "lift-hover border-[var(--accent)]/60 shadow-[0_14px_34px_rgba(29,155,240,0.18)]" : "lift-hover"}
         >
           <CardHeader>
             <div className="flex items-center justify-between gap-2">

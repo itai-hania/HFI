@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" dir="ltr" className={`${heebo.variable} ${newsreader.variable} dark`}>
-      <body className="font-hebrew min-h-screen antialiased">
+      <body className="font-hebrew min-h-[100dvh] antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

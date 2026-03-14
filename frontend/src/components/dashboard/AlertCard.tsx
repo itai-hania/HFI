@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 
+import { Radio, X } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,16 +19,16 @@ export function AlertCard({ alert, onDismiss }: AlertCardProps) {
   const content = alert.content;
 
   return (
-    <Card className="border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
+    <Card className="border-red-900 bg-red-950/20">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <p className="font-semibold truncate">{content.title}</p>
             {content.summary && (
-              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{content.summary}</p>
+              <p className="text-sm text-[var(--muted)] mt-1 line-clamp-2">{content.summary}</p>
             )}
             <div className="flex gap-2 mt-2">
-              <Badge className="text-xs">📡 {content.source_count} sources</Badge>
+              <Badge className="text-xs"><Radio className="w-3 h-3 inline mr-1" /> {content.source_count} sources</Badge>
             </div>
           </div>
           <div className="flex gap-1 shrink-0">
@@ -41,7 +43,7 @@ export function AlertCard({ alert, onDismiss }: AlertCardProps) {
               Write
             </Button>
             <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => onDismiss(alert.id)}>
-              ✕
+              <X className="w-3 h-3" />
             </Button>
           </div>
         </div>
