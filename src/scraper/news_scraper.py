@@ -2,10 +2,9 @@
 News Scraper Module for HFI
 
 This module handles scraping news from various RSS feeds:
-- Yahoo Finance (News)
-- WSJ (Markets)
+- Yahoo Finance, CNBC, Bloomberg, MarketWatch, Seeking Alpha (Finance)
 - TechCrunch (Fintech)
-- Bloomberg (Markets)
+- Investing.com, Google News Israel (Israel / Broad)
 
 It normalizes the data into a common format for the database,
 then ranks articles by cross-source keyword overlap.
@@ -59,22 +58,25 @@ class NewsScraper:
     # Focus on Wall Street, specific companies, and stock markets
     FEEDS = {
         "Yahoo Finance": "https://finance.yahoo.com/news/rssindex",
-        "WSJ": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
-        "TechCrunch": "https://techcrunch.com/category/fintech/feed/",
+        "CNBC": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001147",
         "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
         "MarketWatch": "https://www.marketwatch.com/rss/topstories",
-        "Calcalist": "https://www.calcalistech.com/ctechnews/rss",
-        "Globes": "https://en.globes.co.il/en/rss",
-        "Times of Israel": "https://www.timesofisrael.com/feed/business/",
+        "Seeking Alpha": "https://seekingalpha.com/market_currents.xml",
+        "TechCrunch": "https://techcrunch.com/category/fintech/feed/",
+        "Investing.com": "https://www.investing.com/rss/news.rss",
+        "Google News Israel": "https://news.google.com/rss/search?q=Israel+tech+startup+fintech&hl=en-US&gl=US&ceid=US:en",
     }
 
-    FINANCE_SOURCES = ["Yahoo Finance", "WSJ", "Bloomberg", "MarketWatch"]
+    FINANCE_SOURCES = ["Yahoo Finance", "CNBC", "Bloomberg", "MarketWatch", "Seeking Alpha"]
     TECH_SOURCES = ["TechCrunch"]
-    ISRAEL_SOURCES = ["Calcalist", "Globes", "Times of Israel"]
+    ISRAEL_SOURCES = ["Investing.com", "Google News Israel"]
 
     _HTML_RE = re.compile('<.*?>')
     _FEED_TIMEOUT = 10  # seconds per feed
     _URL_DATE_RE = re.compile(r"/(20\d{2})-(\d{2})-(\d{2})(?:/|$)")
+    _USER_AGENT = "Mozilla/5.0 (compatible; HFI-NewsReader/2.0)"
+    _MAX_PER_SOURCE = 3  # No single source may dominate the brief
+    _BRIEF_MIN_SCORE = 10  # Minimum cluster score to include in brief
 
     MUST_INCLUDE_KEYWORDS = {
         # Wall Street / US Markets
@@ -83,11 +85,19 @@ class NewsScraper:
         'stock', 'stocks', 'shares', 'trading', 'investors', 'equity',
         'rally', 'plunge', 'surge', 'etf', 'dividend', 'buyback',
         'bullish', 'bearish', 'volatility',
+        'market', 'markets', 'rate cut', 'rate hike', 'interest rate',
+        'inflation', 'cpi', 'jobs report', 'gdp', 'recession',
+        'bank', 'banks', 'goldman', 'jpmorgan', 'morgan stanley',
+        # Big Tech / Magnificent Seven
+        'apple', 'microsoft', 'google', 'amazon', 'meta', 'nvidia', 'tesla',
+        'magnificent seven', 'big tech', 'tech stocks',
+        # AI / Semiconductors
+        'artificial intelligence', 'openai', 'semiconductor', 'chips',
         # FinTech / Tech
         'fintech', 'neobank', 'crypto', 'bitcoin', 'ethereum', 'defi',
         'payments', 'blockchain', 'saas', 'b2b', 'cybersecurity',
         'startup', 'funding', 'series a', 'series b', 'series c',
-        'valuation', 'acquisition', 'venture capital', 'vc',
+        'valuation', 'acquisition', 'venture capital',
         # Israel
         'israel', 'israeli', 'tel aviv', 'tase', 'check point', 'wix',
         'monday.com', 'fiverr', 'ironsource', 'mobileye', 'playtika',
@@ -315,6 +325,12 @@ class NewsScraper:
                 continue
             stories.append(story)
 
+        if len(stories) < total_limit:
+            logger.warning(
+                "⚠️ Brief under target: %d/%d stories (low source diversity or relevance)",
+                len(stories), total_limit,
+            )
+
         selected_ages = [
             float(story["age_hours"])
             for story in stories
@@ -535,6 +551,24 @@ class NewsScraper:
         return 0
 
     @classmethod
+    def _cluster_relevance_score(cls, cluster: Dict[str, Any]) -> int:
+        """Score topic relevance of a cluster using MUST_INCLUDE / EXCLUDE keywords."""
+        rep = cluster.get("representative", {})
+        title = rep.get("title", "")
+        desc = rep.get("description", "") or rep.get("summary", "")
+        text_lower = f"{title} {desc}".lower()
+        keywords = cls._extract_keywords(title) + cls._extract_keywords(desc)
+
+        must_hits = cls._count_keyword_hits(text_lower, keywords,
+                                            cls._MUST_INCLUDE_SINGLE,
+                                            cls._MUST_INCLUDE_MULTI)
+        exclude_hits = cls._count_keyword_hits(text_lower, keywords,
+                                               cls._EXCLUDE_SINGLE,
+                                               cls._EXCLUDE_MULTI)
+
+        return (must_hits * 10) - (exclude_hits * 20)
+
+    @classmethod
     def _score_brief_cluster(cls, cluster: Dict[str, Any]) -> Dict[str, Any]:
         representative = cluster["representative"]
         age_hours = float(representative.get("age_hours", 9999.0))
@@ -554,12 +588,15 @@ class NewsScraper:
             if age_hours <= 6 and avg_source_health >= 0.8:
                 single_source_penalty = -10
 
+        relevance_points = cls._cluster_relevance_score(cluster)
+
         final_score = (
             cross_source_points
             + recency_points
             + source_health_points
             + momentum_points
             + single_source_penalty
+            + relevance_points
         )
 
         scored = dict(cluster)
@@ -570,6 +607,7 @@ class NewsScraper:
             "source_health_points": source_health_points,
             "momentum_points": momentum_points,
             "single_source_penalty": single_source_penalty,
+            "relevance_points": relevance_points,
         }
         return scored
 
@@ -589,6 +627,20 @@ class NewsScraper:
             return []
 
         selected: List[Dict[str, Any]] = []
+        source_counts: Dict[str, int] = {}
+
+        def _can_add(cluster: Dict[str, Any]) -> bool:
+            rep_source = (cluster.get("representative") or {}).get("source", "")
+            if source_counts.get(rep_source, 0) >= cls._MAX_PER_SOURCE:
+                return False
+            if any(cls._clusters_too_similar(cluster, existing) for existing in selected):
+                return False
+            return True
+
+        def _add(cluster: Dict[str, Any]) -> None:
+            selected.append(cluster)
+            rep_source = (cluster.get("representative") or {}).get("source", "")
+            source_counts[rep_source] = source_counts.get(rep_source, 0) + 1
 
         available_categories = {cluster.get("category") for cluster in ranked_clusters}
         enforce_diversity = len(available_categories) >= 2
@@ -604,18 +656,19 @@ class NewsScraper:
             for seed in seeds:
                 if len(selected) >= total_limit:
                     break
-                if any(cls._clusters_too_similar(seed, existing) for existing in selected):
-                    continue
-                selected.append(seed)
+                if _can_add(seed):
+                    _add(seed)
 
         for cluster in ranked_clusters:
             if len(selected) >= total_limit:
                 break
-            if any(cls._clusters_too_similar(cluster, existing) for existing in selected):
-                continue
             if cluster in selected:
                 continue
-            selected.append(cluster)
+            if _can_add(cluster):
+                _add(cluster)
+
+        # Filter out clusters below minimum quality floor
+        selected = [c for c in selected if c.get("final_score", 0) >= cls._BRIEF_MIN_SCORE]
 
         selected.sort(key=lambda c: c.get("final_score", 0), reverse=True)
         return selected[:total_limit]
@@ -678,7 +731,7 @@ class NewsScraper:
             import requests
 
             logger.info("✅ Brief fetch: source=%s", source_name)
-            resp = requests.get(feed_url, timeout=self._FEED_TIMEOUT, headers={'User-Agent': 'HFI/1.0'})
+            resp = requests.get(feed_url, timeout=self._FEED_TIMEOUT, headers={'User-Agent': self._USER_AGENT})
             if resp.status_code != 200:
                 return {
                     "source": source_name,
@@ -783,7 +836,7 @@ class NewsScraper:
         try:
             logger.info(f"Fetching {category} news from {source_name}...")
             import requests
-            resp = requests.get(feed_url, timeout=self._FEED_TIMEOUT, headers={'User-Agent': 'HFI/1.0'})
+            resp = requests.get(feed_url, timeout=self._FEED_TIMEOUT, headers={'User-Agent': self._USER_AGENT})
             feed = feedparser.parse(resp.content)
 
             if feed.bozo:

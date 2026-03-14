@@ -72,9 +72,9 @@ def test_source_health_gating_excludes_stale_sources(monkeypatch):
     now = datetime.now(timezone.utc)
 
     def fake_fetch(source_name, limit_per_source, max_age_hours, now_utc):
-        if source_name == "WSJ":
+        if source_name == "CNBC":
             return {
-                "source": "WSJ",
+                "source": "CNBC",
                 "fetch_ok": True,
                 "healthy": False,
                 "reason": "latest_age_gt_72h",
@@ -128,7 +128,7 @@ def test_source_health_gating_excludes_stale_sources(monkeypatch):
     stories = scraper.get_brief_news(total_limit=8, max_age_hours=48)
     assert len(stories) == 1
     assert stories[0]["sources"] == ["Bloomberg"]
-    assert "WSJ" not in stories[0]["sources"]
+    assert "CNBC" not in stories[0]["sources"]
 
 
 def test_brief_news_enforces_48h_cutoff(monkeypatch):
@@ -382,3 +382,110 @@ def test_soft_diversity_promotes_tech_when_available():
     categories = {cluster["category"] for cluster in selected}
     assert "Finance" in categories
     assert "Tech" in categories
+
+
+# ==================== New Tests for Brief Improvements ====================
+
+
+def test_per_source_cap_limits_single_source():
+    """No single source should have more than _MAX_PER_SOURCE stories in output."""
+    articles = [
+        _article(
+            title=f"Bloomberg market story number {i} about stocks",
+            source="Bloomberg",
+            category="Finance",
+            age_hours=float(i + 1),
+            url=f"https://bloomberg.com/story-{i}",
+        )
+        for i in range(8)
+    ]
+
+    clusters = NewsScraper._cluster_brief_articles(articles)
+    scored = [NewsScraper._score_brief_cluster(c) for c in clusters]
+    scored.sort(key=lambda c: c["final_score"], reverse=True)
+    selected = NewsScraper._select_brief_clusters(scored, total_limit=8)
+
+    bloomberg_count = sum(
+        1 for c in selected
+        if c.get("representative", {}).get("source") == "Bloomberg"
+    )
+    assert bloomberg_count <= NewsScraper._MAX_PER_SOURCE
+
+
+def test_cluster_relevance_score_boosts_must_include():
+    """Clusters about Wall Street / fintech should score higher than random noise."""
+    relevant_cluster = {
+        "representative": {
+            "title": "NASDAQ hits record on Wall Street rally",
+            "description": "Stock market surges as investors bet on earnings growth",
+        },
+    }
+    noise_cluster = {
+        "representative": {
+            "title": "EU wheat import quota discussion continues",
+            "description": "Agricultural policy talks in Brussels",
+        },
+    }
+
+    relevant_score = NewsScraper._cluster_relevance_score(relevant_cluster)
+    noise_score = NewsScraper._cluster_relevance_score(noise_cluster)
+    assert relevant_score > noise_score
+    assert relevant_score > 0
+
+
+def test_cluster_relevance_score_penalizes_excluded():
+    """Clusters matching EXCLUDE keywords should be penalized."""
+    excluded_cluster = {
+        "representative": {
+            "title": "Senate vote on tariff bill draws election campaign attention",
+            "description": "Political debate over trade war tariffs continues",
+        },
+    }
+
+    score = NewsScraper._cluster_relevance_score(excluded_cluster)
+    assert score < 0
+
+
+def test_brief_min_score_filters_low_quality():
+    """Clusters below _BRIEF_MIN_SCORE should be dropped from output."""
+    ranked_clusters = [
+        {
+            "representative": {"title": "Good story about stocks", "source": "Bloomberg"},
+            "category": "Finance",
+            "final_score": 50,
+        },
+        {
+            "representative": {"title": "Bad story that scored low", "source": "CNBC"},
+            "category": "Finance",
+            "final_score": 5,  # below _BRIEF_MIN_SCORE
+        },
+    ]
+
+    selected = NewsScraper._select_brief_clusters(ranked_clusters, total_limit=8)
+    assert len(selected) == 1
+    assert selected[0]["final_score"] == 50
+
+
+def test_user_agent_is_not_generic():
+    """User-Agent should not be the old 'HFI/1.0'."""
+    assert 'HFI/1.0' not in NewsScraper._USER_AGENT
+    assert 'Mozilla' in NewsScraper._USER_AGENT
+
+
+def test_score_breakdown_includes_relevance():
+    """Score breakdown dict should include relevance_points."""
+    cluster = {
+        "representative": {
+            "title": "Bitcoin ETF sees massive inflows",
+            "description": "Crypto market rally",
+            "age_hours": 2.0,
+            "source_health": 0.9,
+        },
+        "source_count": 1,
+        "avg_source_health": 0.9,
+        "cluster_item_count": 1,
+    }
+
+    scored = NewsScraper._score_brief_cluster(cluster)
+    assert "relevance_points" in scored["score_breakdown"]
+    assert scored["score_breakdown"]["relevance_points"] > 0
