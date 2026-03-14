@@ -1,6 +1,7 @@
 """Inspiration account and search endpoints."""
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, require_jwt
+from api.routes.scrape import get_scraper
 from api.schemas.inspiration import (
     InspirationAccountCreate,
     InspirationAccountUpdate,
@@ -19,6 +21,8 @@ from api.schemas.inspiration import (
 from common.models import InspirationAccount, InspirationPost
 from scraper.errors import SessionExpiredError
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/api/inspiration",
     tags=["inspiration"],
@@ -26,13 +30,6 @@ router = APIRouter(
 )
 
 _CACHE_TTL = timedelta(hours=1)
-
-
-def get_scraper():
-    """Factory kept separate for unit-test patching."""
-    from scraper.scraper import TwitterScraper
-
-    return TwitterScraper(headless=True)
 
 
 @router.get("/accounts", response_model=InspirationAccountListResponse)
@@ -141,7 +138,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
     if cached:
         return InspirationSearchResponse(posts=cached, cached=True, query=query_key)
 
-    scraper = get_scraper()
+    scraper = await get_scraper()
     try:
         posts = await asyncio.wait_for(
             scraper.search_by_user_engagement(
@@ -161,8 +158,6 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
             status_code=504,
             detail="X search timed out. The session may be expired or X may be slow.",
         )
-    finally:
-        await scraper.close()
 
     rows = []
     post_ids = []
