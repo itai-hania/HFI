@@ -477,38 +477,32 @@ class HFIBot:
         return response.json().get("stories", [])
 
     @staticmethod
-    def _brief_input(args: list[str]) -> tuple[int, bool]:
-        count = 5
-        force_refresh = False
+    def _brief_input(args: list[str]) -> int:
+        """Parse /brief args: optional count 1-8, default 5."""
         if not args:
-            return count, force_refresh
-
-        token = args[0].strip().lower()
-        if token == "refresh":
-            force_refresh = True
-            return count, force_refresh
+            return 5
+        token = args[0].strip()
         try:
             n = int(token)
         except ValueError:
-            raise ValueError("Usage: /brief [1-8|refresh]")
+            raise ValueError("Usage: /brief [1-8]")
         if 1 <= n <= 8:
-            return n, force_refresh
-        raise ValueError("Usage: /brief [1-8|refresh]")
+            return n
+        raise ValueError("Usage: /brief [1-8]")
 
     async def cmd_brief(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._reject_if_unauthorized(update, "brief"):
             return
 
         try:
-            count, force_refresh = self._brief_input(getattr(context, "args", []) or [])
-            query = "true" if force_refresh else "false"
-            response = await self._request("POST", f"/api/notifications/brief?force_refresh={query}")
+            count = self._brief_input(getattr(context, "args", []) or [])
+            response = await self._request("POST", "/api/notifications/brief?force_refresh=true")
             stories = response.json().get("stories", [])[:count]
             self._state_for(update).last_brief = stories
 
             msg = format_brief_message(stories, "on-demand")
             await self._send_chunked_reply(update, msg, parse_mode="HTML")
-            log_event(logger, "brief_sent", mode="on_demand", count=len(stories), force_refresh=force_refresh)
+            log_event(logger, "brief_sent", mode="on_demand", count=len(stories))
         except ValueError as err:
             await self._reply_text(update, str(err))
         except Exception as err:  # pragma: no cover - exercised in integration
