@@ -1,7 +1,7 @@
 """Tests for notification APIs."""
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +10,15 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from common.models import Base, Notification
+
+
+def _mock_themer_passthrough():
+    """Return a patch context that replaces BriefThemer with a passthrough mock."""
+    mock_cls = MagicMock()
+    mock_cls.return_value.generate_themes.side_effect = lambda stories: [
+        {"name": "News", "emoji": "\U0001f4ca", "takeaway": "", "stories": stories}
+    ]
+    return patch("api.routes.notifications.BriefThemer", mock_cls)
 
 
 @pytest.fixture
@@ -50,7 +59,8 @@ class TestNotificationEndpoints:
     def test_generate_brief(self, db_and_client):
         _, client = db_and_client
         published_at = datetime.now(timezone.utc)
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "SEC approves Bitcoin ETF",
@@ -97,7 +107,8 @@ class TestNotificationEndpoints:
 
     def test_brief_includes_source_urls(self, db_and_client):
         _, client = db_and_client
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "SEC approves Bitcoin ETF",
@@ -117,7 +128,8 @@ class TestNotificationEndpoints:
 
     def test_cached_brief_includes_source_urls(self, db_and_client):
         db, client = db_and_client
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "PayPal stablecoin",
@@ -142,7 +154,8 @@ class TestNotificationEndpoints:
 
     def test_brief_summary_is_english_not_translated(self, db_and_client):
         _, client = db_and_client
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "Stripe raises $6.5B",
@@ -160,7 +173,8 @@ class TestNotificationEndpoints:
 
     def test_brief_can_return_less_than_target_count(self, db_and_client):
         _, client = db_and_client
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "Only fresh story #1",
@@ -191,7 +205,8 @@ class TestNotificationEndpoints:
     def test_route_preserves_scraper_ranking_multi_source_over_single_source(self, db_and_client):
         _, client = db_and_client
         now = datetime.now(timezone.utc)
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "Cross-source ETF move",
@@ -271,7 +286,8 @@ class TestNotificationEndpoints:
         )
         db.commit()
 
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "Fresh fallback story",
@@ -291,7 +307,8 @@ class TestNotificationEndpoints:
     def test_brief_response_with_themes(self, db_and_client):
         """POST /api/notifications/brief returns themes when available."""
         _, client = db_and_client
-        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             _mock_themer_passthrough():
             mock_news.return_value = [
                 {
                     "title": "SEC approves Bitcoin ETF",
@@ -315,6 +332,40 @@ class TestNotificationEndpoints:
         assert "generated_at" in data
         assert isinstance(data["stories"], list)
         assert isinstance(data["themes"], list)
+
+    def test_brief_themes_populated(self, db_and_client):
+        """Generated brief must contain non-empty themes."""
+        _, client = db_and_client
+
+        mock_themer = MagicMock()
+        mock_themer.return_value.generate_themes.side_effect = lambda stories: [
+            {"name": "Test Theme", "emoji": "\U0001f4ca", "takeaway": "Test takeaway", "stories": stories}
+        ]
+
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news, \
+             patch("api.routes.notifications.BriefThemer", mock_themer):
+            mock_news.return_value = [
+                {
+                    "title": "SEC approves Bitcoin ETF",
+                    "description": "Major approval for institutional investors",
+                    "source": "Bloomberg",
+                    "sources": ["Bloomberg", "WSJ"],
+                    "source_urls": [
+                        "https://bloomberg.com/news/sec-bitcoin-etf",
+                        "https://wsj.com/markets/sec-bitcoin-etf",
+                    ],
+                    "source_count": 3,
+                    "published_at": datetime.now(timezone.utc).isoformat(),
+                    "relevance_score": 91,
+                }
+            ]
+            response = client.post("/api/notifications/brief", params={"force_refresh": True})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["themes"]) > 0
+        assert data["themes"][0]["name"] == "Test Theme"
+        assert data["themes"][0]["takeaway"] == "Test takeaway"
 
     def test_latest_brief_returns_persisted_payload(self, db_and_client):
         db, client = db_and_client

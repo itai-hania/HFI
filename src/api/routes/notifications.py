@@ -17,6 +17,7 @@ from api.schemas.notification import (
 )
 from common.models import Notification
 from processor.alert_detector import AlertDetector
+from processor.brief_themer import BriefThemer
 from scraper.news_scraper import NewsScraper
 
 router = APIRouter(
@@ -104,17 +105,31 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
         )
 
     # Persist JSON-safe values (e.g., datetimes as ISO strings) in the JSON column.
+    themer = BriefThemer()
+    story_dicts = [s.model_dump(mode="json") for s in stories]
+    raw_themes = themer.generate_themes(story_dicts)
+
+    themes = [
+        BriefTheme(
+            name=t["name"],
+            emoji=t["emoji"],
+            takeaway=t["takeaway"],
+            stories=[BriefStory.model_validate(s) for s in t["stories"]],
+        )
+        for t in raw_themes
+    ]
+
     generated_at = now.isoformat()
     payload = {
-        "stories": [s.model_dump(mode="json") for s in stories],
-        "themes": [],
+        "stories": story_dicts,
+        "themes": [t.model_dump(mode="json") for t in themes],
         "generated_at": generated_at,
     }
     row = Notification(type="brief", content=payload, delivered=False, created_at=now)
     db.add(row)
     db.commit()
 
-    return BriefResponse(themes=[], stories=stories, generated_at=now)
+    return BriefResponse(themes=themes, stories=stories, generated_at=now)
 
 
 @router.get("/brief/latest", response_model=BriefResponse)
