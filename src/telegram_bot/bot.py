@@ -156,7 +156,8 @@ def _chunk_text(text: str, max_chars: int = _MAX_TELEGRAM_MESSAGE_CHARS) -> list
 
 def format_brief_message(stories: List[dict], brief_type: str) -> str:
     """Render stories as rich HTML for Telegram."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
 
     if brief_type == "morning":
         header = "Morning Brief"
@@ -166,7 +167,7 @@ def format_brief_message(stories: List[dict], brief_type: str) -> str:
         header = "Brief"
 
     now = datetime.now(timezone.utc)
-    ist_now = now + timedelta(hours=2)
+    ist_now = now.astimezone(ZoneInfo("Asia/Jerusalem"))
     timestamp = ist_now.strftime("%H:%M")
 
     lines = [f"📊 <b>{header}</b> · {len(stories)} stories · {timestamp} IST", ""]
@@ -781,7 +782,7 @@ class HFIBot:
         await self._reply_text(
             update,
             (
-                f"Brief schedule (UTC): {brief_schedule}\n"
+                f"Brief schedule (Israel Time): {brief_schedule}\n"
                 f"Alert checks every {self.alert_interval_minutes} minutes."
             ),
         )

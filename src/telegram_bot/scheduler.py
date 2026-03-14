@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+
+ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
 
 
 def _parse_time_hhmm(value: str) -> tuple[int, int] | None:
@@ -28,7 +31,7 @@ def setup_scheduler(
     brief_times: Iterable[str] | None = None,
     alert_interval_minutes: int = 15,
 ) -> AsyncIOScheduler:
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(timezone=ISRAEL_TZ)
     parsed_times = list(brief_times or ["08:00", "19:00"])
 
     added = 0
@@ -47,7 +50,7 @@ def setup_scheduler(
 
         scheduler.add_job(
             bot.send_scheduled_brief,
-            CronTrigger(hour=hour, minute=minute),
+            CronTrigger(hour=hour, minute=minute, timezone=ISRAEL_TZ),
             id=job_id,
             replace_existing=True,
         )
@@ -56,13 +59,13 @@ def setup_scheduler(
     if added == 0:
         scheduler.add_job(
             bot.send_scheduled_brief,
-            CronTrigger(hour=8, minute=0),
+            CronTrigger(hour=8, minute=0, timezone=ISRAEL_TZ),
             id="morning-brief",
             replace_existing=True,
         )
         scheduler.add_job(
             bot.send_scheduled_brief,
-            CronTrigger(hour=19, minute=0),
+            CronTrigger(hour=19, minute=0, timezone=ISRAEL_TZ),
             id="evening-brief",
             replace_existing=True,
         )
