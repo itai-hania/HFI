@@ -142,11 +142,11 @@ class TestShutilWhichUsage:
         project_root = Path(__file__).parent.parent
         processor_file = project_root / "src" / "processor" / "processor.py"
         
-        content = processor_file.read_text()
-        
+        content = processor_file.read_text(encoding='utf-8')
+
         assert "['which'," not in content, "processor.py should not use 'which' command"
         assert "subprocess.run(['which'" not in content, "processor.py should not use 'which' command"
-        
+
         assert "shutil.which" in content, "processor.py should use shutil.which"
 
 
@@ -158,16 +158,16 @@ class TestPlatformDetection:
         project_root = Path(__file__).parent.parent
         processor_file = project_root / "src" / "processor" / "processor.py"
         
-        content = processor_file.read_text()
-        
+        content = processor_file.read_text(encoding='utf-8')
+
         assert "import platform" in content, "processor.py should import platform module"
-    
+
     def test_platform_system_used(self):
         """Verify platform.system() is used for OS detection."""
         project_root = Path(__file__).parent.parent
         processor_file = project_root / "src" / "processor" / "processor.py"
-        
-        content = processor_file.read_text()
+
+        content = processor_file.read_text(encoding='utf-8')
         
         assert "platform.system()" in content, "processor.py should use platform.system()"
 

@@ -1,5 +1,9 @@
 """Tests for Telegram scheduler wiring."""
 
+import pytest
+
+pytest.importorskip("apscheduler", reason="apscheduler not installed")
+
 from telegram_bot.scheduler import setup_scheduler
 
 
