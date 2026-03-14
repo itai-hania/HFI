@@ -23,6 +23,7 @@ services:
       context: .
       dockerfile: src/api/Dockerfile
     container_name: hfi-api
+    shm_size: "1gb"
     env_file: .env
     environment:
       - DATABASE_URL=sqlite:////app/data/hfi.db
