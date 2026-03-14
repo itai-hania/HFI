@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/trends", tags=["trends"], dependencies=[Depends(
 
 @router.get("", response_model=TrendListResponse)
 def get_trends(
-    source: Optional[str] = Query(None, description="Filter by source (Yahoo Finance, WSJ, etc.)"),
+    source: Optional[str] = Query(None, description="Filter by source (Yahoo Finance, CNBC, Bloomberg, etc.)"),
     date_from: Optional[datetime] = Query(None, description="Filter by discovered date (from)"),
     date_to: Optional[datetime] = Query(None, description="Filter by discovered date (to)"),
     has_summary: Optional[bool] = Query(None, description="Filter trends with/without summaries"),

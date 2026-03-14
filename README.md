@@ -35,7 +35,7 @@
 
 HFI automates discovery, translation, generation, and curation of FinTech content from English to Hebrew. It combines:
 
-1. **Multi-Source Scraping** - Monitors X (Twitter) + RSS feeds (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg)
+1. **Multi-Source Scraping** - Monitors X (Twitter) + RSS feeds (Yahoo Finance, CNBC, Bloomberg, MarketWatch, Seeking Alpha, TechCrunch Fintech, Investing.com, Google News Israel)
 2. **Smart Ranking** - Ranks articles by cross-source keyword overlap to surface trending topics
 3. **AI Translation** - GPT-4o translates with style matching and financial terminology
 4. **Human Review** - Web Content Studio (Next.js) for content approval, editing, and scheduling
@@ -412,7 +412,7 @@ Then run `python3 tools/check_env.py` in any worktree to catch missing keys or A
 ```
 1. DISCOVER
    ├─ X Scraper: Fetch trending topics (X Explore page)
-   ├─ News Scraper: Fetch from RSS feeds (Yahoo Finance, WSJ, TechCrunch, Bloomberg)
+   ├─ News Scraper: Fetch from RSS feeds (Yahoo Finance, CNBC, Bloomberg, MarketWatch, Seeking Alpha, TechCrunch, Investing.com, Google News Israel)
    ├─ Rank articles by cross-source keyword overlap (top 10)
    └─ Save trends to database
 
@@ -450,7 +450,7 @@ Then run `python3 tools/check_env.py` in any worktree to catch missing keys or A
 - ✅ Video URL interception (.m3u8 HLS streams)
 
 ### News Scraper
-- ✅ Multi-source RSS feed aggregation (Yahoo Finance, WSJ, TechCrunch Fintech, Bloomberg, MarketWatch)
+- ✅ Multi-source RSS feed aggregation (Yahoo Finance, CNBC, Bloomberg, MarketWatch, Seeking Alpha, TechCrunch Fintech, Investing.com, Google News Israel)
 - ✅ Parallel feed fetching with ThreadPoolExecutor and timeout protection
 - ✅ Cross-source keyword overlap ranking with Wall Street focus
 - ✅ Weighted sampling (70% finance / 30% tech)
@@ -537,7 +537,7 @@ pytest --cov=src tests/
 
 ### Completed ✅
 - [x] X scraper service with session persistence
-- [x] News scraper with multi-source parallel RSS feeds (Yahoo Finance, WSJ, TechCrunch, Bloomberg, MarketWatch)
+- [x] News scraper with multi-source parallel RSS feeds (Yahoo Finance, CNBC, Bloomberg, MarketWatch, Seeking Alpha, TechCrunch, Investing.com, Google News Israel)
 - [x] Cross-source ranking algorithm with Wall Street focus and weighted sampling
 - [x] Processor service with GPT-4o translation + content generation engine
 - [x] Dashboard UI with approval workflow (modular architecture, optimized queries)
