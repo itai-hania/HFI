@@ -42,7 +42,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from processor import TweetProcessor
+from processor.processor import TweetProcessor
 from common.models import create_tables
 
 # Configure logging with detailed format
