@@ -8,6 +8,7 @@ Author: HFI Development Team
 Last Updated: 2026-01-17
 """
 
+import math
 import os
 import enum
 import logging
@@ -655,6 +656,20 @@ class StyleExample(Base):
         comment="Number of times similar content was rejected/skipped"
     )
 
+    engagement_score = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default='0',
+        comment="Engagement score propagated from linked published tweet"
+    )
+
+    derived_from_tweet_id = Column(
+        Integer,
+        nullable=True,
+        comment="Tweet ID this style example was derived from (for engagement propagation)"
+    )
+
     def __repr__(self):
         return (
             f"<StyleExample(id={self.id}, source={self.source_type}, "
@@ -768,6 +783,39 @@ class UserPreference(Base):
     )
 
 
+class TweetEngagement(Base):
+    """Tracks engagement metrics on published tweets."""
+    __tablename__ = 'tweet_engagements'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tweet_id = Column(Integer, ForeignKey('tweets.id', ondelete='CASCADE'),
+                      nullable=False, unique=True, index=True)
+    x_post_id = Column(String(64), nullable=True, unique=True, index=True)
+    likes = Column(Integer, nullable=False, default=0)
+    retweets = Column(Integer, nullable=False, default=0)
+    replies = Column(Integer, nullable=False, default=0)
+    views = Column(Integer, nullable=False, default=0)
+    bookmarks = Column(Integer, nullable=False, default=0)
+    engagement_score = Column(Integer, nullable=False, default=0)
+    first_scraped_at = Column(DateTime(timezone=True), nullable=False,
+                               default=lambda: datetime.now(timezone.utc))
+    last_scraped_at = Column(DateTime(timezone=True), nullable=False,
+                              default=lambda: datetime.now(timezone.utc))
+
+    tweet = relationship("Tweet", backref="engagement")
+
+    def compute_score(self):
+        """Compute weighted engagement score."""
+        self.engagement_score = (
+            self.likes * 3 +
+            self.retweets * 5 +
+            self.replies * 2 +
+            self.bookmarks * 4 +
+            int(math.log2(max(self.views, 1)))
+        )
+        return self.engagement_score
+
+
 # ==================== Database Utilities ====================
 
 def create_tables(drop_existing: bool = False):
@@ -812,6 +860,8 @@ def create_tables(drop_existing: bool = False):
             ("style_examples", "approval_count", "ALTER TABLE style_examples ADD COLUMN approval_count INTEGER DEFAULT 0"),
             ("style_examples", "rejection_count", "ALTER TABLE style_examples ADD COLUMN rejection_count INTEGER DEFAULT 0"),
             ("tweets", "source_domain", "ALTER TABLE tweets ADD COLUMN source_domain VARCHAR(256)"),
+            ("style_examples", "engagement_score", "ALTER TABLE style_examples ADD COLUMN engagement_score INTEGER DEFAULT 0"),
+            ("style_examples", "derived_from_tweet_id", "ALTER TABLE style_examples ADD COLUMN derived_from_tweet_id INTEGER"),
         ]
 
         for table, column, sql in migrations:

@@ -11,6 +11,10 @@ class GeneratePostRequest(BaseModel):
     source_text: str = Field(..., min_length=1)
     num_variants: int = Field(3, ge=1, le=3)
     angles: Optional[List[str]] = None
+    use_tweet_types: bool = False
+    tweet_types: Optional[List[str]] = None
+    humanize: Optional[bool] = None
+    quality_gate: bool = False
 
 
 class GenerateThreadRequest(BaseModel):
@@ -68,6 +72,12 @@ class VariantResponse(BaseModel):
     char_count: int
     is_valid_hebrew: bool
     quality_score: int
+    quality_breakdown: Optional[dict] = None
+    source_hash: Optional[str] = None
+    humanizer_applied: bool = False
+    ai_patterns_detected: Optional[List[str]] = None
+    tweet_type: Optional[str] = None
+    dedup_warning: Optional[str] = None
 
 
 class GeneratePostResponse(BaseModel):

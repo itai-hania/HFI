@@ -263,7 +263,8 @@ def load_style_examples_from_db(limit: int = 5, source_tags: Optional[List[str]]
                 tag_matches = sum(1 for t in source_tags if t.lower() in [et.lower() for et in ex_tags])
                 recency = _recency_bonus(ex.created_at)
                 quality = (getattr(ex, 'approval_count', 0) or 0) - (getattr(ex, 'rejection_count', 0) or 0) * 2
-                combined = tag_matches * 10 + recency + quality
+                engagement = getattr(ex, 'engagement_score', 0) or 0
+                combined = tag_matches * 10 + recency + quality + engagement * 2
                 scored.append((ex, combined))
             scored.sort(key=lambda x: (-x[1], -x[0].word_count))
             candidates = [ex for ex, _ in scored]
@@ -319,9 +320,19 @@ def build_style_section(source_text: Optional[str] = None,
     """
     Build the style section for prompts.
 
-    Loads examples from DB (prioritizing topic-matched ones),
-    falls back to fallback_style if no DB examples found.
+    Loads voice profile (personality, patterns, NEVER list) and
+    DB style examples (prioritizing topic-matched ones).
+    Falls back to fallback_style if no DB examples found.
     """
+    # Load voice profile DNA (no-op if file missing/empty)
+    voice_section = ""
+    try:
+        from processor.voice_analyzer import load_voice_profile, build_voice_prompt_section
+        profile = load_voice_profile()
+        voice_section = build_voice_prompt_section(profile)
+    except Exception as e:
+        logger.debug(f"Voice profile not available: {e}")
+
     source_tags = extract_topic_keywords(source_text) if source_text else None
     db_examples = load_style_examples_from_db(limit=5, source_tags=source_tags)
 
@@ -331,7 +342,7 @@ def build_style_section(source_text: Optional[str] = None,
             truncated = _smart_truncate(example, max_chars=800)
             examples_text += f"\n--- Example {i} ---\n{truncated}\n"
 
-        return f"""STYLE EXAMPLES (match this writing style):
+        examples_section = f"""STYLE EXAMPLES (match this writing style):
 {examples_text}
 
 KEY STYLE REQUIREMENTS:
@@ -339,9 +350,17 @@ KEY STYLE REQUIREMENTS:
 - Use similar expressions and phrasing patterns
 - Maintain the same level of formality"""
     elif fallback_style:
-        return f"STYLE GUIDE:\n{fallback_style}"
+        examples_section = f"STYLE GUIDE:\n{fallback_style}"
     else:
-        return "Write in a professional, engaging Hebrew style suitable for financial/tech content on social media."
+        examples_section = "Write in a professional, engaging Hebrew style suitable for financial/tech content on social media."
+
+    # Combine voice DNA + style examples
+    if voice_section and examples_section:
+        return f"{voice_section}\n\n{examples_section}"
+    elif voice_section:
+        return voice_section
+    else:
+        return examples_section
 
 
 def get_completion_params(model: str, system_prompt: str, user_content: str,

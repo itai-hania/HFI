@@ -10,6 +10,7 @@ import json
 import hashlib
 import logging
 import os
+import random
 from pathlib import Path
 from typing import Optional, List, Dict
 from datetime import datetime, timezone
@@ -91,6 +92,37 @@ class ContentGenerator:
         },
     ]
 
+    TWEET_TYPES = [
+        {
+            'name': 'pattern_observation',
+            'label': 'Pattern Observation',
+            'weight': 0.40,
+            'instruction': 'Identify a specific pattern or trend in the source data. Name it. Explain why it matters with numbers.',
+            'temperature_offset': 0.0,
+        },
+        {
+            'name': 'contrarian',
+            'label': 'Contrarian/Anti-Hype',
+            'weight': 0.25,
+            'instruction': 'Challenge the obvious narrative. What is everyone missing? Push back with evidence, not just skepticism.',
+            'temperature_offset': 0.15,
+        },
+        {
+            'name': 'insider_insight',
+            'label': 'Insider Insight',
+            'weight': 0.20,
+            'instruction': 'Explain the behind-the-scenes mechanism. What does this look like from the inside? Share operational wisdom.',
+            'temperature_offset': 0.1,
+        },
+        {
+            'name': 'cultural_commentary',
+            'label': 'Cultural Commentary',
+            'weight': 0.15,
+            'instruction': 'Comment on what this reveals about industry culture, market psychology, or community dynamics.',
+            'temperature_offset': 0.2,
+        },
+    ]
+
     KEEP_ENGLISH = _KEEP_ENGLISH
 
     def __init__(self, openai_client=None, model: Optional[str] = None,
@@ -163,7 +195,11 @@ class ContentGenerator:
         return is_valid
 
     def generate_post(self, source_text: str, num_variants: int = 3,
-                       angles: Optional[List[str]] = None) -> List[Dict]:
+                       angles: Optional[List[str]] = None,
+                       use_tweet_types: bool = False,
+                       tweet_types: Optional[List[str]] = None,
+                       humanize: Optional[bool] = None,
+                       quality_gate: bool = False) -> List[Dict]:
         """
         Generate original Hebrew post variants from English source.
 
@@ -171,6 +207,10 @@ class ContentGenerator:
             source_text: English source content to inspire the post
             num_variants: Number of variants to generate (max 3)
             angles: Optional list of angle names to use ('news', 'educational', 'opinion')
+            use_tweet_types: If True, use TWEET_TYPES instead of ANGLES
+            tweet_types: Explicit tweet type names to use (overrides random selection)
+            humanize: Override humanizer enable/disable (None = use config)
+            quality_gate: If True, run quality evaluation on each variant
 
         Returns:
             List of dicts: [{'angle': str, 'label': str, 'content': str, 'char_count': int}]
@@ -178,12 +218,33 @@ class ContentGenerator:
         if not source_text or not source_text.strip():
             return []
 
-        num_variants = min(num_variants, len(self.ANGLES))
-
-        if angles:
-            selected_angles = [a for a in self.ANGLES if a['name'] in angles][:num_variants]
+        # Select generation modes (tweet types or angles)
+        if use_tweet_types:
+            selected = self._select_tweet_types(num_variants, tweet_types)
         else:
-            selected_angles = self.ANGLES[:num_variants]
+            num_variants = min(num_variants, len(self.ANGLES))
+            if angles:
+                selected = [a for a in self.ANGLES if a['name'] in angles][:num_variants]
+            else:
+                selected = self.ANGLES[:num_variants]
+
+        # Topic dedup check (soft warning only)
+        dedup_warning = None
+        try:
+            from processor.dedup import get_recent_topics, extract_topic_fingerprint, is_duplicate_topic
+            from common.models import SessionLocal
+            db = SessionLocal()
+            try:
+                recent = get_recent_topics(db)
+                fingerprint = extract_topic_fingerprint(source_text)
+                is_dup, reason = is_duplicate_topic(fingerprint, recent)
+                if is_dup:
+                    dedup_warning = reason
+                    logger.warning(f"Topic dedup warning: {reason}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.debug(f"Dedup check skipped: {e}")
 
         glossary_str = self._build_glossary_str(source_text=source_text)
         keep_english_str = ", ".join(sorted(self.KEEP_ENGLISH))
@@ -192,14 +253,23 @@ class ContentGenerator:
         source_type = _detect_source_type(source_text)
         source_type_instruction = SOURCE_TYPE_INSTRUCTIONS.get(source_type, '')
 
+        # Determine if humanizer should run
+        should_humanize = humanize
+        if should_humanize is None:
+            try:
+                from processor.humanizer import is_humanizer_enabled
+                should_humanize = is_humanizer_enabled()
+            except Exception:
+                should_humanize = False
+
         variants = []
-        for angle in selected_angles:
+        for mode in selected:
             system_prompt = f"""You are a Hebrew financial/tech content creator writing for social media (X/Twitter).
 
 Your task: Write an ORIGINAL Hebrew post INSPIRED BY the source content below.
 Do NOT translate. Create NEW content in Hebrew that captures the key insight.
 
-ANGLE: {angle['instruction']}
+ANGLE: {mode['instruction']}
 SOURCE TYPE: {source_type_instruction}
 
 RULES:
@@ -218,43 +288,104 @@ RULES:
             try:
                 params = self._get_completion_params(
                     system_prompt, user_content,
-                    temperature_offset=angle['temperature_offset']
+                    temperature_offset=mode['temperature_offset']
                 )
                 response = self.client.chat.completions.create(**params)
                 content = response.choices[0].message.content.strip()
 
                 if not self.validate_hebrew_output(content):
-                    # Retry once with stronger instruction
                     params['messages'][0]['content'] += "\n\nCRITICAL: Your output MUST be in Hebrew. Previous attempt was not Hebrew enough."
                     response = self.client.chat.completions.create(**params)
                     content = response.choices[0].message.content.strip()
 
+                # Humanizer post-processing
+                humanizer_applied = False
+                ai_patterns_detected = []
+                if should_humanize:
+                    try:
+                        from processor.humanizer import humanize_text
+                        result = humanize_text(content, enabled=True)
+                        if result['was_humanized']:
+                            content = result['humanized']
+                            humanizer_applied = True
+                            ai_patterns_detected = result['patterns_detected']
+                            logger.info(f"Humanizer applied to {mode['name']}: {len(ai_patterns_detected)} patterns fixed")
+                    except Exception as e:
+                        logger.warning(f"Humanizer failed for {mode['name']}: {e}")
+
                 quality = _score_hebrew_quality(content)
-                variants.append({
-                    'angle': angle['name'],
-                    'label': angle['label'],
+
+                variant = {
+                    'angle': mode['name'],
+                    'label': mode['label'],
                     'content': content,
                     'char_count': len(content),
                     'is_valid_hebrew': self.validate_hebrew_output(content),
                     'quality_score': quality['total'],
                     'quality_breakdown': quality,
                     'source_hash': source_hash,
-                })
+                    'humanizer_applied': humanizer_applied,
+                    'ai_patterns_detected': ai_patterns_detected,
+                }
+
+                # Add tweet_type key if using tweet types
+                if use_tweet_types:
+                    variant['tweet_type'] = mode['name']
+
+                # Add dedup warning if applicable
+                if dedup_warning:
+                    variant['dedup_warning'] = dedup_warning
+
+                variants.append(variant)
 
             except Exception as e:
-                logger.error(f"Failed to generate {angle['name']} variant: {e}")
+                logger.error(f"Failed to generate {mode['name']} variant: {e}")
                 variants.append({
-                    'angle': angle['name'],
-                    'label': angle['label'],
+                    'angle': mode['name'],
+                    'label': mode['label'],
                     'content': f"Error: {str(e)}",
                     'char_count': 0,
                     'is_valid_hebrew': False,
                     'quality_score': 0,
                     'quality_breakdown': {'total': 0, 'hebrew_ratio': 0, 'length': 0, 'structure': 0},
                     'source_hash': source_hash,
+                    'humanizer_applied': False,
+                    'ai_patterns_detected': [],
                 })
 
+        # Quality gate (opt-in)
+        if quality_gate:
+            try:
+                from processor.quality_gate import gate_content
+                variants = gate_content(variants, source_text=source_text)
+            except Exception as e:
+                logger.warning(f"Quality gate failed: {e}")
+
         return variants
+
+    def _select_tweet_types(self, num_variants: int, explicit_types: Optional[List[str]] = None) -> List[Dict]:
+        """Select tweet types for generation.
+
+        If explicit_types provided, use those. Otherwise, select by weighted random.
+        """
+        num_variants = min(num_variants, len(self.TWEET_TYPES))
+
+        if explicit_types:
+            return [t for t in self.TWEET_TYPES if t['name'] in explicit_types][:num_variants]
+
+        # Weighted random selection without replacement
+        types_pool = list(self.TWEET_TYPES)
+        weights = [t['weight'] for t in types_pool]
+        selected = []
+        for _ in range(num_variants):
+            if not types_pool:
+                break
+            chosen = random.choices(types_pool, weights=weights, k=1)[0]
+            selected.append(chosen)
+            idx = types_pool.index(chosen)
+            types_pool.pop(idx)
+            weights.pop(idx)
+        return selected
 
     def generate_thread(self, source_text: str, num_tweets: int = 3,
                          angle: str = 'educational') -> List[Dict]:
