@@ -30,7 +30,7 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
-      - CORS_ORIGINS=http://localhost:3000
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
       - SESSION_DIR=/app/data/session
     ports:
       - "8000:8000"
