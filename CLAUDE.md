@@ -14,7 +14,7 @@
 
 ---
 
-## Current Status (as of 2026-03-08)
+## Current Status (as of 2026-03-14)
 
 ### Completion: ~95% (Beta Phase)
 
@@ -168,18 +168,23 @@ HFI/
   - `get_latest_news(limit_per_source, total_limit)` - Fetches and ranks articles
   - `get_brief_news(total_limit, max_age_hours, limit_per_source)` - Strict-fresh brief pipeline with source health gating + clustering
   - `_fetch_single_feed_for_brief(source_name, limit_per_source, max_age_hours, now_utc)` - Per-source freshness diagnostics and article extraction
-  - `_cluster_brief_articles(articles)` / `_score_brief_cluster(cluster)` - Multi-source grouping + relevance scoring used by `/api/notifications/brief`
+  - `_cluster_brief_articles(articles)` / `_score_brief_cluster(cluster)` / `_cluster_relevance_score(cluster)` - Multi-source grouping + relevance scoring used by `/api/notifications/brief`
   - `_rank_articles(articles)` - Scores by cross-source keyword overlap
   - `_extract_keywords(title)` - Extracts significant words for ranking
 - **News Sources:**
   - Yahoo Finance: `https://finance.yahoo.com/news/rssindex`
-  - WSJ Markets: `https://feeds.a.dj.com/rss/RSSMarketsMain.xml`
-  - TechCrunch Fintech: `https://techcrunch.com/category/fintech/feed/`
+  - CNBC: `https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001147`
   - Bloomberg Markets: `https://feeds.bloomberg.com/markets/news.rss`
+  - MarketWatch: `https://www.marketwatch.com/rss/topstories`
+  - Seeking Alpha: `https://seekingalpha.com/market_currents.xml`
+  - TechCrunch Fintech: `https://techcrunch.com/category/fintech/feed/`
+  - Investing.com: `https://www.investing.com/rss/news.rss`
+  - Google News Israel: `https://news.google.com/rss/search?q=Israel+tech+startup+fintech&hl=en-US&gl=US&ceid=US:en`
+- **Feed Categories:** Finance (Yahoo, CNBC, Bloomberg, MarketWatch, Seeking Alpha), Tech (TechCrunch), Israel (Investing.com, Google News Israel)
 - **Ranking Algorithm:**
-  - Extracts keywords from article titles (removes stopwords, keeps words >2 chars)
-  - Builds keyword → sources map
-  - Scores each article: keywords in 2+ sources = +10 per source, else +1
+  - `get_latest_news`: 3-bucket weighted sampling (50% finance, 25% tech, 25% Israel), cross-source keyword overlap scoring
+  - `get_brief_news`: Cluster-based scoring with relevance weighting (`_cluster_relevance_score`), per-source cap (`_MAX_PER_SOURCE = 3`), minimum quality floor (`_BRIEF_MIN_SCORE = 10`)
+  - Keyword-based scoring: `MUST_INCLUDE_KEYWORDS` (+10 per hit), `EXCLUDE_KEYWORDS` (-20 per hit)
   - Returns top N articles by score
 
 ### When Helping with Translation/Processing
@@ -222,7 +227,7 @@ HFI/
   - `style_examples` - Hebrew style examples with topic tags (is_active Boolean)
 - **Important Enums:**
   - `TweetStatus`: PENDING, PROCESSED, APPROVED, PUBLISHED, FAILED
-  - `TrendSource`: X_TWITTER, YAHOO_FINANCE, WSJ, TECHCRUNCH, BLOOMBERG, MANUAL
+  - `TrendSource`: X_TWITTER, YAHOO_FINANCE, CNBC, TECHCRUNCH, BLOOMBERG, MARKETWATCH, SEEKING_ALPHA, INVESTING_COM, GOOGLE_NEWS_ISRAEL, WSJ, CALCALIST, GLOBES, TIMES_OF_ISRAEL, MANUAL
 - **Important:** Database schema includes `error_message` field and `failed` status for error tracking
 
 ---
@@ -514,7 +519,18 @@ Before declaring a dashboard feature complete:
 
 ## Recent Updates & Changes
 
-### 2026-03-13 (Latest)
+### 2026-03-14 (Latest)
+- ✅ **News brief diversity, relevance, and feed reliability** (`src/scraper/news_scraper.py`)
+  - Replaced 4 dead/stale RSS feeds (WSJ, Calcalist, Globes, Times of Israel) with verified working feeds (CNBC, Seeking Alpha, Investing.com, Google News Israel)
+  - Added relevance scoring (`_cluster_relevance_score`) using `MUST_INCLUDE_KEYWORDS`/`EXCLUDE_KEYWORDS`
+  - Added per-source cap (`_MAX_PER_SOURCE = 3`) to prevent single-source flooding
+  - Added minimum quality floor (`_BRIEF_MIN_SCORE = 10`) to filter low-relevance stories
+  - Expanded `MUST_INCLUDE_KEYWORDS` with macro, big banks, Magnificent Seven, AI/semiconductor terms
+  - Fixed User-Agent string to avoid RSS feed blocking
+  - Added 4 new `TrendSource` enum values: CNBC, SEEKING_ALPHA, INVESTING_COM, GOOGLE_NEWS_ISRAEL
+  - Updated `SOURCE_MAP` in `auto_pipeline.py` to match new feed sources
+
+### 2026-03-13
 - ✅ **Legacy code cleanup** — full codebase audit and removal
   - Deleted `archive/dashboard-v1/` (22 files, zero imports)
   - Removed dead query helpers from `models.py` (get_tweets_by_status, get_recent_trends, update_tweet_status)
@@ -784,6 +800,6 @@ When helping:
 
 ---
 
-**Last Updated:** 2026-03-13
-**Version:** 1.8
+**Last Updated:** 2026-03-14
+**Version:** 1.9
 **Maintained by:** HFI Project Team
