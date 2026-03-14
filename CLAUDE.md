@@ -297,18 +297,53 @@ python tools/init_db.py
 
 ### 5. Deployment
 
-**Local (Docker Compose):**
+**⚠️ CRITICAL: Production uses a SEPARATE compose file and deploy script. NEVER run `docker-compose up` directly on the Azure VM.**
+
+**Local (Docker Compose — dev only):**
 ```bash
-docker-compose up -d          # Start all services
+docker-compose up -d          # Uses docker-compose.yml (dev)
 docker-compose logs -f        # View logs
 docker-compose down           # Stop
 ```
 
 **Production (Azure VM + Caddy auto-HTTPS):**
+- **Compose file:** `deploy/docker-compose.prod.yml` (NOT root `docker-compose.yml`)
+- **Env file:** `.env.prod` (NOT `.env`)
+- **Deploy script:** `deploy/scripts/deploy.sh` (handles build, env validation, health checks, Caddy reload)
+- **URL:** `https://hfi-prod.israelcentral.cloudapp.azure.com`
+- **CI/CD:** Push to `main` → GitHub Actions self-hosted runner auto-deploys via `deploy/scripts/deploy.sh`
 - See `docs/deploy/azure-private-production-runbook.md` for full guide
-- URL: `https://hfi-prod.israelcentral.cloudapp.azure.com`
-- Caddy handles Let's Encrypt TLS automatically
-- CI/CD: push to `main` → GitHub Actions self-hosted runner auto-deploys
+
+**Manual production deploy (on Azure VM):**
+```bash
+cd /opt/hfi/app
+git pull origin main
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/deploy.sh
+```
+
+**Other production operations:**
+```bash
+# Rollback to previous release
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/rollback.sh
+
+# Run scraper manually
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/run_scraper_manual.sh
+
+# Check host health
+ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/host_health_check.sh
+```
+
+**Key differences between dev and prod compose:**
+
+| | Dev (`docker-compose.yml`) | Prod (`deploy/docker-compose.prod.yml`) |
+|---|---|---|
+| Proxy | None | Caddy with auto-HTTPS |
+| Env file | `.env` | `.env.prod` via `ENV_FILE` |
+| CORS | `http://localhost:3000` fallback | From `.env.prod` (HTTPS required) |
+| Health checks | None | Built-in for api + frontend |
+| Memory limits | None | Per-service limits |
+| Logging | Default | JSON with rotation |
+| Network | `hfi-network` | `hfi-private` |
 
 ---
 
@@ -746,10 +781,15 @@ SELECT * FROM trends ORDER BY discovered_at DESC LIMIT 10;
 4. Check system prompt in `TranslationService`
 
 ### "How do I deploy this?"
-1. Local: `docker-compose up -d`
-2. Production: Azure VM with Caddy auto-HTTPS (see `docs/deploy/azure-private-production-runbook.md`)
-3. Ensure `.env.prod` is configured on the VM (see `deploy/.env.prod.example`)
-4. Push to `main` to trigger auto-deploy via GitHub Actions
+1. Local: `docker-compose up -d` (uses root `docker-compose.yml`)
+2. **Production: NEVER use root `docker-compose.yml`** — use the deploy script:
+   ```bash
+   cd /opt/hfi/app && git pull origin main
+   ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/deploy.sh
+   ```
+3. CI/CD auto-deploys on push to `main` via GitHub Actions self-hosted runner
+4. See `docs/deploy/azure-private-production-runbook.md` for full guide
+5. Rollback: `ENV_FILE=/opt/hfi/app/.env.prod deploy/scripts/rollback.sh`
 
 ### "I want to add [feature]"
 1. Check `IMPLEMENTATION_PLAN.md` for architecture
