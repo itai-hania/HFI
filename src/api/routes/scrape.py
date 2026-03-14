@@ -54,6 +54,18 @@ async def get_scraper():
         return _scraper_instance
 
 
+async def release_scraper():
+    """Close the singleton scraper and free browser memory."""
+    global _scraper_instance
+    if _scraper_instance is None:
+        return
+    try:
+        await _scraper_instance.close()
+    except Exception as exc:
+        logger.warning(f"Error closing scraper: {exc}")
+    _scraper_instance = None
+
+
 def get_translation_service():
     """Factory kept separate for test patching."""
     from processor.processor import ProcessorConfig, TranslationService

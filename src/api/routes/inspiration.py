@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, require_jwt
-from api.routes.scrape import get_scraper
+from api.routes.scrape import get_scraper, release_scraper
 from api.schemas.inspiration import (
     InspirationAccountCreate,
     InspirationAccountUpdate,
@@ -164,6 +164,8 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
             status_code=502,
             detail=f"Scraper error: {type(exc).__name__}: {exc}",
         ) from exc
+    finally:
+        await release_scraper()
 
     rows = []
     post_ids = []
