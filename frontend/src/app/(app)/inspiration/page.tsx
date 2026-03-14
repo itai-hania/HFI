@@ -98,11 +98,13 @@ export default function InspirationPage() {
       });
       toast.success("Search complete");
     } catch (error: unknown) {
-      const err = error as { response?: { status?: number; data?: { detail?: string } } };
+      const err = error as { response?: { status?: number; data?: { detail?: string } }; message?: string };
       const status = err?.response?.status;
       const detail = err?.response?.data?.detail;
 
-      if (status === 503) {
+      if (!err?.response) {
+        toast.error("Cannot reach API server. Check that it is running.");
+      } else if (status === 503) {
         toast.error(detail || "X session expired. Refresh the session file on the server.");
       } else if (status === 504) {
         toast.error(detail || "Search timed out. Try again later.");

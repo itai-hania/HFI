@@ -158,6 +158,12 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
             status_code=504,
             detail="X search timed out. The session may be expired or X may be slow.",
         )
+    except Exception as exc:
+        logger.error(f"Inspiration search failed for @{payload.username}: {type(exc).__name__}: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Scraper error: {type(exc).__name__}: {exc}",
+        ) from exc
 
     rows = []
     post_ids = []
