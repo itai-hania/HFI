@@ -41,6 +41,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Python packages from builder stage (avoids build deps in final image)
 COPY --from=builder /root/.local /root/.local
 
+# Ensure non-root user can read installed packages
+RUN chmod -R a+rX /root /root/.local
+
 # Add Python packages to PATH
 ENV PATH=/root/.local/bin:$PATH
 
