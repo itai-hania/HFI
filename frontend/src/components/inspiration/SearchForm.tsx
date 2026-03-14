@@ -1,5 +1,7 @@
 "use client";
 
+import { X } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { InspirationAccount } from "@/lib/types";
@@ -66,20 +68,44 @@ export function SearchForm({
           placeholder="Min likes"
           aria-label="Minimum likes"
         />
-        <Input
-          type="date"
-          value={since}
-          onChange={(event) => setSince(event.target.value)}
-          max={until || undefined}
-          aria-label="From date"
-        />
-        <Input
-          type="date"
-          value={until}
-          onChange={(event) => setUntil(event.target.value)}
-          min={since || undefined}
-          aria-label="To date"
-        />
+        <div className="relative">
+          <Input
+            type="date"
+            value={since}
+            onChange={(event) => setSince(event.target.value)}
+            max={until || undefined}
+            aria-label="From date"
+          />
+          {since && (
+            <button
+              type="button"
+              onClick={() => setSince("")}
+              className="absolute right-8 top-1/2 -translate-y-1/2 cursor-pointer rounded-full p-0.5 text-[var(--muted)] hover:text-[var(--ink)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              aria-label="Clear from date"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+        <div className="relative">
+          <Input
+            type="date"
+            value={until}
+            onChange={(event) => setUntil(event.target.value)}
+            min={since || undefined}
+            aria-label="To date"
+          />
+          {until && (
+            <button
+              type="button"
+              onClick={() => setUntil("")}
+              className="absolute right-8 top-1/2 -translate-y-1/2 cursor-pointer rounded-full p-0.5 text-[var(--muted)] hover:text-[var(--ink)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              aria-label="Clear to date"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
         <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Keyword" aria-label="Keyword" />
         <Button onClick={onSubmit} disabled={loading || !username.trim()}>
           {loading ? "Searching..." : "Search"}
