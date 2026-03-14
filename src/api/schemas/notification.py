@@ -48,3 +48,15 @@ class NotificationDeliveredResponse(BaseModel):
     id: int
     delivered: bool
     delivered_at: datetime | None = None
+
+
+class BriefFeedbackRequest(BaseModel):
+    story_title: str
+    feedback_type: str = "not_relevant"
+    keywords: List[str] = Field(default_factory=list)
+    source: str = "dashboard"
+
+
+class BriefFeedbackWeightsResponse(BaseModel):
+    excluded_keywords: List[str]
+    keyword_counts: Dict[str, int]

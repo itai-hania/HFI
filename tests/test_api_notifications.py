@@ -392,3 +392,49 @@ class TestNotificationEndpoints:
         resp = client.get("/api/notifications/brief/latest", headers={"Authorization": "Bearer test"})
         assert resp.status_code == 200
         assert resp.json()["stories"][0]["title"] == "Latest cached story"
+
+
+class TestBriefFeedbackEndpoints:
+    def test_submit_brief_feedback(self, db_and_client):
+        """POST /api/notifications/brief/feedback stores feedback."""
+        _, client = db_and_client
+        response = client.post("/api/notifications/brief/feedback", json={
+            "story_title": "NVIDIA beats earnings",
+            "feedback_type": "not_relevant",
+            "keywords": ["nvidia", "earnings"],
+            "source": "dashboard",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+
+    def test_get_feedback_weights(self, db_and_client):
+        """GET /api/notifications/brief/feedback/weights returns learned adjustments."""
+        _, client = db_and_client
+        for _ in range(3):
+            client.post("/api/notifications/brief/feedback", json={
+                "story_title": "Tariff news story",
+                "feedback_type": "not_relevant",
+                "keywords": ["tariff"],
+                "source": "dashboard",
+            })
+
+        response = client.get("/api/notifications/brief/feedback/weights")
+        assert response.status_code == 200
+        data = response.json()
+        assert "tariff" in data["excluded_keywords"]
+
+    def test_reset_feedback(self, db_and_client):
+        """DELETE /api/notifications/brief/feedback resets all feedback."""
+        _, client = db_and_client
+        client.post("/api/notifications/brief/feedback", json={
+            "story_title": "Some story",
+            "feedback_type": "not_relevant",
+            "keywords": ["test"],
+            "source": "dashboard",
+        })
+        response = client.delete("/api/notifications/brief/feedback")
+        assert response.status_code == 200
+
+        weights = client.get("/api/notifications/brief/feedback/weights")
+        assert len(weights.json()["excluded_keywords"]) == 0

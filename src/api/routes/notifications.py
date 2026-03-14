@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, require_jwt
 from api.schemas.notification import (
+    BriefFeedbackRequest,
+    BriefFeedbackWeightsResponse,
     BriefResponse,
     BriefStory,
     BriefTheme,
@@ -15,7 +17,7 @@ from api.schemas.notification import (
     NotificationResponse,
     NotificationDeliveredResponse,
 )
-from common.models import Notification
+from common.models import BriefFeedback, Notification
 from processor.alert_detector import AlertDetector
 from processor.brief_themer import BriefThemer
 from scraper.news_scraper import NewsScraper
@@ -142,6 +144,40 @@ def latest_brief(db: Session = Depends(get_db)):
         .first()
     )
     return _to_brief_response(latest)
+
+
+@router.post("/brief/feedback")
+def submit_brief_feedback(request: BriefFeedbackRequest, db: Session = Depends(get_db)):
+    """Store story feedback for personalization."""
+    fb = BriefFeedback(
+        story_title=request.story_title,
+        feedback_type=request.feedback_type,
+        keywords=request.keywords,
+        source=request.source,
+    )
+    db.add(fb)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/brief/feedback/weights", response_model=BriefFeedbackWeightsResponse)
+def get_feedback_weights(db: Session = Depends(get_db)):
+    """Return learned keyword exclusions based on accumulated feedback."""
+    rows = db.query(BriefFeedback).filter_by(feedback_type="not_relevant").all()
+    keyword_counts: dict[str, int] = {}
+    for row in rows:
+        for kw in (row.keywords or []):
+            keyword_counts[kw] = keyword_counts.get(kw, 0) + 1
+    excluded = [kw for kw, count in keyword_counts.items() if count >= 3]
+    return BriefFeedbackWeightsResponse(excluded_keywords=excluded, keyword_counts=keyword_counts)
+
+
+@router.delete("/brief/feedback")
+def reset_feedback(db: Session = Depends(get_db)):
+    """Clear all feedback data."""
+    db.query(BriefFeedback).delete()
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/alerts", response_model=NotificationListResponse)
