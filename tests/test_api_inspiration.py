@@ -222,6 +222,26 @@ class TestInspirationSessionAndTimeout:
         assert response.status_code == 503
         assert "session" in response.json()["detail"].lower()
 
+    def test_search_returns_503_when_get_scraper_raises_session_expired(self, db_and_client):
+        """SessionExpiredError from get_scraper() (browser init) must also yield 503."""
+        _, client = db_and_client
+        client.post(
+            "/api/inspiration/accounts",
+            json={"username": "testuser_init", "display_name": "Test Init"},
+            headers={"Authorization": "Bearer test"},
+        )
+        with patch("api.routes.inspiration.get_scraper", new_callable=AsyncMock) as mock_get:
+            from scraper.errors import SessionExpiredError
+
+            mock_get.side_effect = SessionExpiredError()
+            response = client.post(
+                "/api/inspiration/search",
+                json={"username": "testuser_init", "min_likes": 100, "keyword": "", "limit": 10},
+                headers={"Authorization": "Bearer test"},
+            )
+        assert response.status_code == 503
+        assert "session" in response.json()["detail"].lower()
+
     def test_search_returns_504_on_timeout(self, db_and_client):
         _, client = db_and_client
         client.post(

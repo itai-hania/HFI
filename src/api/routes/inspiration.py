@@ -138,8 +138,8 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
     if cached:
         return InspirationSearchResponse(posts=cached, cached=True, query=query_key)
 
-    scraper = await get_scraper()
     try:
+        scraper = await get_scraper()
         posts = await asyncio.wait_for(
             scraper.search_by_user_engagement(
                 username=payload.username,
