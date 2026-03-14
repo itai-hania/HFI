@@ -1,11 +1,11 @@
 "use client";
 
+import { X } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { InspirationAccount } from "@/lib/types";
 
 export function SearchForm({
-  accounts,
   username,
   setUsername,
   minLikes,
@@ -19,7 +19,6 @@ export function SearchForm({
   onSubmit,
   loading,
 }: {
-  accounts: InspirationAccount[];
   username: string;
   setUsername: (value: string) => void;
   minLikes: number;
@@ -35,22 +34,6 @@ export function SearchForm({
 }) {
   return (
     <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)]/60 p-4 md:p-5 space-y-3">
-      {accounts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {accounts.map((account) => (
-            <button
-              key={account.id}
-              type="button"
-              onClick={() => setUsername(account.username)}
-              className="cursor-pointer rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.04)] px-3 py-1 text-xs text-[var(--muted)] hover:bg-[rgba(255,255,255,0.08)] hover:text-[var(--ink)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              aria-label={`Select @${account.username}`}
-            >
-              @{account.username}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="grid gap-3 md:grid-cols-[1.2fr_0.7fr_0.8fr_0.8fr_1fr_auto]">
         <Input
           value={username}
@@ -66,20 +49,44 @@ export function SearchForm({
           placeholder="Min likes"
           aria-label="Minimum likes"
         />
-        <Input
-          type="date"
-          value={since}
-          onChange={(event) => setSince(event.target.value)}
-          max={until || undefined}
-          aria-label="From date"
-        />
-        <Input
-          type="date"
-          value={until}
-          onChange={(event) => setUntil(event.target.value)}
-          min={since || undefined}
-          aria-label="To date"
-        />
+        <div className="relative">
+          <Input
+            type="date"
+            value={since}
+            onChange={(event) => setSince(event.target.value)}
+            max={until || undefined}
+            aria-label="From date"
+          />
+          {since && (
+            <button
+              type="button"
+              onClick={() => setSince("")}
+              className="absolute right-8 top-1/2 -translate-y-1/2 cursor-pointer rounded-full p-0.5 text-[var(--muted)] hover:text-[var(--ink)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              aria-label="Clear from date"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+        <div className="relative">
+          <Input
+            type="date"
+            value={until}
+            onChange={(event) => setUntil(event.target.value)}
+            min={since || undefined}
+            aria-label="To date"
+          />
+          {until && (
+            <button
+              type="button"
+              onClick={() => setUntil("")}
+              className="absolute right-8 top-1/2 -translate-y-1/2 cursor-pointer rounded-full p-0.5 text-[var(--muted)] hover:text-[var(--ink)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              aria-label="Clear to date"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
         <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Keyword" aria-label="Keyword" />
         <Button onClick={onSubmit} disabled={loading || !username.trim()}>
           {loading ? "Searching..." : "Search"}

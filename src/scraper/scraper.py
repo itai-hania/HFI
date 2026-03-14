@@ -432,6 +432,7 @@ class TwitterScraper:
         limit: int = 20,
         since: str | None = None,
         until: str | None = None,
+        sort_by: str = "top",
     ) -> List[Dict]:
         """
         Search X for high-engagement posts by user.
@@ -454,7 +455,8 @@ class TwitterScraper:
             await self.ensure_logged_in()
 
         logger.info(f"🔎 Searching engagement posts: {query}")
-        search_url = f"https://x.com/search?q={quote(query)}&src=typed_query&f=top"
+        tab = "live" if sort_by == "latest" else "top"
+        search_url = f"https://x.com/search?q={quote(query)}&src=typed_query&f={tab}"
 
         try:
             await self.page.goto(search_url, timeout=45000)
@@ -563,7 +565,10 @@ class TwitterScraper:
                 await self._random_delay(0.8, 1.6)
 
             results = [r for r in collected.values() if int(r.get("likes", 0)) >= int(min_faves)]
-            results.sort(key=lambda item: int(item.get("likes", 0)), reverse=True)
+            if sort_by == "latest":
+                results.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+            else:
+                results.sort(key=lambda item: int(item.get("likes", 0)), reverse=True)
             logger.info(f"✅ Found {len(results)} posts for {username} with likes>={min_faves}")
             return results[:limit]
 

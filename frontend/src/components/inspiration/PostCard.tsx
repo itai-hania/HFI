@@ -18,6 +18,19 @@ function safeHref(value: string | null | undefined) {
   }
 }
 
+function formatPostDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  try {
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function PostCard({ post }: { post: InspirationPost }) {
   const router = useRouter();
   const href = safeHref(post.post_url);
@@ -28,6 +41,12 @@ export function PostCard({ post }: { post: InspirationPost }) {
         <p className="text-sm leading-6 text-[var(--ink)]" dir={textDir(post.content)}>
           {post.content}
         </p>
+
+        {formatPostDate(post.posted_at) && (
+          <p className="text-xs text-[var(--muted)]">
+            {formatPostDate(post.posted_at)}
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Badge>{post.likes.toLocaleString()} likes</Badge>
