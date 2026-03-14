@@ -79,8 +79,8 @@ def remove_account(account_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-def _build_query_key(username: str, min_likes: int, keyword: str, since: str = "", until: str = "") -> str:
-    return f"{username.lower()}::{min_likes}::{keyword.strip().lower()}::{since}::{until}"
+def _build_query_key(username: str, min_likes: int, keyword: str, since: str = "", until: str = "", sort_by: str = "top") -> str:
+    return f"{username.lower()}::{min_likes}::{keyword.strip().lower()}::{since}::{until}::{sort_by}"
 
 
 def _parse_dt(value):
@@ -120,7 +120,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
     if not account:
         raise HTTPException(status_code=404, detail=f"Account @{payload.username} not tracked. Add it first.")
 
-    query_key = _build_query_key(payload.username, payload.min_likes, payload.keyword, payload.since or "", payload.until or "")
+    query_key = _build_query_key(payload.username, payload.min_likes, payload.keyword, payload.since or "", payload.until or "", payload.sort_by)
     now = datetime.now(timezone.utc)
     cutoff = now - _CACHE_TTL
 
@@ -131,7 +131,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
             InspirationPost.query_key == query_key,
             InspirationPost.fetched_at >= cutoff,
         )
-        .order_by(InspirationPost.likes.desc())
+        .order_by(InspirationPost.posted_at.desc() if payload.sort_by == "latest" else InspirationPost.likes.desc())
         .limit(payload.limit)
         .all()
     )
@@ -148,6 +148,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
                 limit=payload.limit,
                 since=payload.since,
                 until=payload.until,
+                sort_by=payload.sort_by,
             ),
             timeout=90,
         )
@@ -217,5 +218,8 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
 
     db.flush()
     db.commit()
-    rows.sort(key=lambda item: item.likes, reverse=True)
+    if payload.sort_by == "latest":
+        rows.sort(key=lambda item: item.posted_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    else:
+        rows.sort(key=lambda item: item.likes, reverse=True)
     return InspirationSearchResponse(posts=rows[: payload.limit], cached=False, query=query_key)
