@@ -10,6 +10,7 @@ import httpx
 from common.env_utils import SingleInstanceFileLock
 from common.logging_utils import log_event
 from telegram_bot.bot import HFIBot
+from telegram_bot.command_catalog import bot_commands
 from telegram_bot.config import load_bot_config
 
 try:
@@ -40,6 +41,15 @@ async def _run(bot: HFIBot, runtime_lock: SingleInstanceFileLock):
     try:
         await bot.app.initialize()
         initialized = True
+
+        try:
+            from telegram import BotCommand
+            cmds = [BotCommand(name, desc) for name, desc in bot_commands()]
+            await bot.app.bot.set_my_commands(cmds)
+            log_event(logger, "bot_commands_registered", count=len(cmds))
+        except Exception as exc:
+            log_event(logger, "bot_commands_registration_failed", level=logging.WARNING, error=str(exc))
+
         await bot.app.start()
         started = True
 

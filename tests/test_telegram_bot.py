@@ -178,6 +178,26 @@ class TestXUrlValidation:
             validate_x_status_url("https://x.com/user/likes")
 
 
+def test_bot_commands_list():
+    """Verify bot_commands() returns BotCommand-compatible tuples for set_my_commands."""
+    from telegram_bot.command_catalog import bot_commands
+    commands = bot_commands()
+    assert len(commands) == 10
+    names = [c[0] for c in commands]
+    assert "brief" in names
+    assert "start" in names
+    assert "help" in names
+    assert "lastbrief" not in names
+    assert "queue" not in names
+    assert "draft" not in names
+    assert "approve" not in names
+    assert "status" not in names
+    for name, description in commands:
+        assert isinstance(name, str)
+        assert isinstance(description, str)
+        assert len(description) <= 256
+
+
 class TestNewCommandsInCatalog:
     def test_scrape_in_start_text(self):
         text = render_start_text()

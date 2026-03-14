@@ -91,6 +91,17 @@ def render_start_text() -> str:
     return "\n".join(lines)
 
 
+def bot_commands() -> list[tuple[str, str]]:
+    """Return (name, description) pairs for Telegram set_my_commands.
+
+    Includes /start (always present in Telegram) plus all visible catalog commands.
+    """
+    pairs = [("start", "Start the bot and show available commands")]
+    for item in visible_start_commands():
+        pairs.append((item.name, item.summary[:256]))
+    return pairs
+
+
 def render_help_text() -> str:
     lines = ["HFI Bot Help", "", "Examples:"]
     for item in visible_help_commands():
