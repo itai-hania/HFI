@@ -22,8 +22,8 @@ class CommandSpec:
 COMMAND_CATALOG: tuple[CommandSpec, ...] = (
     CommandSpec(
         name="brief",
-        syntax="/brief [1-8|refresh]",
-        summary="Fetch the latest brief, limit the number of stories, or force a refresh.",
+        syntax="/brief [1-8]",
+        summary="Fetch a fresh brief, optionally limit the number of stories.",
         example="/brief 3",
     ),
     CommandSpec(
@@ -31,12 +31,6 @@ COMMAND_CATALOG: tuple[CommandSpec, ...] = (
         syntax="/story <n>",
         summary="Show the source links and fuller context for story n from the latest brief.",
         example="/story 1",
-    ),
-    CommandSpec(
-        name="lastbrief",
-        syntax="/lastbrief",
-        summary="Re-open the most recent brief without regenerating it.",
-        example="/lastbrief",
     ),
     CommandSpec(
         name="write",
@@ -49,30 +43,6 @@ COMMAND_CATALOG: tuple[CommandSpec, ...] = (
         syntax="/save <variant_index>",
         summary="Save one variant from your last /write session as a draft in the queue.",
         example="/save 1",
-    ),
-    CommandSpec(
-        name="queue",
-        syntax="/queue",
-        summary="Show queue counts and the newest review-ready draft IDs.",
-        example="/queue",
-    ),
-    CommandSpec(
-        name="draft",
-        syntax="/draft <id>",
-        summary="Show the status, preview, and studio link for a saved draft.",
-        example="/draft 42",
-    ),
-    CommandSpec(
-        name="approve",
-        syntax="/approve <id>",
-        summary="Mark a saved draft as approved for the publishing workflow.",
-        example="/approve 42",
-    ),
-    CommandSpec(
-        name="status",
-        syntax="/status",
-        summary="Show quick counts for drafts, scheduled, and published content.",
-        example="/status",
     ),
     CommandSpec(
         name="schedule",
