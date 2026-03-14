@@ -125,15 +125,10 @@ class TestTelegramBotFormatting:
         expected = (
             "HFI Content Studio Bot is online.\n\n"
             "Commands:\n"
-            "/brief [1-8|refresh] - Fetch the latest brief, limit the number of stories, or force a refresh.\n"
+            "/brief [1-8] - Fetch a fresh brief, optionally limit the number of stories.\n"
             "/story <n> - Show the source links and fuller context for story n from the latest brief.\n"
-            "/lastbrief - Re-open the most recent brief without regenerating it.\n"
             "/write <n|x_url|https_url|text> - Turn a brief item, X post, article URL, or pasted text into Hebrew draft variants.\n"
             "/save <variant_index> - Save one variant from your last /write session as a draft in the queue.\n"
-            "/queue - Show queue counts and the newest review-ready draft IDs.\n"
-            "/draft <id> - Show the status, preview, and studio link for a saved draft.\n"
-            "/approve <id> - Mark a saved draft as approved for the publishing workflow.\n"
-            "/status - Show quick counts for drafts, scheduled, and published content.\n"
             "/schedule - Show the configured brief and alert automation times.\n"
             "/scrape <url> - Scrape an X thread, translate it, and save as a draft.\n"
             "/xtrends - Show the top trending topics on X.\n"
@@ -143,20 +138,28 @@ class TestTelegramBotFormatting:
         assert render_start_text() == expected
 
     def test_brief_input_accepts_1_to_8(self):
-        """_brief_input should accept any number 1-8, not just 3/4/5."""
+        """_brief_input should accept 1-8 and default to 5. No 'refresh' arg."""
         from telegram_bot.bot import HFIBot
 
-        assert HFIBot._brief_input(["1"]) == (1, False)
-        assert HFIBot._brief_input(["6"]) == (6, False)
-        assert HFIBot._brief_input(["8"]) == (8, False)
-        assert HFIBot._brief_input(["refresh"]) == (5, True)
-        assert HFIBot._brief_input([]) == (5, False)
+        assert HFIBot._brief_input(["1"]) == 1
+        assert HFIBot._brief_input(["6"]) == 6
+        assert HFIBot._brief_input(["8"]) == 8
+        assert HFIBot._brief_input([]) == 5
 
-        import pytest
         with pytest.raises(ValueError):
             HFIBot._brief_input(["9"])
         with pytest.raises(ValueError):
             HFIBot._brief_input(["0"])
+        with pytest.raises(ValueError):
+            HFIBot._brief_input(["refresh"])
+
+    def test_dropped_commands_not_in_start_text(self):
+        text = render_start_text()
+        assert "/lastbrief" not in text
+        assert "/queue" not in text
+        assert "/draft" not in text
+        assert "/approve" not in text
+        assert "/status" not in text
 
 
 class TestXUrlValidation:
@@ -176,6 +179,26 @@ class TestXUrlValidation:
     def test_validate_x_status_url_rejects_x_non_status(self):
         with pytest.raises((URLValidationError, ValueError)):
             validate_x_status_url("https://x.com/user/likes")
+
+
+def test_bot_commands_list():
+    """Verify bot_commands() returns BotCommand-compatible tuples for set_my_commands."""
+    from telegram_bot.command_catalog import bot_commands
+    commands = bot_commands()
+    assert len(commands) == 10
+    names = [c[0] for c in commands]
+    assert "brief" in names
+    assert "start" in names
+    assert "help" in names
+    assert "lastbrief" not in names
+    assert "queue" not in names
+    assert "draft" not in names
+    assert "approve" not in names
+    assert "status" not in names
+    for name, description in commands:
+        assert isinstance(name, str)
+        assert isinstance(description, str)
+        assert len(description) <= 256
 
 
 class TestNewCommandsInCatalog:

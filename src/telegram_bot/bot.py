@@ -79,7 +79,6 @@ except Exception:  # pragma: no cover - type/runtime fallback for non-bot test e
 
 
 logger = logging.getLogger(__name__)
-_WRITE_USAGE = "Use /write <n|x_url|https_url|text>"
 _MAX_TELEGRAM_MESSAGE_CHARS = 3500
 
 
@@ -284,13 +283,8 @@ class HFIBot:
         self.app.add_handler(CommandHandler("health", self.cmd_health))
         self.app.add_handler(CommandHandler("brief", self.cmd_brief))
         self.app.add_handler(CommandHandler("story", self.cmd_story))
-        self.app.add_handler(CommandHandler("lastbrief", self.cmd_lastbrief))
         self.app.add_handler(CommandHandler("write", self.cmd_write))
         self.app.add_handler(CommandHandler("save", self.cmd_save))
-        self.app.add_handler(CommandHandler("queue", self.cmd_queue))
-        self.app.add_handler(CommandHandler("draft", self.cmd_draft))
-        self.app.add_handler(CommandHandler("approve", self.cmd_approve))
-        self.app.add_handler(CommandHandler("status", self.cmd_status))
         self.app.add_handler(CommandHandler("schedule", self.cmd_schedule))
         self.app.add_handler(CommandHandler("scrape", self.cmd_scrape))
         self.app.add_handler(CommandHandler("xtrends", self.cmd_xtrends))
@@ -482,38 +476,32 @@ class HFIBot:
         return response.json().get("stories", [])
 
     @staticmethod
-    def _brief_input(args: list[str]) -> tuple[int, bool]:
-        count = 5
-        force_refresh = False
+    def _brief_input(args: list[str]) -> int:
+        """Parse /brief args: optional count 1-8, default 5."""
         if not args:
-            return count, force_refresh
-
-        token = args[0].strip().lower()
-        if token == "refresh":
-            force_refresh = True
-            return count, force_refresh
+            return 5
+        token = args[0].strip()
         try:
             n = int(token)
         except ValueError:
-            raise ValueError("Usage: /brief [1-8|refresh]")
+            raise ValueError("Usage: /brief [1-8]")
         if 1 <= n <= 8:
-            return n, force_refresh
-        raise ValueError("Usage: /brief [1-8|refresh]")
+            return n
+        raise ValueError("Usage: /brief [1-8]")
 
     async def cmd_brief(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._reject_if_unauthorized(update, "brief"):
             return
 
         try:
-            count, force_refresh = self._brief_input(getattr(context, "args", []) or [])
-            query = "true" if force_refresh else "false"
-            response = await self._request("POST", f"/api/notifications/brief?force_refresh={query}")
+            count = self._brief_input(getattr(context, "args", []) or [])
+            response = await self._request("POST", "/api/notifications/brief?force_refresh=true")
             stories = response.json().get("stories", [])[:count]
             self._state_for(update).last_brief = stories
 
             msg = format_brief_message(stories, "on-demand")
             await self._send_chunked_reply(update, msg, parse_mode="HTML")
-            log_event(logger, "brief_sent", mode="on_demand", count=len(stories), force_refresh=force_refresh)
+            log_event(logger, "brief_sent", mode="on_demand", count=len(stories))
         except ValueError as err:
             await self._reply_text(update, str(err))
         except Exception as err:  # pragma: no cover - exercised in integration
@@ -567,18 +555,6 @@ class HFIBot:
                     lines.append(f"- {item}")
 
             await self._send_chunked_reply(update, "\n".join(lines))
-        except Exception as err:
-            await self._reply_error(update, err)
-
-    async def cmd_lastbrief(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self._reject_if_unauthorized(update, "lastbrief"):
-            return
-        try:
-            stories = await self._load_brief_for_chat(update)
-            if not stories:
-                await self._reply_text(update, "No cached brief found. Run /brief first.")
-                return
-            await self._send_chunked_reply(update, format_brief_message(stories, "cached"), parse_mode="HTML")
         except Exception as err:
             await self._reply_error(update, err)
 
@@ -798,86 +774,6 @@ class HFIBot:
         except Exception as err:
             await self._reply_error(update, err)
 
-    async def cmd_queue(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self._reject_if_unauthorized(update, "queue"):
-            return
-        try:
-            summary_response = await self._request("GET", "/api/content/queue/summary")
-            drafts_response = await self._request("GET", "/api/content/drafts?status=processed&page=1&limit=5")
-            summary = summary_response.json()
-            drafts = drafts_response.json().get("items", [])
-            draft_ids = [str(item.get("id")) for item in drafts if item.get("id") is not None]
-            lines = [
-                "Queue summary:",
-                f"Pending: {summary.get('pending', 0)}",
-                f"Processed: {summary.get('processed', 0)}",
-                f"Approved: {summary.get('approved', 0)}",
-                f"Scheduled: {summary.get('scheduled', 0)}",
-                f"Published: {summary.get('published', 0)}",
-                f"Failed: {summary.get('failed', 0)}",
-                f"Latest review-ready IDs: {', '.join(draft_ids) if draft_ids else 'none'}",
-            ]
-            await self._reply_text(update, "\n".join(lines))
-        except Exception as err:
-            await self._reply_error(update, err)
-
-    async def cmd_draft(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self._reject_if_unauthorized(update, "draft"):
-            return
-        arg = (getattr(context, "args", []) or [None])[0]
-        if arg is None or not str(arg).isdigit():
-            await self._reply_text(update, "Usage: /draft <id>")
-            return
-        content_id = int(arg)
-
-        try:
-            response = await self._request("GET", f"/api/content/{content_id}")
-            item = response.json()
-            preview_source = item.get("hebrew_draft") or item.get("original_text") or ""
-            preview = _safe_preview(str(preview_source), max_chars=280)
-            link = self._frontend_edit_link(content_id)
-            await self._send_chunked_reply(
-                update,
-                (
-                    f"Draft #{content_id}\n"
-                    f"Status: {item.get('status', 'unknown')}\n"
-                    f"Preview: {preview}\n"
-                    f"Edit: {link}"
-                ),
-            )
-        except Exception as err:
-            await self._reply_error(update, err)
-
-    async def cmd_approve(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self._reject_if_unauthorized(update, "approve"):
-            return
-        arg = (getattr(context, "args", []) or [None])[0]
-        if arg is None or not str(arg).isdigit():
-            await self._reply_text(update, "Usage: /approve <id>")
-            return
-        content_id = int(arg)
-        try:
-            response = await self._request("POST", f"/api/content/{content_id}/approve")
-            item = response.json()
-            await self._reply_text(update, f"Draft #{content_id} approved. Status: {item.get('status', 'approved')}")
-        except Exception as err:
-            await self._reply_error(update, err)
-
-    async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self._reject_if_unauthorized(update, "status"):
-            return
-        try:
-            summary = (await self._request("GET", "/api/content/queue/summary")).json()
-            drafts_count = int(summary.get("pending", 0)) + int(summary.get("processed", 0))
-            msg = (
-                f"Drafts: {drafts_count}\n"
-                f"Scheduled: {summary.get('scheduled', 0)}\n"
-                f"Published: {summary.get('published', 0)}"
-            )
-            await self._reply_text(update, msg)
-        except Exception as err:  # pragma: no cover - exercised in integration
-            await self._reply_error(update, err)
-
     async def cmd_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._reject_if_unauthorized(update, "schedule"):
             return
@@ -919,7 +815,7 @@ class HFIBot:
             msg = (
                 f"<b>Thread scraped</b>\n\n"
                 f"{html.escape(preview)}\n\n"
-                f"Draft #{draft_id} · /approve {draft_id} to approve"
+                f"Draft #{draft_id} · Edit: {self._frontend_edit_link(int(draft_id)) if str(draft_id).isdigit() else ''}"
             )
             await self._send_chunked_reply(update, msg, parse_mode="HTML")
         except Exception as err:
