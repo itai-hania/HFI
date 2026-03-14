@@ -46,6 +46,7 @@ export function useSearchInspiration() {
       limit?: number;
       since?: string;
       until?: string;
+      sort_by?: string;
     }) => {
       const { data } = await api.post<InspirationSearchResponse>("/api/inspiration/search", payload);
       return data;

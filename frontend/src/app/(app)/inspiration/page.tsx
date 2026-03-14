@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { ArrowUpDown, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { PostCard } from "@/components/inspiration/PostCard";
@@ -48,9 +48,17 @@ export default function InspirationPage() {
   const [since, setSince] = useState(defaultSince);
   const [until, setUntil] = useState(defaultUntil);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [sortBy, setSortBy] = useState<"top" | "latest">("top");
 
   const posts = useMemo(() => searchMutation.data?.posts || [], [searchMutation.data]);
-  const sortedPosts = useMemo(() => [...posts].sort((a, b) => b.likes - a.likes), [posts]);
+  const sortedPosts = useMemo(() => {
+    return [...posts].sort((a, b) => {
+      if (sortBy === "latest") {
+        return (b.posted_at ?? "").localeCompare(a.posted_at ?? "");
+      }
+      return b.likes - a.likes;
+    });
+  }, [posts, sortBy]);
   const visiblePosts = sortedPosts.slice(0, visibleCount);
   const remaining = sortedPosts.length - visibleCount;
 
@@ -95,6 +103,7 @@ export default function InspirationPage() {
         limit: 30,
         since: since || undefined,
         until: until || undefined,
+        sort_by: sortBy,
       });
       toast.success("Search complete");
     } catch (error: unknown) {
@@ -186,6 +195,36 @@ export default function InspirationPage() {
         onSubmit={handleSearch}
         loading={searchMutation.isPending}
       />
+
+      {posts.length > 0 && (
+        <div className="flex items-center gap-2">
+          <ArrowUpDown size={14} className="text-[var(--muted)]" />
+          <div className="inline-flex rounded-full border border-[var(--border)] bg-[var(--card)]/60 p-0.5">
+            <button
+              type="button"
+              onClick={() => setSortBy("top")}
+              className={`cursor-pointer rounded-full px-3 py-1 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                sortBy === "top"
+                  ? "bg-[var(--accent)] text-white"
+                  : "text-[var(--muted)] hover:text-[var(--ink)]"
+              }`}
+            >
+              Top
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy("latest")}
+              className={`cursor-pointer rounded-full px-3 py-1 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                sortBy === "latest"
+                  ? "bg-[var(--accent)] text-white"
+                  : "text-[var(--muted)] hover:text-[var(--ink)]"
+              }`}
+            >
+              Latest
+            </button>
+          </div>
+        </div>
+      )}
 
       {searchMutation.isPending ? (
         <p className="text-sm text-[var(--muted)]">Searching...</p>
