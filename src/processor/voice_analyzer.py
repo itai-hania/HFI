@@ -242,6 +242,66 @@ def _clear_cache() -> None:
     _voice_profile_cache_time = 0.0
 
 
+def _build_ai_patterns_avoid_section() -> str:
+    """Build a prompt section listing AI writing patterns to avoid.
+
+    Extracts human-readable forbidden words/phrases from the humanizer's
+    pattern definitions and formats them as prompt rules. This gets injected
+    into EVERY prompt (translation + generation) so GPT avoids AI tells
+    from the start, rather than needing post-processing to fix them.
+    """
+    try:
+        from processor.humanizer import (
+            CONTENT_PATTERNS, LANGUAGE_PATTERNS, COMMUNICATION_PATTERNS,
+        )
+    except ImportError:
+        return ""
+
+    import re
+
+    def _clean_regex(pattern: str) -> str:
+        """Strip regex syntax to get human-readable phrase."""
+        cleaned = pattern
+        cleaned = re.sub(r'\\b', '', cleaned)
+        cleaned = re.sub(r'\\s\+', ' ', cleaned)
+        cleaned = re.sub(r'\\s\*', '', cleaned)
+        cleaned = re.sub(r'\[\s*\\s-\s*\]', ' ', cleaned)
+        cleaned = re.sub(r"\\'\?", "'", cleaned)
+        cleaned = re.sub(r"'\?", "'", cleaned)
+        cleaned = cleaned.strip()
+        return cleaned
+
+    hebrew_words = []
+    english_words = []
+
+    all_patterns = {}
+    all_patterns.update(CONTENT_PATTERNS)
+    all_patterns.update(LANGUAGE_PATTERNS)
+    all_patterns.update(COMMUNICATION_PATTERNS)
+
+    for name, cfg in all_patterns.items():
+        for marker in cfg.get("hebrew", []):
+            cleaned = _clean_regex(marker)
+            if cleaned and len(cleaned) > 1:
+                hebrew_words.append(cleaned)
+        for marker in cfg.get("english", []):
+            cleaned = _clean_regex(marker)
+            if cleaned and len(cleaned) > 1:
+                english_words.append(cleaned)
+
+    if not hebrew_words and not english_words:
+        return ""
+
+    lines = ["AI WRITING PATTERNS TO AVOID (these phrases sound AI-generated):"]
+    if hebrew_words:
+        lines.append(f"  Hebrew — DO NOT use: {', '.join(hebrew_words)}")
+    if english_words:
+        lines.append(f"  English — DO NOT use: {', '.join(english_words)}")
+    lines.append("  Also avoid: em-dash overuse (max 1 per post), markdown bold (**text**), decorative emojis, rule-of-three filler lists")
+
+    return "\n".join(lines)
+
+
 def build_voice_prompt_section(profile: Dict = None) -> str:
     """
     Build a prompt section string from a voice profile.
@@ -329,6 +389,11 @@ def build_voice_prompt_section(profile: Dict = None) -> str:
             never_items.append(f"  {i}. {item}")
         sections.append("NEVER:\n" + "\n".join(never_items))
 
+    # AI WRITING PATTERNS TO AVOID (from humanizer pattern definitions)
+    ai_avoid_section = _build_ai_patterns_avoid_section()
+    if ai_avoid_section:
+        sections.append(ai_avoid_section)
+
     if not sections:
         return ""
 
@@ -337,6 +402,15 @@ def build_voice_prompt_section(profile: Dict = None) -> str:
 
 def main():
     """CLI entry point: analyze style examples from DB and save voice profile."""
+    # Load .env file if present
+    try:
+        from dotenv import load_dotenv
+        env_path = PROJECT_ROOT / ".env"
+        if env_path.exists():
+            load_dotenv(env_path)
+    except ImportError:
+        pass
+
     from common.models import SessionLocal, StyleExample
 
     print("=" * 60)
