@@ -460,12 +460,12 @@ class TwitterScraper:
 
         try:
             await self.page.goto(search_url, timeout=45000)
-            await self._random_delay(1.5, 2.8)
+            await self._random_delay(0.5, 1.0)
             await self.page.wait_for_selector('article[data-testid=\"tweet\"]', timeout=15000)
             await self._validate_page_loaded()
 
             collected: Dict[str, Dict] = {}
-            max_scrolls = 10
+            max_scrolls = 5
 
             for _ in range(max_scrolls):
                 rows = await self.page.evaluate(
@@ -558,11 +558,11 @@ class TwitterScraper:
                 if len(high_engagement) >= limit:
                     break
 
-                if not changed and len(collected) >= limit * 2:
+                if not changed and len(collected) >= limit:
                     break
 
                 await self.page.evaluate("window.scrollBy(0, 1200)")
-                await self._random_delay(0.8, 1.6)
+                await self._random_delay(0.3, 0.6)
 
             results = [r for r in collected.values() if int(r.get("likes", 0)) >= int(min_faves)]
             if sort_by == "latest":
