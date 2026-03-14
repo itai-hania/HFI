@@ -63,6 +63,12 @@ COMMAND_CATALOG: tuple[CommandSpec, ...] = (
         example="/xtrends",
     ),
     CommandSpec(
+        name="skip",
+        syntax="/skip <n>",
+        summary="Mark brief story n as not relevant to improve future briefs.",
+        example="/skip 3",
+    ),
+    CommandSpec(
         name="health",
         syntax="/health",
         summary="Check API and database health.",
