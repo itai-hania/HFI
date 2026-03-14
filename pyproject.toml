@@ -23,7 +23,7 @@ dependencies = [
     "langdetect>=1.0.9",
     "python-telegram-bot>=22.6",
     "apscheduler>=3.11.2",
-    "streamlit>=1.30.0",
+
 ]
 
 [project.optional-dependencies]
