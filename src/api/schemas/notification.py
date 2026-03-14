@@ -16,8 +16,17 @@ class BriefStory(BaseModel):
     relevance_score: int = 0
 
 
-class BriefResponse(BaseModel):
+class BriefTheme(BaseModel):
+    name: str
+    emoji: str
+    takeaway: str
     stories: List[BriefStory]
+
+
+class BriefResponse(BaseModel):
+    themes: List[BriefTheme] = Field(default_factory=list)
+    stories: List[BriefStory]
+    generated_at: datetime | None = None
 
 
 class NotificationResponse(BaseModel):

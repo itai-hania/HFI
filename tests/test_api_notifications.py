@@ -288,6 +288,34 @@ class TestNotificationEndpoints:
         assert resp.json()["stories"][0]["title"] == "Fresh fallback story"
         mock_news.assert_called_once()
 
+    def test_brief_response_with_themes(self, db_and_client):
+        """POST /api/notifications/brief returns themes when available."""
+        _, client = db_and_client
+        with patch("api.routes.notifications.NewsScraper.get_brief_news") as mock_news:
+            mock_news.return_value = [
+                {
+                    "title": "SEC approves Bitcoin ETF",
+                    "description": "Major approval for institutional investors",
+                    "source": "Bloomberg",
+                    "sources": ["Bloomberg", "WSJ"],
+                    "source_urls": [
+                        "https://bloomberg.com/news/sec-bitcoin-etf",
+                        "https://wsj.com/markets/sec-bitcoin-etf",
+                    ],
+                    "source_count": 3,
+                    "published_at": datetime.now(timezone.utc).isoformat(),
+                    "relevance_score": 91,
+                }
+            ]
+            response = client.post("/api/notifications/brief", params={"force_refresh": True})
+        assert response.status_code == 200
+        data = response.json()
+        assert "themes" in data
+        assert "stories" in data
+        assert "generated_at" in data
+        assert isinstance(data["stories"], list)
+        assert isinstance(data["themes"], list)
+
     def test_latest_brief_returns_persisted_payload(self, db_and_client):
         db, client = db_and_client
         db.add(

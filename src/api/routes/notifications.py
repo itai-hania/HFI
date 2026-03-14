@@ -10,6 +10,7 @@ from api.dependencies import get_db, require_jwt
 from api.schemas.notification import (
     BriefResponse,
     BriefStory,
+    BriefTheme,
     NotificationListResponse,
     NotificationResponse,
     NotificationDeliveredResponse,
@@ -31,12 +32,16 @@ def _to_brief_response(row: Notification | None) -> BriefResponse:
     if row is None:
         raise HTTPException(status_code=404, detail="No stored brief found")
 
-    stories_payload = (row.content or {}).get("stories", [])
+    content = row.content or {}
+    stories_payload = content.get("stories", [])
     stories = [BriefStory.model_validate(item) for item in stories_payload if isinstance(item, dict)]
     if not stories:
         raise HTTPException(status_code=404, detail="No stored brief found")
 
-    return BriefResponse(stories=stories)
+    themes_payload = content.get("themes", [])
+    themes = [BriefTheme.model_validate(item) for item in themes_payload if isinstance(item, dict)]
+    generated_at = content.get("generated_at")
+    return BriefResponse(themes=themes, stories=stories, generated_at=generated_at)
 
 
 @router.post("/brief", response_model=BriefResponse)
@@ -99,12 +104,17 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
         )
 
     # Persist JSON-safe values (e.g., datetimes as ISO strings) in the JSON column.
-    payload = {"stories": [s.model_dump(mode="json") for s in stories]}
+    generated_at = now.isoformat()
+    payload = {
+        "stories": [s.model_dump(mode="json") for s in stories],
+        "themes": [],
+        "generated_at": generated_at,
+    }
     row = Notification(type="brief", content=payload, delivered=False, created_at=now)
     db.add(row)
     db.commit()
 
-    return BriefResponse(stories=stories)
+    return BriefResponse(themes=[], stories=stories, generated_at=now)
 
 
 @router.get("/brief/latest", response_model=BriefResponse)
