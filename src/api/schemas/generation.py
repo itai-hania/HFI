@@ -72,6 +72,12 @@ class VariantResponse(BaseModel):
     char_count: int
     is_valid_hebrew: bool
     quality_score: int
+    quality_breakdown: Optional[dict] = None
+    source_hash: Optional[str] = None
+    humanizer_applied: bool = False
+    ai_patterns_detected: Optional[List[str]] = None
+    tweet_type: Optional[str] = None
+    dedup_warning: Optional[str] = None
 
 
 class GeneratePostResponse(BaseModel):

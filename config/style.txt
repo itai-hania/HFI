@@ -132,4 +132,4 @@
 5. **Direct address in plural**: אנחנו, אתם (we, you plural)
 6. **Numbers in context**: "250 אלף", "21.4%", "$150M"
 7. **No emojis** unless original has them
-8. **Include disclaimers** when discussing specific stocks/legal cases
+8. **Never include disclaimers** - no legal/investment advice warnings

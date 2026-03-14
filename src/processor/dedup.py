@@ -16,19 +16,9 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
 from common.models import Tweet, TweetStatus
+from common.stopwords import STOPWORDS
 
 logger = logging.getLogger(__name__)
-
-STOPWORDS: Set[str] = {
-    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
-    'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-    'could', 'should', 'may', 'might', 'shall', 'can', 'for', 'and', 'but',
-    'or', 'not', 'no', 'to', 'of', 'in', 'on', 'at', 'by', 'with', 'from',
-    'this', 'that', 'these', 'those', 'it', 'its', 'they', 'their', 'we',
-    'our', 'he', 'she', 'his', 'her', 'as', 'if', 'then', 'than', 'so',
-    'very', 'just', 'also', 'about', 'more', 'some', 'any', 'all', 'each',
-    'every', 'both', 'few', 'many', 'much', 'most',
-}
 
 _COMMON_WORDS: Set[str] = {
     'said', 'says', 'new', 'year', 'time', 'way', 'day', 'made', 'make',
