@@ -79,7 +79,6 @@ except Exception:  # pragma: no cover - type/runtime fallback for non-bot test e
 
 
 logger = logging.getLogger(__name__)
-_WRITE_USAGE = "Use /write <n|x_url|https_url|text>"
 _MAX_TELEGRAM_MESSAGE_CHARS = 3500
 
 
@@ -816,7 +815,7 @@ class HFIBot:
             msg = (
                 f"<b>Thread scraped</b>\n\n"
                 f"{html.escape(preview)}\n\n"
-                f"Draft #{draft_id} · /approve {draft_id} to approve"
+                f"Draft #{draft_id} · Edit: {self._frontend_edit_link(int(draft_id)) if str(draft_id).isdigit() else ''}"
             )
             await self._send_chunked_reply(update, msg, parse_mode="HTML")
         except Exception as err:
