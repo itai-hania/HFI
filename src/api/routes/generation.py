@@ -51,6 +51,10 @@ def generate_post(request: GeneratePostRequest):
         source_text=request.source_text,
         num_variants=request.num_variants,
         angles=request.angles,
+        use_tweet_types=request.use_tweet_types,
+        tweet_types=request.tweet_types,
+        humanize=request.humanize,
+        quality_gate=request.quality_gate,
     )
     return GeneratePostResponse(variants=variants)
 
