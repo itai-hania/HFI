@@ -4,10 +4,8 @@ import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { InspirationAccount } from "@/lib/types";
 
 export function SearchForm({
-  accounts,
   username,
   setUsername,
   minLikes,
@@ -21,7 +19,6 @@ export function SearchForm({
   onSubmit,
   loading,
 }: {
-  accounts: InspirationAccount[];
   username: string;
   setUsername: (value: string) => void;
   minLikes: number;
@@ -37,22 +34,6 @@ export function SearchForm({
 }) {
   return (
     <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)]/60 p-4 md:p-5 space-y-3">
-      {accounts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {accounts.map((account) => (
-            <button
-              key={account.id}
-              type="button"
-              onClick={() => setUsername(account.username)}
-              className="cursor-pointer rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.04)] px-3 py-1 text-xs text-[var(--muted)] hover:bg-[rgba(255,255,255,0.08)] hover:text-[var(--ink)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              aria-label={`Select @${account.username}`}
-            >
-              @{account.username}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="grid gap-3 md:grid-cols-[1.2fr_0.7fr_0.8fr_0.8fr_1fr_auto]">
         <Input
           value={username}

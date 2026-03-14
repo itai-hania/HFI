@@ -181,7 +181,6 @@ export default function InspirationPage() {
       </div>
 
       <SearchForm
-        accounts={accountsQuery.data || []}
         username={username}
         setUsername={setUsername}
         minLikes={minLikes}
