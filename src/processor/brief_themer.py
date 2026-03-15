@@ -56,8 +56,11 @@ Rules:
 
 
 class BriefThemer:
+    _client: OpenAI | None = None
+
     def __init__(self):
-        self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        if BriefThemer._client is None:
+            BriefThemer._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     def generate_themes(self, stories: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not stories:

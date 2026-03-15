@@ -1,7 +1,7 @@
 """Schemas for notifications endpoints."""
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -51,10 +51,10 @@ class NotificationDeliveredResponse(BaseModel):
 
 
 class BriefFeedbackRequest(BaseModel):
-    story_title: str
-    feedback_type: str = "not_relevant"
+    story_title: str = Field(max_length=500)
+    feedback_type: Literal["not_relevant"] = "not_relevant"
     keywords: List[str] = Field(default_factory=list)
-    source: str = "dashboard"
+    source: Literal["dashboard", "telegram"] = "dashboard"
 
 
 class BriefFeedbackWeightsResponse(BaseModel):

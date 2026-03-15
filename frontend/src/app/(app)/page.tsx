@@ -45,11 +45,9 @@ export default function DashboardPage() {
 
   const handleSkip = async (story: BriefStory, _index: number) => {
     try {
-      const keywords = story.title.toLowerCase().split(/\s+/).filter(w => w.length > 2);
       await api.post("/api/notifications/brief/feedback", {
         story_title: story.title,
         feedback_type: "not_relevant",
-        keywords,
         source: "dashboard",
       });
       toast.success("Noted", { description: "We'll show less stories like this" });

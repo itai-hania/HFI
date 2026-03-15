@@ -148,11 +148,27 @@ def latest_brief(db: Session = Depends(get_db)):
 
 @router.post("/brief/feedback")
 def submit_brief_feedback(request: BriefFeedbackRequest, db: Session = Depends(get_db)):
-    """Store story feedback for personalization."""
+    """Store story feedback for personalization.
+
+    Keywords are extracted server-side from the story title to ensure
+    consistent extraction regardless of the client surface.
+    """
+    from common.stopwords import STOPWORDS
+
+    # Server-side keyword extraction for consistency
+    keywords = request.keywords
+    if not keywords and request.story_title:
+        words = request.story_title.lower().split()
+        keywords = [
+            w.strip(".,!?:;\"'()")
+            for w in words
+            if w.strip(".,!?:;\"'()") not in STOPWORDS and len(w.strip(".,!?:;\"'()")) > 2
+        ]
+
     fb = BriefFeedback(
-        story_title=request.story_title,
+        story_title=request.story_title[:500],
         feedback_type=request.feedback_type,
-        keywords=request.keywords,
+        keywords=keywords,
         source=request.source,
     )
     db.add(fb)
