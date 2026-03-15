@@ -1,6 +1,7 @@
 """Settings endpoints for glossary, style examples, and user preferences."""
 
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,8 @@ router = APIRouter(
     dependencies=[Depends(require_jwt)],
 )
 
+logger = logging.getLogger(__name__)
+
 _GLOSSARY_PATH = Path(__file__).resolve().parents[3] / "config" / "glossary.json"
 
 
@@ -38,7 +41,8 @@ def get_glossary():
         with _GLOSSARY_PATH.open("r", encoding="utf-8") as file:
             payload = json.load(file)
     except (json.JSONDecodeError, OSError) as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to read glossary: {exc}") from exc
+        logger.error(f"Failed to read glossary: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to read glossary file") from exc
 
     if not isinstance(payload, dict):
         raise HTTPException(status_code=500, detail="Glossary must be a JSON object")
