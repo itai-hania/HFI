@@ -1,6 +1,7 @@
 "use client";
 
 import { AccountManager } from "@/components/settings/AccountManager";
+import { FeedbackWeights } from "@/components/settings/FeedbackWeights";
 import { GlossaryEditor } from "@/components/settings/GlossaryEditor";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { StyleExampleManager } from "@/components/settings/StyleExampleManager";
@@ -40,6 +41,13 @@ export default function SettingsPage() {
         <div className="space-y-2 px-5 pb-5 text-sm text-[var(--muted)]">
           <p>Status: configured via `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`.</p>
           <p>Use `/brief` to fetch latest stories and `/status` to view queue stats.</p>
+        </div>
+      </details>
+
+      <details className="rounded-3xl border border-[var(--border)] bg-[var(--card)]/75">
+        <summary className="cursor-pointer px-5 py-4 font-medium">Brief Preferences</summary>
+        <div className="px-5 pb-5">
+          <FeedbackWeights />
         </div>
       </details>
 

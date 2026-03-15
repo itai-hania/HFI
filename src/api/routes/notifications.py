@@ -8,14 +8,18 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, require_jwt
 from api.schemas.notification import (
+    BriefFeedbackRequest,
+    BriefFeedbackWeightsResponse,
     BriefResponse,
     BriefStory,
+    BriefTheme,
     NotificationListResponse,
     NotificationResponse,
     NotificationDeliveredResponse,
 )
-from common.models import Notification
+from common.models import BriefFeedback, Notification
 from processor.alert_detector import AlertDetector
+from processor.brief_themer import BriefThemer
 from scraper.news_scraper import NewsScraper
 
 router = APIRouter(
@@ -31,12 +35,16 @@ def _to_brief_response(row: Notification | None) -> BriefResponse:
     if row is None:
         raise HTTPException(status_code=404, detail="No stored brief found")
 
-    stories_payload = (row.content or {}).get("stories", [])
+    content = row.content or {}
+    stories_payload = content.get("stories", [])
     stories = [BriefStory.model_validate(item) for item in stories_payload if isinstance(item, dict)]
     if not stories:
         raise HTTPException(status_code=404, detail="No stored brief found")
 
-    return BriefResponse(stories=stories)
+    themes_payload = content.get("themes", [])
+    themes = [BriefTheme.model_validate(item) for item in themes_payload if isinstance(item, dict)]
+    generated_at = content.get("generated_at")
+    return BriefResponse(themes=themes, stories=stories, generated_at=generated_at)
 
 
 @router.post("/brief", response_model=BriefResponse)
@@ -99,12 +107,31 @@ def generate_brief(force_refresh: bool = Query(False), db: Session = Depends(get
         )
 
     # Persist JSON-safe values (e.g., datetimes as ISO strings) in the JSON column.
-    payload = {"stories": [s.model_dump(mode="json") for s in stories]}
+    themer = BriefThemer()
+    story_dicts = [s.model_dump(mode="json") for s in stories]
+    raw_themes = themer.generate_themes(story_dicts)
+
+    themes = [
+        BriefTheme(
+            name=t["name"],
+            emoji=t["emoji"],
+            takeaway=t["takeaway"],
+            stories=[BriefStory.model_validate(s) for s in t["stories"]],
+        )
+        for t in raw_themes
+    ]
+
+    generated_at = now.isoformat()
+    payload = {
+        "stories": story_dicts,
+        "themes": [t.model_dump(mode="json") for t in themes],
+        "generated_at": generated_at,
+    }
     row = Notification(type="brief", content=payload, delivered=False, created_at=now)
     db.add(row)
     db.commit()
 
-    return BriefResponse(stories=stories)
+    return BriefResponse(themes=themes, stories=stories, generated_at=now)
 
 
 @router.get("/brief/latest", response_model=BriefResponse)
@@ -117,6 +144,56 @@ def latest_brief(db: Session = Depends(get_db)):
         .first()
     )
     return _to_brief_response(latest)
+
+
+@router.post("/brief/feedback")
+def submit_brief_feedback(request: BriefFeedbackRequest, db: Session = Depends(get_db)):
+    """Store story feedback for personalization.
+
+    Keywords are extracted server-side from the story title to ensure
+    consistent extraction regardless of the client surface.
+    """
+    from common.stopwords import STOPWORDS
+
+    # Server-side keyword extraction for consistency
+    keywords = request.keywords
+    if not keywords and request.story_title:
+        words = request.story_title.lower().split()
+        keywords = [
+            w.strip(".,!?:;\"'()")
+            for w in words
+            if w.strip(".,!?:;\"'()") not in STOPWORDS and len(w.strip(".,!?:;\"'()")) > 2
+        ]
+
+    fb = BriefFeedback(
+        story_title=request.story_title[:500],
+        feedback_type=request.feedback_type,
+        keywords=keywords,
+        source=request.source,
+    )
+    db.add(fb)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/brief/feedback/weights", response_model=BriefFeedbackWeightsResponse)
+def get_feedback_weights(db: Session = Depends(get_db)):
+    """Return learned keyword exclusions based on accumulated feedback."""
+    rows = db.query(BriefFeedback).filter_by(feedback_type="not_relevant").all()
+    keyword_counts: dict[str, int] = {}
+    for row in rows:
+        for kw in (row.keywords or []):
+            keyword_counts[kw] = keyword_counts.get(kw, 0) + 1
+    excluded = [kw for kw, count in keyword_counts.items() if count >= 3]
+    return BriefFeedbackWeightsResponse(excluded_keywords=excluded, keyword_counts=keyword_counts)
+
+
+@router.delete("/brief/feedback")
+def reset_feedback(db: Session = Depends(get_db)):
+    """Clear all feedback data."""
+    db.query(BriefFeedback).delete()
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/alerts", response_model=NotificationListResponse)

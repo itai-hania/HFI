@@ -35,8 +35,8 @@ class TestTelegramBotFormatting:
         msg = format_brief_message(stories, "morning")
         assert "SEC approves Bitcoin ETF" in msg
         assert "<b>" in msg, "Must use HTML bold tags"
-        assert '<a href="https://bloomberg.com/sec-etf">Bloomberg</a>' in msg
-        assert "/write N to create" in msg
+        assert "Bloomberg" in msg
+        assert "/write N" in msg
 
     def test_format_alert_message(self):
         alert = {
@@ -69,7 +69,7 @@ class TestTelegramBotFormatting:
         assert "Morning Brief" in msg
         assert "87" in msg, "Relevance score must be shown"
         assert "2 sources" in msg or "📡 2" in msg, "Source count must be shown"
-        assert "<a href=" in msg, "Source links must be HTML anchors"
+        assert "Bloomberg" in msg, "Source names must be shown"
 
     def test_brief_message_shows_story_age(self):
         recent = datetime.now(timezone.utc) - timedelta(hours=2)
@@ -132,6 +132,7 @@ class TestTelegramBotFormatting:
             "/schedule - Show the configured brief and alert automation times.\n"
             "/scrape <url> - Scrape an X thread, translate it, and save as a draft.\n"
             "/xtrends - Show the top trending topics on X.\n"
+            "/skip <n> - Mark brief story n as not relevant to improve future briefs.\n"
             "/health - Check API and database health.\n"
             "/help - Show examples and supported input formats."
         )
@@ -185,7 +186,7 @@ def test_bot_commands_list():
     """Verify bot_commands() returns BotCommand-compatible tuples for set_my_commands."""
     from telegram_bot.command_catalog import bot_commands
     commands = bot_commands()
-    assert len(commands) == 10
+    assert len(commands) == 11
     names = [c[0] for c in commands]
     assert "brief" in names
     assert "start" in names

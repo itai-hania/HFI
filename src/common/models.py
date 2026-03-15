@@ -768,6 +768,23 @@ class Notification(Base):
     )
 
 
+class BriefFeedback(Base):
+    """Stores user feedback (thumbs-down) on brief stories for personalization."""
+    __tablename__ = "brief_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    story_title = Column(String(500), nullable=False)
+    feedback_type = Column(String(20), nullable=False, index=True)
+    keywords = Column(JSON, nullable=True)
+    source = Column(String(50), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+
 class UserPreference(Base):
     """Simple key/value preferences store for user-level settings."""
     __tablename__ = "user_preferences"

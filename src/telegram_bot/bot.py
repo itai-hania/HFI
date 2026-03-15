@@ -13,13 +13,14 @@ from uuid import uuid4
 import httpx
 
 from common.logging_utils import log_event
+from common.stopwords import STOPWORDS
 from common.url_validation import URLValidationError, X_HOSTS, validate_article_url, validate_x_status_url
 from telegram_bot.command_catalog import render_help_text, render_start_text
 
 try:
-    from telegram import Update
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
     from telegram.error import BadRequest, Conflict
-    from telegram.ext import Application, CommandHandler, ContextTypes
+    from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 except Exception:  # pragma: no cover - type/runtime fallback for non-bot test environments
     Update = Any  # type: ignore
     BadRequest = RuntimeError  # type: ignore
@@ -69,6 +70,18 @@ except Exception:  # pragma: no cover - type/runtime fallback for non-bot test e
             return _DummyBuilder()
 
     class CommandHandler:  # pragma: no cover
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class CallbackQueryHandler:  # pragma: no cover
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class InlineKeyboardButton:  # pragma: no cover
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class InlineKeyboardMarkup:  # pragma: no cover
         def __init__(self, *_args, **_kwargs):
             pass
 
@@ -154,8 +167,85 @@ def _chunk_text(text: str, max_chars: int = _MAX_TELEGRAM_MESSAGE_CHARS) -> list
     return chunks
 
 
-def format_brief_message(stories: List[dict], brief_type: str) -> str:
-    """Render stories as rich HTML for Telegram."""
+def _extract_story_keywords(title: str) -> list[str]:
+    """Extract meaningful keywords from a story title for feedback."""
+    words = title.lower().split()
+    return [w.strip(".,!?:;\"'()") for w in words if w.strip(".,!?:;\"'()") not in STOPWORDS and len(w) > 2]
+
+
+def _format_story_lines(story: dict, index: int, now, israel_sources: set) -> list[str]:
+    """Format a single story as HTML lines."""
+    from datetime import datetime as _dt
+
+    title = html.escape(str(story.get("title", "Untitled")))
+    summary = html.escape(_safe_preview(str(story.get("summary", "")), max_chars=280))
+    source_count = story.get("source_count", len(story.get("sources", [])))
+    relevance = story.get("relevance_score", 0)
+    sources = story.get("sources", [])
+
+    age_str = ""
+    published = story.get("published_at")
+    if published:
+        if isinstance(published, str):
+            try:
+                pub_dt = _dt.fromisoformat(published.replace("Z", "+00:00"))
+                age_hours = (now - pub_dt).total_seconds() / 3600
+                if age_hours < 1:
+                    age_str = f"{int(age_hours * 60)}m ago"
+                elif age_hours < 24:
+                    age_str = f"{int(age_hours)}h ago"
+                else:
+                    age_str = f"{int(age_hours / 24)}d ago"
+            except (ValueError, TypeError):
+                pass
+
+    is_israel = any(s.lower() in israel_sources for s in sources)
+    badge = "\U0001f535 Israel" if is_israel else f"\U0001f3af {relevance}"
+
+    source_names = [html.escape(s) for s in sources]
+
+    lines = [f"<b>{index}.</b> <b>{title}</b>"]
+    if summary:
+        lines.append(f"   {summary}")
+    meta_parts = []
+    if age_str:
+        meta_parts.append(f"\u23f1 {age_str}")
+    meta_parts.append(f"\U0001f4e1 {source_count} sources")
+    meta_parts.append(badge)
+    lines.append("   " + " \u00b7 ".join(meta_parts))
+    if source_names:
+        lines.append("   " + " \u00b7 ".join(source_names))
+    lines.append("")
+    return lines
+
+
+def _stories_in_theme_order(themes: list[dict]) -> list[dict]:
+    """Flatten themes into a single list in rendered order."""
+    result: list[dict] = []
+    for theme in themes:
+        result.extend(theme.get("stories", []))
+    return result
+
+
+def _slice_themes(themes: list[dict], count: int) -> list[dict]:
+    """Trim themes so that the total story count does not exceed *count*.
+
+    Removes empty themes after slicing.
+    """
+    remaining = count
+    sliced: list[dict] = []
+    for theme in themes:
+        if remaining <= 0:
+            break
+        theme_stories = theme.get("stories", [])
+        taken = theme_stories[:remaining]
+        sliced.append({**theme, "stories": taken})
+        remaining -= len(taken)
+    return sliced
+
+
+def format_brief_message(stories: list[dict], brief_type: str, themes: list[dict] | None = None) -> str:
+    """Render stories as rich HTML for Telegram — themed if themes provided."""
     from datetime import datetime, timezone
     from zoneinfo import ZoneInfo
 
@@ -170,59 +260,27 @@ def format_brief_message(stories: List[dict], brief_type: str) -> str:
     ist_now = now.astimezone(ZoneInfo("Asia/Jerusalem"))
     timestamp = ist_now.strftime("%H:%M")
 
-    lines = [f"📊 <b>{header}</b> · {len(stories)} stories · {timestamp} IST", ""]
+    lines = [f"\U0001f4ca <b>{header}</b> \u00b7 {len(stories)} stories \u00b7 {timestamp} IST", ""]
 
     israel_sources = {"calcalist", "globes", "times of israel"}
 
-    for index, story in enumerate(stories, 1):
-        title = html.escape(str(story.get("title", "Untitled")))
-        summary = html.escape(_safe_preview(str(story.get("summary", "")), max_chars=280))
-        source_count = story.get("source_count", len(story.get("sources", [])))
-        relevance = story.get("relevance_score", 0)
-        sources = story.get("sources", [])
-        source_urls = story.get("source_urls", [])
+    if themes:
+        story_index = 1
+        for theme in themes:
+            lines.append(f"{theme.get('emoji', '\U0001f4ca')} <b>{html.escape(theme.get('name', 'News'))}</b>")
+            takeaway = theme.get("takeaway", "")
+            if takeaway:
+                lines.append(f"   {html.escape(takeaway)}")
+            lines.append("")
 
-        age_str = ""
-        published = story.get("published_at")
-        if published:
-            if isinstance(published, str):
-                try:
-                    pub_dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
-                    age_hours = (now - pub_dt).total_seconds() / 3600
-                    if age_hours < 1:
-                        age_str = f"{int(age_hours * 60)}m ago"
-                    elif age_hours < 24:
-                        age_str = f"{int(age_hours)}h ago"
-                    else:
-                        age_str = f"{int(age_hours / 24)}d ago"
-                except (ValueError, TypeError):
-                    pass
+            for story in theme.get("stories", []):
+                lines.extend(_format_story_lines(story, story_index, now, israel_sources))
+                story_index += 1
+    else:
+        for index, story in enumerate(stories, 1):
+            lines.extend(_format_story_lines(story, index, now, israel_sources))
 
-        is_israel = any(s.lower() in israel_sources for s in sources)
-        badge = "🔵 Israel" if is_israel else f"🎯 {relevance}"
-
-        source_links = []
-        for i, src in enumerate(sources):
-            url = source_urls[i] if i < len(source_urls) else ""
-            if url:
-                source_links.append(f'<a href="{url}">{html.escape(src)}</a>')
-            else:
-                source_links.append(html.escape(src))
-
-        lines.append(f"<b>{index}.</b> <b>{title}</b>")
-        if summary:
-            lines.append(f"   {summary}")
-        meta_parts = []
-        if age_str:
-            meta_parts.append(f"⏱ {age_str}")
-        meta_parts.append(f"📡 {source_count} sources")
-        meta_parts.append(badge)
-        lines.append("   " + " · ".join(meta_parts))
-        if source_links:
-            lines.append("   " + " · ".join(source_links))
-        lines.append("")
-
-    lines.append("/write N to create · /story N for details")
+    lines.append("/write N \u00b7 /story N \u00b7 /skip N")
     return "\n".join(lines).strip()
 
 
@@ -287,8 +345,10 @@ class HFIBot:
         self.app.add_handler(CommandHandler("write", self.cmd_write))
         self.app.add_handler(CommandHandler("save", self.cmd_save))
         self.app.add_handler(CommandHandler("schedule", self.cmd_schedule))
+        self.app.add_handler(CommandHandler("skip", self.cmd_skip))
         self.app.add_handler(CommandHandler("scrape", self.cmd_scrape))
         self.app.add_handler(CommandHandler("xtrends", self.cmd_xtrends))
+        self.app.add_handler(CallbackQueryHandler(self.handle_write_callback, pattern=r"^wrt_"))
 
     def _chat_key(self, update: Update) -> str:
         chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
@@ -352,6 +412,16 @@ class HFIBot:
             return
         try:
             await message.reply_text(text, parse_mode=parse_mode)
+        except BadRequest as err:
+            log_event(logger, "telegram_rejected_message", level=logging.WARNING, error=str(err))
+            raise
+
+    async def _reply_text_with_markup(self, update: Update, text: str, reply_markup=None, parse_mode: str | None = None):
+        message = getattr(update, "message", None)
+        if message is None:
+            return
+        try:
+            await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
         except BadRequest as err:
             log_event(logger, "telegram_rejected_message", level=logging.WARNING, error=str(err))
             raise
@@ -497,10 +567,21 @@ class HFIBot:
         try:
             count = self._brief_input(getattr(context, "args", []) or [])
             response = await self._request("POST", "/api/notifications/brief?force_refresh=true")
-            stories = response.json().get("stories", [])[:count]
+            data = response.json()
+            themes = data.get("themes", [])
+
+            # Slice themes to requested count so formatted message matches header
+            if themes:
+                themes = _slice_themes(themes, count)
+                # Cache in rendered (theme) order so /story N, /write N, /skip N
+                # target the same story the user sees on screen.
+                stories = _stories_in_theme_order(themes)
+            else:
+                stories = data.get("stories", [])[:count]
+
             self._state_for(update).last_brief = stories
 
-            msg = format_brief_message(stories, "on-demand")
+            msg = format_brief_message(stories, "on-demand", themes=themes)
             await self._send_chunked_reply(update, msg, parse_mode="HTML")
             log_event(logger, "brief_sent", mode="on_demand", count=len(stories))
         except ValueError as err:
@@ -680,12 +761,58 @@ class HFIBot:
                     f"Variant {idx}: {variant.get('label', 'Variant')}\n\n"
                     f"{variant.get('content', '')}\n\n"
                     f"Chars: {variant.get('char_count', 0)} | "
-                    f"Quality: {variant.get('quality_score', 0)}\n"
-                    f"Use /save {idx} to persist this draft."
+                    f"Quality: {variant.get('quality_score', 0)}"
                 )
-                await self._send_chunked_reply(update, msg)
+                keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("💾 Save Draft", callback_data=f"wrt_save_{idx}"),
+                        InlineKeyboardButton("📋 Queue", callback_data=f"wrt_queue_{idx}"),
+                    ]
+                ])
+                await self._reply_text_with_markup(update, msg, reply_markup=keyboard)
         except Exception as err:  # pragma: no cover - exercised in integration
             await self._reply_error(update, err)
+
+    async def handle_write_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle inline button presses from /write variants."""
+        query = update.callback_query
+        await query.answer()
+
+        data = query.data  # e.g. "wrt_save_1" or "wrt_queue_2"
+        parts = data.split("_")
+        if len(parts) != 3:
+            await query.edit_message_text("Invalid action.")
+            return
+
+        action = parts[1]  # "save" or "queue"
+        try:
+            variant_idx = int(parts[2]) - 1  # convert 1-based to 0-based
+        except ValueError:
+            await query.edit_message_text("Invalid variant number.")
+            return
+
+        state = self._state_for_chat_key(str(query.message.chat_id))
+        session = state.last_write_session
+        if not session or variant_idx < 0 or variant_idx >= len(session.variants):
+            await query.edit_message_text("Session expired. Use /write again.")
+            return
+
+        status = "processed" if action == "save" else "approved"
+        variant = session.variants[variant_idx]
+
+        try:
+            await self._request("POST", "/api/content", json={
+                "source_url": session.canonical_url or f"telegram://{session.session_id}",
+                "original_text": session.original_text,
+                "hebrew_draft": variant.get("content", ""),
+                "content_type": "generation",
+                "status": status,
+                "generation_metadata": {"origin": "telegram", "write_session_id": session.session_id},
+            })
+            label = "Saved as draft ✅" if action == "save" else "Added to queue ✅"
+            await query.edit_message_text(label)
+        except Exception as err:
+            await query.edit_message_text(f"Failed: {err}")
 
     @staticmethod
     def _manual_source_url(source_text: str) -> str:
@@ -848,14 +975,55 @@ class HFIBot:
         except Exception as err:
             await self._reply_error(update, err)
 
+    async def cmd_skip(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Mark a brief story as not relevant — /skip N."""
+        if await self._reject_if_unauthorized(update, "skip"):
+            return
+
+        args = context.args or []
+        if not args or not args[0].isdigit():
+            await self._reply_text(update, "Usage: /skip N (story number from last brief)")
+            return
+
+        index = int(args[0]) - 1
+        state = self._state_for(update)
+        stories = state.last_brief or []
+
+        if index < 0 or index >= len(stories):
+            await self._reply_text(update, f"Invalid story number. Last brief had {len(stories)} stories.")
+            return
+
+        story = stories[index]
+        title = story.get("title", "")
+        keywords = _extract_story_keywords(title)
+
+        try:
+            await self._request("POST", "/api/notifications/brief/feedback", json={
+                "story_title": title,
+                "feedback_type": "not_relevant",
+                "keywords": keywords,
+                "source": "telegram",
+            })
+            await self._reply_text(update, f"Got it, less stories like \"{title[:50]}...\"")
+        except Exception as err:
+            await self._reply_error(update, err)
+
     async def send_scheduled_brief(self):
         response = await self._request("POST", "/api/notifications/brief")
-        stories = response.json().get("stories", [])
+        data = response.json()
+        themes = data.get("themes", [])
+
+        # Cache in rendered (theme) order so command indices match display
+        if themes:
+            stories = _stories_in_theme_order(themes)
+        else:
+            stories = data.get("stories", [])
+
         if not stories:
             return
 
         self._state_for_chat_key(str(self.chat_id)).last_brief = stories
-        msg = format_brief_message(stories, "scheduled")
+        msg = format_brief_message(stories, "scheduled", themes=themes)
         try:
             await self.app.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode="HTML")
             log_event(logger, "brief_sent", mode="scheduled", count=len(stories))

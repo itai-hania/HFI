@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { ChevronDown, ExternalLink, Globe, Loader2 } from "lucide-react";
+import { ChevronDown, ExternalLink, Globe, Loader2, ThumbsDown } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,12 +50,17 @@ export function BriefCard({
   story,
   index,
   onTranslate,
+  onWrite,
+  onSkip,
+  draftPanel,
 }: {
   story: BriefStory;
   index: number;
   onTranslate: (story: BriefStory) => void | Promise<void>;
+  onWrite: (story: BriefStory, index: number) => void;
+  onSkip: (story: BriefStory, index: number) => void;
+  draftPanel?: React.ReactNode;
 }) {
-  const router = useRouter();
   const [expanded, setExpanded] = useState(true);
   const [translating, setTranslating] = useState(false);
   const toggleExpanded = () => setExpanded((prev) => !prev);
@@ -146,9 +150,7 @@ export function BriefCard({
                 <Button
                   onClick={(e) => {
                     e.stopPropagation();
-                    const text = `${story.title}\n\n${story.summary || ""}`;
-                    const sources = (story.source_urls || []).join(",");
-                    router.push(`/create?source=trend&id=${index + 1}&text=${encodeURIComponent(text)}&sources=${encodeURIComponent(sources)}`);
+                    onWrite(story, index);
                   }}
                 >
                   Write
@@ -168,7 +170,19 @@ export function BriefCard({
                 >
                   {translating ? <><Loader2 size={14} className="animate-spin" /> Translating...</> : "Translate"}
                 </Button>
+                <Button
+                  variant="ghost"
+                  className="h-11 w-11 p-0 text-[var(--muted)] hover:text-red-400"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSkip(story, index);
+                  }}
+                  aria-label={`Mark "${story.title}" as not relevant`}
+                >
+                  <ThumbsDown size={16} />
+                </Button>
               </div>
+              {draftPanel}
             </CardContent>
           ) : null}
         </div>

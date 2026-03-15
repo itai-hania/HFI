@@ -1,19 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AlertCard } from "@/components/dashboard/AlertCard";
 import { BriefCard } from "@/components/dashboard/BriefCard";
+import { BriefThemeSection } from "@/components/dashboard/BriefThemeSection";
 import { ScheduleTimeline } from "@/components/dashboard/ScheduleTimeline";
 import { StatsBar } from "@/components/dashboard/StatsBar";
 import { Button } from "@/components/ui/button";
 import { useAlerts, useDismissAlert } from "@/hooks/useAlerts";
 import { useBrief, useRefreshBrief } from "@/hooks/useBrief";
+import { useInlineDraft } from "@/hooks/useInlineDraft";
 import { useScheduledContent } from "@/hooks/useContent";
 import { useStats } from "@/hooks/useStats";
 import { useTranslate } from "@/hooks/useTranslate";
+import api from "@/lib/api";
 import type { BriefStory } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -25,6 +28,7 @@ export default function DashboardPage() {
   const alertsQuery = useAlerts();
   const dismissAlert = useDismissAlert();
   const translate = useTranslate();
+  const { activeDraft, openDraft, updateText, saveDraft, closeDraft } = useInlineDraft();
 
   const handleTranslate = async (story: BriefStory) => {
     try {
@@ -33,6 +37,67 @@ export default function DashboardPage() {
     } catch {
       toast.error("Translation failed");
     }
+  };
+
+  const handleWrite = (story: BriefStory, index: number) => {
+    openDraft(story, index);
+  };
+
+  const handleSkip = async (story: BriefStory, _index: number) => {
+    try {
+      await api.post("/api/notifications/brief/feedback", {
+        story_title: story.title,
+        feedback_type: "not_relevant",
+        source: "dashboard",
+      });
+      toast.success("Noted", { description: "We'll show less stories like this" });
+    } catch {
+      toast.error("Failed to submit feedback");
+    }
+  };
+
+  const buildDraftPanel = (story: BriefStory, index: number): React.ReactNode => {
+    if (!activeDraft || activeDraft.storyIndex !== index) return undefined;
+    return (
+      <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-3">
+        <label htmlFor={`draft-${index}`} className="text-xs font-medium text-[var(--muted)]">Hebrew Draft</label>
+        {activeDraft.isGenerating ? (
+          <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
+            <Loader2 size={14} className="animate-spin" /> Generating...
+          </div>
+        ) : (
+          <>
+            <textarea
+              id={`draft-${index}`}
+              className="w-full min-h-[100px] rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 text-sm leading-6 resize-y focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+              dir="rtl"
+              value={activeDraft.hebrewText}
+              onChange={(e) => updateText(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <Button
+                className="h-9 px-3 text-xs"
+                variant="secondary"
+                disabled={activeDraft.isSaving}
+                onClick={() => saveDraft(story, "processed")}
+              >
+                Save Draft
+              </Button>
+              <Button
+                className="h-9 px-3 text-xs"
+                disabled={activeDraft.isSaving}
+                onClick={() => saveDraft(story, "approved")}
+              >
+                Queue
+              </Button>
+              <Button className="h-9 px-3 text-xs" variant="ghost" onClick={closeDraft}>
+                Close
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -96,13 +161,42 @@ export default function DashboardPage() {
           {briefQuery.isLoading ? (
             <div className="text-sm text-[var(--muted)]">Loading brief...</div>
           ) : briefQuery.isError ? (
-            <div className="rounded-2xl border border-[#7f1d1d] bg-[#2a1010] p-4 text-sm text-[#fecaca]">
+            <div className="rounded-2xl border border-red-900/50 bg-red-950/40 p-4 text-sm text-red-200">
               API unreachable. Please check backend connectivity.
+            </div>
+          ) : briefQuery.data?.themes && briefQuery.data.themes.length > 0 ? (
+            <div className="space-y-6">
+              {(() => {
+                let runningIndex = 0;
+                return briefQuery.data.themes.map((theme, themeIdx) => {
+                  const section = (
+                    <BriefThemeSection
+                      key={theme.name + themeIdx}
+                      theme={theme}
+                      startIndex={runningIndex}
+                      onTranslate={handleTranslate}
+                      onWrite={handleWrite}
+                      onSkip={handleSkip}
+                      draftPanel={buildDraftPanel}
+                    />
+                  );
+                  runningIndex += theme.stories.length;
+                  return section;
+                });
+              })()}
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {(briefQuery.data?.stories || []).map((story, index) => (
-                <BriefCard key={`${story.title}-${index}`} story={story} index={index} onTranslate={handleTranslate} />
+                <BriefCard
+                  key={`${story.title}-${index}`}
+                  story={story}
+                  index={index}
+                  onTranslate={handleTranslate}
+                  onWrite={handleWrite}
+                  onSkip={handleSkip}
+                  draftPanel={buildDraftPanel(story, index)}
+                />
               ))}
             </div>
           )}

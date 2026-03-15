@@ -32,8 +32,17 @@ export interface BriefStory {
   relevance_score?: number;
 }
 
-export interface BriefResponse {
+export interface BriefTheme {
+  name: string;
+  emoji: string;
+  takeaway: string;
   stories: BriefStory[];
+}
+
+export interface BriefResponse {
+  themes: BriefTheme[];
+  stories: BriefStory[];
+  generated_at?: string | null;
 }
 
 export interface Variant {
