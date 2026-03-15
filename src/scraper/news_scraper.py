@@ -557,7 +557,11 @@ class NewsScraper:
         return 0
 
     def _load_feedback_excludes(self) -> set[str]:
-        """Load keywords that users have marked as not relevant (>= 3 times)."""
+        """Load keywords that users have marked as not relevant (>= 3 times).
+
+        Returns an empty set if the brief_feedback table does not exist yet
+        (e.g. first run before DB migration).
+        """
         db = SessionLocal()
         try:
             rows = db.query(BriefFeedback).filter_by(feedback_type="not_relevant").all()
@@ -566,6 +570,9 @@ class NewsScraper:
                 for kw in (row.keywords or []):
                     keyword_counts[kw] = keyword_counts.get(kw, 0) + 1
             return {kw for kw, count in keyword_counts.items() if count >= 3}
+        except Exception:
+            logger.debug("brief_feedback table not available, skipping feedback excludes")
+            return set()
         finally:
             db.close()
 
