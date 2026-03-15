@@ -153,7 +153,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
             timeout=90,
         )
     except SessionExpiredError as exc:
-        raise HTTPException(status_code=503, detail="Scraper session expired. Please re-authenticate.") from exc
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,
