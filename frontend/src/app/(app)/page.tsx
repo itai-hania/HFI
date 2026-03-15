@@ -62,7 +62,7 @@ export default function DashboardPage() {
     if (!activeDraft || activeDraft.storyIndex !== index) return undefined;
     return (
       <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-3">
-        <p className="text-xs font-medium text-[var(--muted)]">Hebrew Draft</p>
+        <label htmlFor={`draft-${index}`} className="text-xs font-medium text-[var(--muted)]">Hebrew Draft</label>
         {activeDraft.isGenerating ? (
           <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
             <Loader2 size={14} className="animate-spin" /> Generating...
@@ -70,6 +70,7 @@ export default function DashboardPage() {
         ) : (
           <>
             <textarea
+              id={`draft-${index}`}
               className="w-full min-h-[100px] rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 text-sm leading-6 resize-y focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
               dir="rtl"
               value={activeDraft.hebrewText}
@@ -77,7 +78,7 @@ export default function DashboardPage() {
             />
             <div className="flex gap-2">
               <Button
-                className="h-8 px-3 text-xs"
+                className="h-9 px-3 text-xs"
                 variant="secondary"
                 disabled={activeDraft.isSaving}
                 onClick={() => saveDraft(story, "processed")}
@@ -85,13 +86,13 @@ export default function DashboardPage() {
                 Save Draft
               </Button>
               <Button
-                className="h-8 px-3 text-xs"
+                className="h-9 px-3 text-xs"
                 disabled={activeDraft.isSaving}
                 onClick={() => saveDraft(story, "approved")}
               >
                 Queue
               </Button>
-              <Button className="h-8 px-3 text-xs" variant="ghost" onClick={closeDraft}>
+              <Button className="h-9 px-3 text-xs" variant="ghost" onClick={closeDraft}>
                 Close
               </Button>
             </div>
@@ -162,7 +163,7 @@ export default function DashboardPage() {
           {briefQuery.isLoading ? (
             <div className="text-sm text-[var(--muted)]">Loading brief...</div>
           ) : briefQuery.isError ? (
-            <div className="rounded-2xl border border-[#7f1d1d] bg-[#2a1010] p-4 text-sm text-[#fecaca]">
+            <div className="rounded-2xl border border-red-900/50 bg-red-950/40 p-4 text-sm text-red-200">
               API unreachable. Please check backend connectivity.
             </div>
           ) : briefQuery.data?.themes && briefQuery.data.themes.length > 0 ? (

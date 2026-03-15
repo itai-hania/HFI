@@ -53,7 +53,11 @@ export function FeedbackWeights() {
             ))}
           </div>
           <p className="text-xs text-[var(--muted)]">Keywords with 3+ downvotes are excluded from future briefs.</p>
-          <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => resetMutation.mutate()} disabled={resetMutation.isPending}>
+          <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => {
+            if (window.confirm("Reset all feedback? This will remove all learned keyword preferences.")) {
+              resetMutation.mutate();
+            }
+          }} disabled={resetMutation.isPending}>
             {resetMutation.isPending ? "Resetting..." : "Reset All Feedback"}
           </Button>
         </>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ExternalLink, Globe, Loader2 } from "lucide-react";
+import { ChevronDown, ExternalLink, Globe, Loader2, ThumbsDown } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,14 +172,14 @@ export function BriefCard({
                 </Button>
                 <Button
                   variant="ghost"
-                  className="h-8 w-8 p-0 text-[var(--muted)] hover:text-red-400"
+                  className="h-11 w-11 p-0 text-[var(--muted)] hover:text-red-400"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSkip(story, index);
                   }}
-                  title="Not relevant"
+                  aria-label={`Mark "${story.title}" as not relevant`}
                 >
-                  👎
+                  <ThumbsDown size={16} />
                 </Button>
               </div>
               {draftPanel}
