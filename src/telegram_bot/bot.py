@@ -18,9 +18,9 @@ from common.url_validation import URLValidationError, X_HOSTS, validate_article_
 from telegram_bot.command_catalog import render_help_text, render_start_text
 
 try:
-    from telegram import Update
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
     from telegram.error import BadRequest, Conflict
-    from telegram.ext import Application, CommandHandler, ContextTypes
+    from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 except Exception:  # pragma: no cover - type/runtime fallback for non-bot test environments
     Update = Any  # type: ignore
     BadRequest = RuntimeError  # type: ignore
@@ -70,6 +70,18 @@ except Exception:  # pragma: no cover - type/runtime fallback for non-bot test e
             return _DummyBuilder()
 
     class CommandHandler:  # pragma: no cover
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class CallbackQueryHandler:  # pragma: no cover
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class InlineKeyboardButton:  # pragma: no cover
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class InlineKeyboardMarkup:  # pragma: no cover
         def __init__(self, *_args, **_kwargs):
             pass
 
@@ -311,6 +323,7 @@ class HFIBot:
         self.app.add_handler(CommandHandler("skip", self.cmd_skip))
         self.app.add_handler(CommandHandler("scrape", self.cmd_scrape))
         self.app.add_handler(CommandHandler("xtrends", self.cmd_xtrends))
+        self.app.add_handler(CallbackQueryHandler(self.handle_write_callback, pattern=r"^wrt_"))
 
     def _chat_key(self, update: Update) -> str:
         chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
@@ -374,6 +387,16 @@ class HFIBot:
             return
         try:
             await message.reply_text(text, parse_mode=parse_mode)
+        except BadRequest as err:
+            log_event(logger, "telegram_rejected_message", level=logging.WARNING, error=str(err))
+            raise
+
+    async def _reply_text_with_markup(self, update: Update, text: str, reply_markup=None, parse_mode: str | None = None):
+        message = getattr(update, "message", None)
+        if message is None:
+            return
+        try:
+            await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
         except BadRequest as err:
             log_event(logger, "telegram_rejected_message", level=logging.WARNING, error=str(err))
             raise
@@ -704,12 +727,58 @@ class HFIBot:
                     f"Variant {idx}: {variant.get('label', 'Variant')}\n\n"
                     f"{variant.get('content', '')}\n\n"
                     f"Chars: {variant.get('char_count', 0)} | "
-                    f"Quality: {variant.get('quality_score', 0)}\n"
-                    f"Use /save {idx} to persist this draft."
+                    f"Quality: {variant.get('quality_score', 0)}"
                 )
-                await self._send_chunked_reply(update, msg)
+                keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("💾 Save Draft", callback_data=f"wrt_save_{idx}"),
+                        InlineKeyboardButton("📋 Queue", callback_data=f"wrt_queue_{idx}"),
+                    ]
+                ])
+                await self._reply_text_with_markup(update, msg, reply_markup=keyboard)
         except Exception as err:  # pragma: no cover - exercised in integration
             await self._reply_error(update, err)
+
+    async def handle_write_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle inline button presses from /write variants."""
+        query = update.callback_query
+        await query.answer()
+
+        data = query.data  # e.g. "wrt_save_1" or "wrt_queue_2"
+        parts = data.split("_")
+        if len(parts) != 3:
+            await query.edit_message_text("Invalid action.")
+            return
+
+        action = parts[1]  # "save" or "queue"
+        try:
+            variant_idx = int(parts[2]) - 1  # convert 1-based to 0-based
+        except ValueError:
+            await query.edit_message_text("Invalid variant number.")
+            return
+
+        state = self._state_for_chat_key(str(query.message.chat_id))
+        session = state.last_write_session
+        if not session or variant_idx < 0 or variant_idx >= len(session.variants):
+            await query.edit_message_text("Session expired. Use /write again.")
+            return
+
+        status = "processed" if action == "save" else "approved"
+        variant = session.variants[variant_idx]
+
+        try:
+            await self._request("POST", "/api/content", json={
+                "source_url": session.canonical_url or f"telegram://{session.session_id}",
+                "original_text": session.original_text,
+                "hebrew_draft": variant.get("content", ""),
+                "content_type": "generation",
+                "status": status,
+                "generation_metadata": {"origin": "telegram", "write_session_id": session.session_id},
+            })
+            label = "Saved as draft ✅" if action == "save" else "Added to queue ✅"
+            await query.edit_message_text(label)
+        except Exception as err:
+            await query.edit_message_text(f"Failed: {err}")
 
     @staticmethod
     def _manual_source_url(source_text: str) -> str:
