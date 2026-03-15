@@ -1,6 +1,7 @@
 """Generation and translation endpoints."""
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -27,6 +28,8 @@ router = APIRouter(
     tags=["generation"],
     dependencies=[Depends(require_jwt)],
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_content_generator():
@@ -77,11 +80,14 @@ async def resolve_source(request: SourceResolveRequest):
     try:
         resolved = await resolve_source_input(text=request.text, url=request.url)
     except SourceSessionError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        logger.error(f"Source resolve session error: {exc}")
+        raise HTTPException(status_code=503, detail="Source resolution session expired") from exc
     except SourceTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=str(exc)) from exc
+        logger.error(f"Source resolve timeout: {exc}")
+        raise HTTPException(status_code=504, detail="Source resolution timed out") from exc
     except SourceResolverError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.error(f"Source resolve error: {exc}")
+        raise HTTPException(status_code=400, detail="Failed to resolve source input") from exc
 
     return SourceResolveResponse(**resolved.to_dict())
 
@@ -94,11 +100,14 @@ async def translate(request: TranslateRequest):
     try:
         resolved = await resolve_source_input(text=request.text, url=request.url)
     except SourceSessionError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        logger.error(f"Translate source resolve session error: {exc}")
+        raise HTTPException(status_code=503, detail="Source resolution session expired") from exc
     except SourceTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=str(exc)) from exc
+        logger.error(f"Translate source resolve timeout: {exc}")
+        raise HTTPException(status_code=504, detail="Source resolution timed out") from exc
     except SourceResolverError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.error(f"Translate source resolve error: {exc}")
+        raise HTTPException(status_code=400, detail="Failed to resolve source input") from exc
 
     hebrew_text = await asyncio.to_thread(service.translate_and_rewrite, resolved.original_text)
     return TranslateResponse(

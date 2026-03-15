@@ -142,6 +142,19 @@ def _first_safe_source_link(story: dict[str, Any]) -> str | None:
     return None
 
 
+def _safe_href(url: str) -> str | None:
+    """Validate and HTML-escape a URL for use in an href attribute."""
+    text = str(url or "").strip()
+    if not text:
+        return None
+    parsed = urlparse(text)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    if parsed.username or parsed.password:
+        return None
+    return html.escape(text, quote=True)
+
+
 def _chunk_text(text: str, max_chars: int = _MAX_TELEGRAM_MESSAGE_CHARS) -> list[str]:
     if len(text) <= max_chars:
         return [text]
@@ -295,8 +308,9 @@ def format_alert_message(alert: dict) -> str:
     source_links = []
     for i, src in enumerate(sources):
         url = source_urls[i] if i < len(source_urls) else ""
-        if url:
-            source_links.append(f'<a href="{url}">{html.escape(src)}</a>')
+        safe_url = _safe_href(url) if url else None
+        if safe_url:
+            source_links.append(f'<a href="{safe_url}">{html.escape(src)}</a>')
         else:
             source_links.append(html.escape(src))
 

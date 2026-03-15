@@ -153,7 +153,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
             timeout=90,
         )
     except SessionExpiredError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail="Scraper session expired. Please re-authenticate.") from exc
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,
@@ -163,7 +163,7 @@ async def search_posts(payload: InspirationSearchRequest, db: Session = Depends(
         logger.error(f"Inspiration search failed for @{payload.username}: {type(exc).__name__}: {exc}")
         raise HTTPException(
             status_code=502,
-            detail=f"Scraper error: {type(exc).__name__}: {exc}",
+            detail="Scraper encountered an internal error",
         ) from exc
 
     rows = []

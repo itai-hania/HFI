@@ -83,7 +83,7 @@ async def scrape_thread(request: ScrapeUrlRequest):
         return ScrapedThreadResponse(**result)
     except Exception as exc:
         logger.error(f"Thread scrape failed for {request.url}: {exc}")
-        raise HTTPException(status_code=502, detail=f"Scrape failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail="Scrape failed due to an internal error") from exc
 
 
 @router.post("/tweet", response_model=ScrapedTweetResponse)
@@ -95,7 +95,7 @@ async def scrape_tweet(request: ScrapeUrlRequest):
         return ScrapedTweetResponse(**result)
     except Exception as exc:
         logger.error(f"Tweet scrape failed for {request.url}: {exc}")
-        raise HTTPException(status_code=502, detail=f"Scrape failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail="Scrape failed due to an internal error") from exc
 
 
 @router.post("/trends", response_model=ScrapeTrendsResponse)
@@ -108,7 +108,7 @@ async def scrape_trends(request: Optional[ScrapeTrendsRequest] = None):
         return ScrapeTrendsResponse(trends=trends, count=len(trends))
     except Exception as exc:
         logger.error(f"Trends scrape failed: {exc}")
-        raise HTTPException(status_code=502, detail=f"Scrape failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail="Scrape failed due to an internal error") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ async def content_from_thread(
         thread = await scraper.fetch_raw_thread(request.url, author_only=True)
     except Exception as exc:
         logger.error(f"Thread scrape failed for {request.url}: {exc}")
-        raise HTTPException(status_code=502, detail=f"Scrape failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail="Scrape failed due to an internal error") from exc
 
     tweets_data = thread.get("tweets", [])
     if not tweets_data:
