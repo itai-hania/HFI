@@ -182,7 +182,6 @@ def _format_story_lines(story: dict, index: int, now, israel_sources: set) -> li
     source_count = story.get("source_count", len(story.get("sources", [])))
     relevance = story.get("relevance_score", 0)
     sources = story.get("sources", [])
-    source_urls = story.get("source_urls", [])
 
     age_str = ""
     published = story.get("published_at")
@@ -220,9 +219,35 @@ def _format_story_lines(story: dict, index: int, now, israel_sources: set) -> li
     return lines
 
 
+def _stories_in_theme_order(themes: list[dict]) -> list[dict]:
+    """Flatten themes into a single list in rendered order."""
+    result: list[dict] = []
+    for theme in themes:
+        result.extend(theme.get("stories", []))
+    return result
+
+
+def _slice_themes(themes: list[dict], count: int) -> list[dict]:
+    """Trim themes so that the total story count does not exceed *count*.
+
+    Removes empty themes after slicing.
+    """
+    remaining = count
+    sliced: list[dict] = []
+    for theme in themes:
+        if remaining <= 0:
+            break
+        theme_stories = theme.get("stories", [])
+        taken = theme_stories[:remaining]
+        sliced.append({**theme, "stories": taken})
+        remaining -= len(taken)
+    return sliced
+
+
 def format_brief_message(stories: list[dict], brief_type: str, themes: list[dict] | None = None) -> str:
     """Render stories as rich HTML for Telegram — themed if themes provided."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
 
     if brief_type == "morning":
         header = "Morning Brief"
@@ -232,7 +257,7 @@ def format_brief_message(stories: list[dict], brief_type: str, themes: list[dict
         header = "Brief"
 
     now = datetime.now(timezone.utc)
-    ist_now = now + timedelta(hours=2)
+    ist_now = now.astimezone(ZoneInfo("Asia/Jerusalem"))
     timestamp = ist_now.strftime("%H:%M")
 
     lines = [f"\U0001f4ca <b>{header}</b> \u00b7 {len(stories)} stories \u00b7 {timestamp} IST", ""]
@@ -543,8 +568,17 @@ class HFIBot:
             count = self._brief_input(getattr(context, "args", []) or [])
             response = await self._request("POST", "/api/notifications/brief?force_refresh=true")
             data = response.json()
-            stories = data.get("stories", [])[:count]
             themes = data.get("themes", [])
+
+            # Slice themes to requested count so formatted message matches header
+            if themes:
+                themes = _slice_themes(themes, count)
+                # Cache in rendered (theme) order so /story N, /write N, /skip N
+                # target the same story the user sees on screen.
+                stories = _stories_in_theme_order(themes)
+            else:
+                stories = data.get("stories", [])[:count]
+
             self._state_for(update).last_brief = stories
 
             msg = format_brief_message(stories, "on-demand", themes=themes)
@@ -875,7 +909,7 @@ class HFIBot:
         await self._reply_text(
             update,
             (
-                f"Brief schedule (UTC): {brief_schedule}\n"
+                f"Brief schedule (Israel Time): {brief_schedule}\n"
                 f"Alert checks every {self.alert_interval_minutes} minutes."
             ),
         )
@@ -977,8 +1011,14 @@ class HFIBot:
     async def send_scheduled_brief(self):
         response = await self._request("POST", "/api/notifications/brief")
         data = response.json()
-        stories = data.get("stories", [])
         themes = data.get("themes", [])
+
+        # Cache in rendered (theme) order so command indices match display
+        if themes:
+            stories = _stories_in_theme_order(themes)
+        else:
+            stories = data.get("stories", [])
+
         if not stories:
             return
 

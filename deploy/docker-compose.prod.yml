@@ -40,6 +40,7 @@ services:
       APP_VERSION: ${APP_VERSION}
       CORS_ORIGINS: ${CORS_ORIGINS}
       SESSION_DIR: /app/data/session
+      TZ: Asia/Jerusalem
     volumes:
       - ${HOST_DATA_DIR:-/opt/hfi/data}:/app/data
     restart: unless-stopped
@@ -65,6 +66,7 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      TZ: Asia/Jerusalem
     restart: unless-stopped
     depends_on:
       api:
@@ -91,6 +93,7 @@ services:
       DATABASE_URL: sqlite:////app/data/hfi.db
       ENVIRONMENT: production
       APP_VERSION: ${APP_VERSION}
+      TZ: Asia/Jerusalem
     volumes:
       - ${HOST_DATA_DIR:-/opt/hfi/data}:/app/data
       - ${REPO_ROOT:-.}/config:/app/config:ro
@@ -114,6 +117,7 @@ services:
       API_BASE_URL: http://api:8000
       ENVIRONMENT: production
       APP_VERSION: ${APP_VERSION}
+      TZ: Asia/Jerusalem
     depends_on:
       api:
         condition: service_healthy
@@ -134,6 +138,7 @@ services:
       DATABASE_URL: sqlite:////app/data/hfi.db
       ENVIRONMENT: production
       APP_VERSION: ${APP_VERSION}
+      TZ: Asia/Jerusalem
     volumes:
       - ${HOST_DATA_DIR:-/opt/hfi/data}:/app/data
       - ${REPO_ROOT:-.}/config:/app/config:ro

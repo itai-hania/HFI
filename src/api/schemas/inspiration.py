@@ -59,11 +59,19 @@ class InspirationSearchRequest(BaseModel):
     limit: int = Field(20, ge=1, le=100)
     since: Optional[str] = Field(None, description="Date filter since YYYY-MM-DD")
     until: Optional[str] = Field(None, description="Date filter until YYYY-MM-DD")
+    sort_by: str = Field("top", description="Sort mode: 'top' (engagement) or 'latest' (chronological)")
 
     @field_validator("username")
     @classmethod
     def _validate_username(cls, value: str) -> str:
         return _normalize_username(value)
+
+    @field_validator("sort_by")
+    @classmethod
+    def _validate_sort_by(cls, value: str) -> str:
+        if value not in ("top", "latest"):
+            raise ValueError("sort_by must be 'top' or 'latest'")
+        return value
 
 
 class InspirationPostResponse(BaseModel):

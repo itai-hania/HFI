@@ -432,6 +432,7 @@ class TwitterScraper:
         limit: int = 20,
         since: str | None = None,
         until: str | None = None,
+        sort_by: str = "top",
     ) -> List[Dict]:
         """
         Search X for high-engagement posts by user.
@@ -454,16 +455,17 @@ class TwitterScraper:
             await self.ensure_logged_in()
 
         logger.info(f"🔎 Searching engagement posts: {query}")
-        search_url = f"https://x.com/search?q={quote(query)}&src=typed_query&f=top"
+        tab = "live" if sort_by == "latest" else "top"
+        search_url = f"https://x.com/search?q={quote(query)}&src=typed_query&f={tab}"
 
         try:
             await self.page.goto(search_url, timeout=45000)
-            await self._random_delay(1.5, 2.8)
+            await self._random_delay(0.5, 1.0)
             await self.page.wait_for_selector('article[data-testid=\"tweet\"]', timeout=15000)
             await self._validate_page_loaded()
 
             collected: Dict[str, Dict] = {}
-            max_scrolls = 10
+            max_scrolls = 5
 
             for _ in range(max_scrolls):
                 rows = await self.page.evaluate(
@@ -556,14 +558,17 @@ class TwitterScraper:
                 if len(high_engagement) >= limit:
                     break
 
-                if not changed and len(collected) >= limit * 2:
+                if not changed and len(collected) >= limit:
                     break
 
                 await self.page.evaluate("window.scrollBy(0, 1200)")
-                await self._random_delay(0.8, 1.6)
+                await self._random_delay(0.3, 0.6)
 
             results = [r for r in collected.values() if int(r.get("likes", 0)) >= int(min_faves)]
-            results.sort(key=lambda item: int(item.get("likes", 0)), reverse=True)
+            if sort_by == "latest":
+                results.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+            else:
+                results.sort(key=lambda item: int(item.get("likes", 0)), reverse=True)
             logger.info(f"✅ Found {len(results)} posts for {username} with likes>={min_faves}")
             return results[:limit]
 
